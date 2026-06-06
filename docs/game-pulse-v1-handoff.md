@@ -8,7 +8,7 @@ Last updated: 2026-06-03 02:35 Asia/Shanghai
 - Frontend: `http://localhost:5173`
 - Backend: `http://localhost:3001`
 - Local RSSHub: `http://127.0.0.1:1200`
-- Admin password in local `server/.env`: `admin123`
+- Admin password in local `server/.env`: （见 .env 文件）
 
 ## Design Assets
 

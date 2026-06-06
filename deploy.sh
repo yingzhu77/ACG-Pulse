@@ -4,11 +4,17 @@ set -e
 # ============================================
 # ACG Pulse 一键部署脚本
 # 用法: ./deploy.sh [服务器地址] [SSH用户]
-# 示例: ./deploy.sh 8.219.121.132 root
+# 示例: ./deploy.sh 1.2.3.4 root
 # ============================================
 
-SERVER="${1:-8.219.121.132}"
+SERVER="${1}"
 USER="${2:-root}"
+
+if [ -z "$SERVER" ]; then
+    echo "用法: ./deploy.sh <服务器IP> [SSH用户]"
+    echo "示例: ./deploy.sh 1.2.3.4 root"
+    exit 1
+fi
 REMOTE_DIR="/opt/personal-hot-monitor"
 SSH_CMD="ssh ${USER}@${SERVER}"
 
