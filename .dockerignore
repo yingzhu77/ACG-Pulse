@@ -37,3 +37,14 @@ logs
 .vscode
 .DS_Store
 Thumbs.db
+.playwright-mcp
+
+# Docker files (not needed in build context)
+docker-compose*.yml
+docker/Dockerfile.rsshub
+docker/rsshub-entrypoint.sh
+
+# Documentation
+*.md
+docs/
+skills/
