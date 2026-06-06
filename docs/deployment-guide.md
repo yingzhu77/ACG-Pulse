@@ -66,8 +66,8 @@ OPENROUTER_API_KEY=你的key
 # 方案 C - Xiaomi MiMo Token Plan：
 # AI_PROVIDER=mimo
 # MIMO_API_KEY=tp-xxxxx
-# MIMO_BASE_URL=https://token-plan-sgp.xiaomimimo.com/v1  # 新加坡集群（默认）
-# MIMO_MODEL=mimo-v2.5-flash
+# MIMO_BASE_URL=https://token-plan-cn.xiaomimimo.com/v1  # 中国集群（默认）
+# MIMO_MODEL=mimo-v2.5-pro
 MAX_FEED_ITEMS=2000
 ```
 
