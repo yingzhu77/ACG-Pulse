@@ -10,7 +10,7 @@ interface ChatCompletionResponse {
 }
 
 interface ProviderConfig {
-  provider: 'openrouter' | 'deepseek';
+  provider: 'openrouter' | 'deepseek' | 'mimo';
   apiKey: string;
   baseUrl: string;
   model: string;
@@ -56,7 +56,9 @@ export async function analyzeWithProvider(input: LLMAnalyzeInput): Promise<LLMPr
     {
       timeout: 30000,
       headers: {
-        Authorization: `Bearer ${config.apiKey}`,
+        ...(config.provider === 'mimo'
+          ? { 'api-key': config.apiKey }
+          : { Authorization: `Bearer ${config.apiKey}` }),
         'Content-Type': 'application/json',
         ...(config.provider === 'openrouter'
           ? {
@@ -79,6 +81,18 @@ export async function analyzeWithProvider(input: LLMAnalyzeInput): Promise<LLMPr
 
 function resolveProviderConfig(): ProviderConfig | null {
   const preferred = (process.env.AI_PROVIDER || 'openrouter').toLowerCase();
+
+  if (preferred === 'mimo') {
+    const apiKey = process.env.MIMO_API_KEY;
+    if (!apiKey) return null;
+    return {
+      provider: 'mimo',
+      apiKey,
+      baseUrl: process.env.MIMO_BASE_URL || 'https://api.xiaomimimo.com/v1',
+      model: process.env.MIMO_MODEL || 'MiMo-V2.5-Flash'
+    };
+  }
+
   if (preferred === 'deepseek') {
     const apiKey = process.env.DEEPSEEK_API_KEY;
     if (!apiKey) return null;

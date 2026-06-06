@@ -22,6 +22,7 @@ services:
       - AI_PROVIDER=${AI_PROVIDER:-openrouter}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
       - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+      - MIMO_API_KEY=${MIMO_API_KEY:-}
       # Admin - change these in production!
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-change_me_in_production}
       - ADMIN_JWT_SECRET=${ADMIN_JWT_SECRET:-change_me_to_random_string}

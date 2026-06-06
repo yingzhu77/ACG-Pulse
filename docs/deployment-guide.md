@@ -56,8 +56,16 @@ nano .env
 ```bash
 ADMIN_PASSWORD=你的密码
 ADMIN_JWT_SECRET=随机字符串
+# AI Provider 三选一：
+# 方案 A - OpenRouter：
 AI_PROVIDER=openrouter
 OPENROUTER_API_KEY=你的key
+# 方案 B - DeepSeek：
+# AI_PROVIDER=deepseek
+# DEEPSEEK_API_KEY=你的key
+# 方案 C - Xiaomi MiMo：
+# AI_PROVIDER=mimo
+# MIMO_API_KEY=你的key
 MAX_FEED_ITEMS=2000
 ```
 
