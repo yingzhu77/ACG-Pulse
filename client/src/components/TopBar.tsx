@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Moon, Radio, RefreshCw, Settings, Sun } from 'lucide-react';
+import { Moon, RefreshCw, Settings, Sun } from 'lucide-react';
 import { cn } from '../lib/utils';
 import type { Theme } from '../constants';
 import { formatDateTime } from '../utils/format';
@@ -28,15 +28,12 @@ export function TopBar(props: TopBarProps) {
     <header className="topbar">
       <div className="brand-lockup">
         <div className="brand-mark">
-          <Radio className="h-6 w-6" />
+          <img src="/logo.webp" alt="ACG Pulse" className="brand-logo" />
         </div>
-        <div>
-          <h1>Game Pulse</h1>
-          <p>游戏情报雷达</p>
-        </div>
+        <h1 className="brand-title">ACG Pulse</h1>
       </div>
 
-      <nav className="nav-tabs" aria-label="Game Pulse">
+      <nav className="nav-tabs" aria-label="ACG Pulse">
         <button className={props.view === 'feed' ? 'active' : ''} onClick={() => props.onViewChange('feed')}>情报总览</button>
         <button className={props.view === 'insights' ? 'active' : ''} onClick={() => props.onViewChange('insights')}>数据洞察</button>
       </nav>
