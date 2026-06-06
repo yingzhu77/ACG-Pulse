@@ -1,8 +1,8 @@
 # ACG Pulse
 
-AI 驱动的游戏/ACG 资讯聚合面板。自动从多个来源采集内容，用 AI 分类定级，实时推送到前端。
+AI 驱动的游戏/ACG 资讯聚合面板，自动采集多源内容，智能分类定级，实时推送情报。
 
-> 本项目改编自 [yingzhu77/hot-monitor](https://github.com/yingzhu77/hot-monitor)，在原版基础上重构为游戏/ACG 垂直场景，新增 AI 分类、故事聚合、热搜监控等功能。
+> 本项目改编自 [yupi-hot-monitor](https://github.com/liyupi/yupi-hot-monitor)，在原版热点监控基础上重构为游戏/ACG 垂直场景，新增 AI 分类、故事聚合、热搜监控、多 Provider 支持等功能。
 
 ## 功能特性
 
