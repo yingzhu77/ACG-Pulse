@@ -1,5 +1,7 @@
 import express from 'express';
 import cors from 'cors';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import dotenv from 'dotenv';
@@ -51,8 +53,23 @@ app.post('/api/check-hotspots', async (_req, res) => {
   }
 });
 
+// 静态文件托管（前端）
+const clientDistPath = path.resolve(process.cwd(), '../client/dist');
+app.use(express.static(clientDistPath));
+
+// SPA 回退：非 API 路由返回 index.html
+app.use((req, res, next) => {
+  if (req.method === 'GET' && !req.path.startsWith('/api')) {
+    res.sendFile(path.join(clientDistPath, 'index.html'));
+  } else {
+    next();
+  }
+});
+
 // 404 处理
-app.use(notFoundHandler);
+app.use((_req, res) => {
+  res.status(404).json({ error: 'Not found' });
+});
 
 // 统一错误处理
 app.use(errorHandler);
