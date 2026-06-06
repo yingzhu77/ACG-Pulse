@@ -335,29 +335,44 @@ function areCategoriesCompatible(a: PublicFeedItem, b: PublicFeedItem): boolean 
   if (!catA || !catB) return true;
   if (catA === catB) return true;
   if (catA === 'enforcement' || catB === 'enforcement') return false;
+
   const set = new Set([catA, catB]);
-  // PV 不与其他类别合并
-  if (set.has('pv') && (set.has('announcement') || set.has('event') || set.has('version') || set.has('character'))) return false;
+
+  // PV 不与任何其他类别合并
+  if (set.has('pv')) return false;
+
   // 公告、活动、版本更新之间不合并
   if (set.has('announcement') && (set.has('event') || set.has('version'))) return false;
   if (set.has('event') && set.has('version')) return false;
-  // 创作者视频不与官方内容合并
-  if (set.has('creator_video') && (set.has('announcement') || set.has('version') || set.has('pv') || set.has('character'))) return false;
+
+  // 创作者视频不与任何官方内容合并
+  if (set.has('creator_video')) return false;
+
   // 音乐不与公告、活动、版本更新合并
   if ((set.has('music') || set.has('game_music')) && (set.has('announcement') || set.has('event') || set.has('version'))) return false;
-  // 预告片不与普通内容合并
-  if ((set.has('game_trailer') || set.has('trailer') || set.has('movie_trailer')) && (set.has('announcement') || set.has('event') || set.has('version'))) return false;
+
+  // 预告片不与公告、活动、版本合并
+  if ((set.has('trailer') || set.has('movie_trailer')) && (set.has('announcement') || set.has('event') || set.has('version'))) return false;
+
   return true;
 }
 
 function strongKeywordOverlap(draftKeywords: Set<string>, itemKeywords: Set<string>, game?: string): number {
   let count = 0;
+  let hasProperNoun = false;
   for (const kw of draftKeywords) {
     if (!kw || GENERIC_KEYWORDS.has(kw)) continue;
     if (game && kw === game.toLowerCase()) continue;
-    if (itemKeywords.has(kw)) count++;
+    if (itemKeywords.has(kw)) {
+      count++;
+      // 检查是否包含专有名词（角色名、版本号、活动名等）
+      if (/[《「【]|[一-龥]{2,}|^\d+(\.\d+)?$/u.test(kw)) {
+        hasProperNoun = true;
+      }
+    }
   }
-  return count;
+  // 需要 ≥3 个关键词且至少包含一个专有名词
+  return hasProperNoun ? count : 0;
 }
 
 function shareUrlOrExternalId(draft: StoryDraft, item: PublicFeedItem): boolean {
@@ -469,7 +484,7 @@ function sourcePriority(item: PublicFeedItem): number {
 function mergeWindowHours(a: PublicFeedItem, b: PublicFeedItem): number {
   const categories = new Set([a.analysis?.category, b.analysis?.category, a.itemKind, b.itemKind]);
   if (categories.has('version') || categories.has('character') || categories.has('pv') || categories.has('creator_video')) {
-    return 72;
+    return 48;
   }
   return 24;
 }

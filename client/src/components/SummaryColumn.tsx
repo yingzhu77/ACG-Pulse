@@ -27,8 +27,8 @@ export function SummaryColumn(props: SummaryColumnProps) {
           <SummaryMetric label="高重要情报" value={props.stats?.high || 0} note="high" tone="pink" />
           <SummaryMetric label="涉及游戏" value={Object.keys(props.stats?.byGame || {}).length} note="全部覆盖" tone="cyan" />
           <SummaryMetric label="活跃来源" value={props.sources.length} note={`${props.health.healthy} 健康`} tone="amber" />
-          <SummaryMetric label="AI 处理条数" value={props.stats?.total || 0} note="含 fallback" tone="violet" />
-          <SummaryMetric label="去重率" value={estimateDedupRate(props.stories)} suffix="%" note="临时聚合" tone="green" />
+          <SummaryMetric label="AI 处理条数" value={props.stats?.total || 0} note="含规则兜底" tone="violet" />
+          <SummaryMetric label="去重率" value={estimateDedupRate(props.stories)} suffix="%" note="多源合并" tone="green" />
         </div>
       </section>
 

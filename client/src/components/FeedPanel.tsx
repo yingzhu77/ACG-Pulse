@@ -1,6 +1,15 @@
-import { ChevronDown, Search } from 'lucide-react';
-import type { Story } from '../services/api';
+import { ChevronDown, ExternalLink, Search, Flame } from 'lucide-react';
+import type { Story, HotSearchItem } from '../services/api';
+import type { HotTag } from '../hooks/useHotSearch';
 import { StoryCard } from './StoryCard';
+
+const TAG_LABELS: Record<HotTag, string> = {
+  all: '热搜',
+  game: '热搜游戏',
+  anime: '热搜动漫',
+  ai: '热搜AI',
+  movie: '热搜影视'
+};
 
 export interface FeedPanelProps {
   stories: Story[];
@@ -14,9 +23,41 @@ export interface FeedPanelProps {
   favorites: string[];
   showFavorites: boolean;
   onToggleFavorite: (id: string) => void;
+  // Hot search props
+  showHotPanel: boolean;
+  hotItems: HotSearchItem[];
+  hotLoading: boolean;
+  selectedHotTag: HotTag;
 }
 
 export function FeedPanel(props: FeedPanelProps) {
+  // Hot search mode
+  if (props.showHotPanel) {
+    return (
+      <section className="feed-panel glass-panel">
+        <div className="feed-toolbar">
+          <div>
+            <h2>{TAG_LABELS[props.selectedHotTag]}</h2>
+            <p>共 {props.hotItems.length} 条数据</p>
+          </div>
+        </div>
+
+        {props.hotLoading && (
+          <div className="empty-state">加载中...</div>
+        )}
+
+        {!props.hotLoading && props.hotItems.length === 0 && (
+          <div className="empty-state">暂无热搜内容</div>
+        )}
+
+        {!props.hotLoading && props.hotItems.map((item, index) => (
+          <HotSearchCard key={`${item.source}-${index}`} item={item} rank={index + 1} />
+        ))}
+      </section>
+    );
+  }
+
+  // Normal feed mode
   const displayStories = props.showFavorites
     ? props.stories.filter(s => props.favorites.includes(s.id))
     : props.stories;
@@ -83,3 +124,52 @@ export function FeedPanel(props: FeedPanelProps) {
     </section>
   );
 }
+
+// Hot search card component
+function HotSearchCard({ item, rank }: { item: HotSearchItem; rank: number }) {
+  return (
+    <article className="story-card hot-card">
+      <div className="story-cover hot-rank-cover">
+        <span className={cn('hot-rank-number', rank <= 3 && 'top-3')}>{rank}</span>
+      </div>
+
+      <div className="story-body">
+        <div className="story-meta-line">
+          <span className={`hot-source-badge ${item.source}`}>
+            {item.source === 'bilibili' ? 'B站' : '微博'}
+          </span>
+          {item.heat > 0 && (
+            <span className="hot-heat-badge">
+              <Flame className="h-3 w-3" />
+              {item.heat >= 10000 ? `${(item.heat / 10000).toFixed(1)}万` : item.heat}
+            </span>
+          )}
+          {item.tags.map(tag => (
+            <span key={tag} className="hot-tag-badge">
+              {tag === 'game' ? '游戏' : tag === 'anime' ? '动漫' : tag === 'ai' ? 'AI' : tag === 'movie' ? '影视' : tag}
+            </span>
+          ))}
+        </div>
+
+        <a href={item.url} target="_blank" rel="noreferrer" className="story-title">
+          {item.title}
+        </a>
+      </div>
+
+      <div className="story-actions">
+        <a
+          className="source-jump-button"
+          href={item.url}
+          target="_blank"
+          rel="noreferrer"
+          aria-label="查看原文"
+        >
+          <ExternalLink className="h-4 w-4" />
+        </a>
+      </div>
+    </article>
+  );
+}
+
+// Import cn utility
+import { cn } from '../lib/utils';

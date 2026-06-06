@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { Bot, Bookmark, ChevronDown, Filter, Gamepad2, Music, Radio } from 'lucide-react';
+import { Bot, Bookmark, ChevronDown, Flame, Filter, Gamepad2, Music, Radio } from 'lucide-react';
 import type { Source, StoryFacets } from '../services/api';
 import { cn } from '../lib/utils';
 import { FOLLOW_CATEGORIES, GAME_CATEGORIES, gameAccents, gameIconUrls } from '../constants';
 import { hasFilterValue, toggleFilterValue } from '../utils/filter';
 import { importanceLabel } from '../utils/format';
 import { GameGlyph } from './GameGlyph';
+import type { HotTag } from '../hooks/useHotSearch';
 
 export interface GameFilterPanelProps {
   games: string[];
@@ -27,6 +28,10 @@ export interface GameFilterPanelProps {
   favorites: string[];
   showFavorites: boolean;
   setShowFavorites: (v: boolean) => void;
+  showHotPanel: boolean;
+  onToggleHotPanel: () => void;
+  selectedHotTag: HotTag;
+  onSelectHotTag: (tag: HotTag) => void;
 }
 
 export function GameFilterPanel(props: GameFilterPanelProps) {
@@ -213,7 +218,33 @@ export function GameFilterPanel(props: GameFilterPanelProps) {
         ))}
       </div>
 
-      {/* 4. 收藏 */}
+      {/* 4. 热搜 */}
+      <div className="filter-block">
+        <button
+          className={cn('category-row', props.showHotPanel && 'active')}
+          onClick={props.onToggleHotPanel}
+          style={{ width: '100%' }}
+        >
+          <Flame className="h-4 w-4" />
+          <span>热搜</span>
+          <ChevronDown className={cn('h-3.5 w-3.5 ml-auto transition-transform', props.showHotPanel && 'rotate-180')} />
+        </button>
+        {props.showHotPanel && (
+          <div className="hot-tags">
+            {(['game', 'anime', 'ai', 'movie'] as const).map(tag => (
+              <button
+                key={tag}
+                className={cn('hot-tag', props.selectedHotTag === tag && 'active')}
+                onClick={() => props.onSelectHotTag(tag)}
+              >
+                {tag === 'game' ? '🎮 游戏' : tag === 'anime' ? '📺 动漫' : tag === 'ai' ? '🤖 AI' : '🎬 影视'}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* 5. 收藏 */}
       <div className="filter-block">
         <button
           className={cn('category-row', props.showFavorites && 'active')}

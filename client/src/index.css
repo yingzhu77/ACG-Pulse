@@ -1831,3 +1831,192 @@ button:disabled {
 .icon-button.favorited svg {
   fill: currentColor;
 }
+
+/* ===== Hot Search Tags ===== */
+.hot-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.hot-tag {
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  border: 1px solid var(--stroke);
+  background: var(--panel-soft);
+  color: var(--text-soft);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.hot-tag:hover {
+  background: var(--panel-hover);
+  border-color: var(--stroke-strong);
+}
+
+.hot-tag.active {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.4);
+  color: #ef4444;
+}
+
+/* ===== Hot Search Panel ===== */
+.hot-search-section {
+  margin-top: 14px;
+}
+
+.hot-search-panel {
+  padding: 14px;
+}
+
+.hot-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.hot-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  text-decoration: none;
+  color: var(--text-main);
+  transition: background 0.15s ease;
+}
+
+.hot-item:hover {
+  background: var(--panel-hover);
+}
+
+.hot-rank {
+  width: 20px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.hot-rank:nth-child(1),
+.hot-item:nth-child(1) .hot-rank {
+  color: #ef4444;
+}
+
+.hot-rank:nth-child(2),
+.hot-item:nth-child(2) .hot-rank {
+  color: #f97316;
+}
+
+.hot-rank:nth-child(3),
+.hot-item:nth-child(3) .hot-rank {
+  color: #eab308;
+}
+
+.hot-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.hot-title {
+  display: block;
+  font-size: 0.8rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hot-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.hot-source {
+  font-size: 0.65rem;
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+.hot-source.bilibili {
+  background: rgba(0, 174, 236, 0.15);
+  color: #00aeec;
+}
+
+.hot-source.weibo {
+  background: rgba(230, 48, 48, 0.15);
+  color: #e63030;
+}
+
+.hot-heat {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+}
+
+.hot-link {
+  color: var(--text-muted);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.hot-item:hover .hot-link {
+  opacity: 1;
+}
+
+/* ===== Hot Search Card ===== */
+.hot-card {
+  cursor: pointer;
+}
+
+.hot-rank-cover {
+  background: var(--panel-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hot-rank-number {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.hot-rank-number.top-3 {
+  color: #ef4444;
+}
+
+.hot-source-badge {
+  font-size: 0.65rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 500;
+}
+
+.hot-source-badge.bilibili {
+  background: rgba(0, 174, 236, 0.15);
+  color: #00aeec;
+}
+
+.hot-source-badge.weibo {
+  background: rgba(230, 48, 48, 0.15);
+  color: #e63030;
+}
+
+.hot-heat-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.65rem;
+  color: #f97316;
+}
+
+.hot-tag-badge {
+  font-size: 0.6rem;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-soft);
+}

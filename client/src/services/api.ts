@@ -201,8 +201,17 @@ export const publicApi = {
   getItems: (filters?: ItemFilters) => request<Paginated<FeedItem>>(withParams('/public/items', filters)),
   getStories: (filters?: ItemFilters) => request<StoriesResponse>(withParams('/public/stories', filters)),
   getStats: () => request<PublicStats>('/public/stats'),
-  getSources: () => request<Source[]>('/public/sources')
+  getSources: () => request<Source[]>('/public/sources'),
+  getHotSearch: (filters?: { tag?: string; limit?: number }) => request<{ data: HotSearchItem[]; total: number; lastUpdated: string }>(withParams('/public/hot-search', filters))
 };
+
+export interface HotSearchItem {
+  title: string;
+  heat: number;
+  source: 'bilibili' | 'weibo';
+  url: string;
+  tags: string[];
+}
 
 export const adminApi = {
   login: (password: string) => request<{ token: string }>('/admin/login', {

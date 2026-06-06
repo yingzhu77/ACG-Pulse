@@ -7,6 +7,7 @@ import { useTheme } from './hooks/useTheme';
 import { usePublicData } from './hooks/usePublicData';
 import { useAdmin } from './hooks/useAdmin';
 import { useFavorites } from './hooks/useFavorites';
+import { useHotSearch } from './hooks/useHotSearch';
 import { GameFilterPanel } from './components/GameFilterPanel';
 import { TopBar } from './components/TopBar';
 import { FeedPanel } from './components/FeedPanel';
@@ -34,6 +35,7 @@ function App() {
   const publicData = usePublicData(showToast);
   const admin = useAdmin(showToast, publicData.loadPublicData);
   const { favorites, toggleFavorite } = useFavorites();
+  const hotSearch = useHotSearch();
 
   // Close mobile drawer on filter selection
   useEffect(() => {
@@ -67,6 +69,10 @@ function App() {
           isMobile={isMobile}
           favorites={favorites}
           showFavorites={showFavorites}
+          showHotPanel={hotSearch.showHotPanel}
+          onToggleHotPanel={hotSearch.toggleHotPanel}
+          selectedHotTag={hotSearch.selectedTag}
+          onSelectHotTag={hotSearch.selectTag}
           setShowFavorites={setShowFavorites}
         />
 
@@ -96,6 +102,10 @@ function App() {
               favorites={favorites}
               showFavorites={showFavorites}
               onToggleFavorite={toggleFavorite}
+              showHotPanel={hotSearch.showHotPanel}
+              hotItems={hotSearch.hotItems}
+              hotLoading={hotSearch.loading}
+              selectedHotTag={hotSearch.selectedTag}
             />
           ) : (
             <InsightsPage
@@ -107,7 +117,7 @@ function App() {
           )}
         </section>
 
-        <SummaryColumn stats={publicData.stats} sources={publicData.sources} health={publicData.health} stories={publicData.recentNotices} />
+        <SummaryColumn stats={publicData.stats} sources={publicData.sources} health={publicData.health} stories={publicData.stories} />
       </div>
 
       {/* Mobile Filter FAB */}
@@ -158,6 +168,10 @@ function App() {
                 isInDrawer={true}
                 favorites={favorites}
                 showFavorites={showFavorites}
+                showHotPanel={hotSearch.showHotPanel}
+                onToggleHotPanel={hotSearch.toggleHotPanel}
+                selectedHotTag={hotSearch.selectedTag}
+                onSelectHotTag={hotSearch.selectTag}
                 setShowFavorites={setShowFavorites}
               />
             </motion.div>

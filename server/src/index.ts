@@ -9,6 +9,7 @@ import { prisma } from './db.js';
 import settingsRouter from './routes/settings.js';
 import notificationsRouter from './routes/notifications.js';
 import gamePulsePublicRouter from './gamepulse/routes/public.js';
+import hotSearchRouter from './gamepulse/routes/hotSearch.js';
 import { createAdminRouter } from './gamepulse/routes/admin.js';
 import { runGamePulseCheck } from './gamepulse/jobs/checker.js';
 import { requestLogger, errorHandler, notFoundHandler } from './gamepulse/routes/middleware.js';
@@ -31,6 +32,7 @@ app.use(express.json({ limit: '1mb' }));
 app.use(requestLogger);
 
 app.use('/api/public', gamePulsePublicRouter);
+app.use('/api/public', hotSearchRouter);
 app.use('/api/admin', createAdminRouter(io));
 app.use('/api/settings', settingsRouter);
 app.use('/api/notifications', notificationsRouter);
