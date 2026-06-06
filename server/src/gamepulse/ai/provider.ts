@@ -5,6 +5,7 @@ interface ChatCompletionResponse {
   choices?: Array<{
     message?: {
       content?: string;
+      reasoning_content?: string;
     };
   }>;
 }
@@ -51,10 +52,10 @@ export async function analyzeWithProvider(input: LLMAnalyzeInput): Promise<LLMPr
         }
       ],
       temperature: 0.2,
-      max_tokens: 500
+      max_tokens: 4000
     },
     {
-      timeout: 30000,
+      timeout: config.provider === 'mimo' ? 90000 : 30000,
       headers: {
         ...(config.provider === 'mimo'
           ? { 'api-key': config.apiKey }
@@ -70,7 +71,8 @@ export async function analyzeWithProvider(input: LLMAnalyzeInput): Promise<LLMPr
     }
   );
 
-  const content = response.data.choices?.[0]?.message?.content || '';
+  const message = response.data.choices?.[0]?.message;
+  const content = message?.content || message?.reasoning_content || '';
   const parsed = parseAnalysis(content);
   return {
     analysis: parsed,
