@@ -67,7 +67,7 @@ OPENROUTER_API_KEY=你的key
 # AI_PROVIDER=mimo
 # MIMO_API_KEY=tp-xxxxx
 # MIMO_BASE_URL=https://token-plan-cn.xiaomimimo.com/v1  # 中国集群（默认）
-# MIMO_MODEL=mimo-v2.5-pro
+# MIMO_MODEL=mimo-v2.5
 MAX_FEED_ITEMS=2000
 ```
 
