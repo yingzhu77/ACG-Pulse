@@ -6,11 +6,12 @@ import dotenv from 'dotenv';
 import cron from 'node-cron';
 
 import { prisma } from './db.js';
-import keywordsRouter from './routes/keywords.js';
-import hotspotsRouter from './routes/hotspots.js';
 import settingsRouter from './routes/settings.js';
 import notificationsRouter from './routes/notifications.js';
-import { runHotspotCheck } from './jobs/hotspotChecker.js';
+import gamePulsePublicRouter from './gamepulse/routes/public.js';
+import { createAdminRouter } from './gamepulse/routes/admin.js';
+import { runGamePulseCheck } from './gamepulse/jobs/checker.js';
+import { requestLogger, errorHandler, notFoundHandler } from './gamepulse/routes/middleware.js';
 
 dotenv.config();
 
@@ -19,46 +20,50 @@ const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
     origin: process.env.CLIENT_URL || 'http://localhost:5173',
-    methods: ['GET', 'POST']
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']
   }
 });
 
-// Middleware
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
 
-// Routes
-app.use('/api/keywords', keywordsRouter);
-app.use('/api/hotspots', hotspotsRouter);
+// 请求日志
+app.use(requestLogger);
+
+app.use('/api/public', gamePulsePublicRouter);
+app.use('/api/admin', createAdminRouter(io));
 app.use('/api/settings', settingsRouter);
 app.use('/api/notifications', notificationsRouter);
 
-// Health check
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+app.get('/api/health', (_req, res) => {
+  res.json({ status: 'ok', app: 'game-pulse', timestamp: new Date().toISOString() });
 });
 
-// Manual trigger for hotspot check
-app.post('/api/check-hotspots', async (req, res) => {
+app.post('/api/check-hotspots', async (_req, res) => {
   try {
-    await runHotspotCheck(io);
-    res.json({ message: 'Hotspot check completed' });
+    const result = await runGamePulseCheck(io);
+    res.json({ message: 'Game Pulse check completed', result });
   } catch (error) {
-    res.status(500).json({ error: 'Failed to run hotspot check' });
+    console.error('Manual Game Pulse check failed:', error);
+    res.status(500).json({ error: 'Failed to run Game Pulse check' });
   }
 });
 
-// WebSocket connection handling
+// 404 处理
+app.use(notFoundHandler);
+
+// 统一错误处理
+app.use(errorHandler);
+
 io.on('connection', (socket) => {
   console.log('Client connected:', socket.id);
 
-  socket.on('subscribe', (keywords: string[]) => {
-    keywords.forEach(kw => socket.join(`keyword:${kw}`));
-    console.log(`Socket ${socket.id} subscribed to:`, keywords);
+  socket.on('subscribe:games', (games: string[]) => {
+    games.forEach(game => socket.join(`game:${game}`));
   });
 
-  socket.on('unsubscribe', (keywords: string[]) => {
-    keywords.forEach(kw => socket.leave(`keyword:${kw}`));
+  socket.on('unsubscribe:games', (games: string[]) => {
+    games.forEach(game => socket.leave(`game:${game}`));
   });
 
   socket.on('disconnect', () => {
@@ -66,32 +71,31 @@ io.on('connection', (socket) => {
   });
 });
 
-// Scheduled job: Run hotspot check every 30 minutes
 cron.schedule('*/30 * * * *', async () => {
-  console.log('🔄 Running scheduled hotspot check...');
+  console.log('[GamePulse] Running scheduled check...');
   try {
-    await runHotspotCheck(io);
-    console.log('✅ Scheduled hotspot check completed');
+    const result = await runGamePulseCheck(io);
+    console.log('[GamePulse] Scheduled check completed:', result);
   } catch (error) {
-    console.error('❌ Scheduled hotspot check failed:', error);
+    console.error('[GamePulse] Scheduled check failed:', error);
   }
 });
 
-// Export for use in other modules
 export { io };
 
 const PORT = process.env.PORT || 3001;
 
 httpServer.listen(PORT, () => {
   console.log(`
-  🔥 热点监控服务启动成功!
-  📡 Server running on http://localhost:${PORT}
-  🔌 WebSocket ready
-  ⏰ Hotspot check scheduled every 30 minutes
+Game Pulse service is running.
+Server: http://localhost:${PORT}
+Public API: /api/public
+Admin API: /api/admin
+WebSocket: ready
+Scheduled check: every 30 minutes
   `);
 });
 
-// Graceful shutdown
 process.on('SIGINT', async () => {
   console.log('Shutting down...');
   await prisma.$disconnect();

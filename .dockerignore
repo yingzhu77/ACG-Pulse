@@ -1,0 +1,39 @@
+.git
+.gitignore
+.claude
+CLAUDE.md
+
+# Secrets
+.env
+**/.env
+.env.*
+**/.env.*
+!.env.example
+!**/.env.example
+
+# Dependencies/build output from host
+node_modules
+**/node_modules
+dist
+**/dist
+build
+**/build
+
+# Runtime files
+logs
+**/logs
+*.log
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Caches and editor files
+.cache
+**/.cache
+.vite
+**/.vite
+.idea
+.vscode
+.DS_Store
+Thumbs.db

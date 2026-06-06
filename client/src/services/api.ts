@@ -1,50 +1,151 @@
 const API_BASE = '/api';
+const TOKEN_KEY = 'game_pulse_admin_token';
+
+export interface Source {
+  id: string;
+  name: string;
+  type: string;
+  game: string;
+  url: string | null;
+  uid: string | null;
+  avatar: string | null;
+  route: string | null;
+  config: string | null;
+  isOfficial: boolean;
+  followed: boolean;
+  enabled: boolean;
+  priority: number;
+  healthStatus: 'unknown' | 'healthy' | 'degraded' | 'failed';
+  lastSuccessAt: string | null;
+  lastCheckedAt: string | null;
+  lastError: string | null;
+  _count?: { feedItems: number };
+}
 
 export interface Keyword {
   id: string;
   text: string;
   category: string | null;
   isActive: boolean;
-  createdAt: string;
-  updatedAt: string;
-  _count?: { hotspots: number };
 }
 
-export interface Hotspot {
+export interface Analysis {
   id: string;
+  status: 'pending' | 'completed' | 'failed';
+  category: string | null;
+  importance: 'low' | 'medium' | 'high';
+  visibility: 'public' | 'muted' | 'hidden';
+  confidence: number;
+  summary: string | null;
+  reason: string | null;
+  dedupKeywords: string[];
+  provider: string | null;
+  model: string | null;
+  error: string | null;
+  analyzedAt: string | null;
+}
+
+export interface FeedItem {
+  id: string;
+  sourceId: string;
+  externalId: string | null;
+  itemKind: string;
+  game: string;
   title: string;
   content: string;
   url: string;
-  source: string;
-  sourceId: string | null;
-  isReal: boolean;
-  relevance: number;
-  importance: 'low' | 'medium' | 'high' | 'urgent';
-  summary: string | null;
-  viewCount: number | null;
-  likeCount: number | null;
-  retweetCount: number | null;
+  authorName: string | null;
+  authorUrl: string | null;
+  coverUrl: string | null;
+  sourceType: string;
+  hidden: boolean;
   publishedAt: string | null;
+  fetchedAt: string;
   createdAt: string;
-  keyword: { id: string; text: string; category: string | null } | null;
+  source: Pick<Source, 'id' | 'name' | 'type' | 'game' | 'isOfficial' | 'healthStatus'>;
+  analysis: Analysis | null;
 }
 
-export interface Notification {
+export interface Story {
   id: string;
-  type: string;
-  title: string;
-  content: string;
-  isRead: boolean;
-  hotspotId: string | null;
+  canonicalTitle: string;
+  game: string;
+  category: string | null;
+  importance: 'low' | 'medium' | 'high';
+  visibility: 'public' | 'muted';
+  summary: string | null;
+  reason: string | null;
+  coverUrl: string | null;
+  publishedAt: string | null;
+  fetchedAt: string;
   createdAt: string;
+  sourceCount: number;
+  itemCount: number;
+  sources: Array<{
+    itemId: string;
+    sourceId: string;
+    sourceName: string;
+    sourceType: string;
+    isOfficial: boolean;
+    url: string;
+    title: string;
+    publishedAt: string | null;
+  }>;
+  items: FeedItem[];
 }
 
-export interface Stats {
+export interface PublicStats {
   total: number;
   today: number;
-  urgent: number;
-  bySource: Record<string, number>;
+  high: number;
+  byGame: Record<string, number>;
+  byKind: Record<string, number>;
+  sourceHealth: Record<string, number>;
+  hourlyTrend: Array<{ hour: string; count: number }>;
 }
+
+export interface Paginated<T> {
+  data: T[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+}
+
+export interface StoryFacets {
+  byGame: Record<string, number>;
+  byCategory: Record<string, number>;
+  byFollowCategory: Record<string, number>;
+  byImportance: Record<string, number>;
+}
+
+export interface StoriesResponse {
+  data: Story[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+  facets: StoryFacets;
+}
+
+export type ItemFilters = {
+  page?: number;
+  limit?: number;
+  game?: string;
+  sourceId?: string;
+  itemKind?: string;
+  category?: string;
+  importance?: string;
+  visibility?: string;
+  official?: string;
+  q?: string;
+  followGroup?: string;
+  sourceUid?: string;
+};
 
 async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(`${API_BASE}${endpoint}`, {
@@ -67,97 +168,91 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
   return response.json();
 }
 
-// Keywords API
-export const keywordsApi = {
-  getAll: () => request<Keyword[]>('/keywords'),
-  
-  getById: (id: string) => request<Keyword>(`/keywords/${id}`),
-  
-  create: (data: { text: string; category?: string }) => 
-    request<Keyword>('/keywords', {
-      method: 'POST',
-      body: JSON.stringify(data)
-    }),
-  
-  update: (id: string, data: Partial<Keyword>) => 
-    request<Keyword>(`/keywords/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify(data)
-    }),
-  
-  delete: (id: string) => 
-    request<void>(`/keywords/${id}`, { method: 'DELETE' }),
-  
-  toggle: (id: string) => 
-    request<Keyword>(`/keywords/${id}/toggle`, { method: 'PATCH' })
-};
-
-// Hotspots API
-export const hotspotsApi = {
-  getAll: (params?: { page?: number; limit?: number; source?: string; importance?: string; keywordId?: string }) => {
-    const searchParams = new URLSearchParams();
-    if (params) {
-      Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined) searchParams.append(key, String(value));
-      });
+function withParams(endpoint: string, params?: Record<string, unknown>): string {
+  const search = new URLSearchParams();
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value === undefined || value === '') return;
+    const str = String(value);
+    if (str.includes(',')) {
+      str.split(',').filter(Boolean).forEach(v => search.append(key, v));
+    } else {
+      search.set(key, str);
     }
-    return request<{ data: Hotspot[]; pagination: { page: number; limit: number; total: number; totalPages: number } }>(
-      `/hotspots?${searchParams}`
-    );
-  },
-  
-  getStats: () => request<Stats>('/hotspots/stats'),
-  
-  getById: (id: string) => request<Hotspot>(`/hotspots/${id}`),
-  
-  search: (query: string, sources?: string[]) => 
-    request<{ results: Hotspot[] }>('/hotspots/search', {
-      method: 'POST',
-      body: JSON.stringify({ query, sources })
-    }),
-  
-  delete: (id: string) => 
-    request<void>(`/hotspots/${id}`, { method: 'DELETE' })
+  });
+  const query = search.toString();
+  return query ? `${endpoint}?${query}` : endpoint;
+}
+
+function authHeaders(): Record<string, string> {
+  const token = localStorage.getItem(TOKEN_KEY);
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+export const tokenStore = {
+  get: () => localStorage.getItem(TOKEN_KEY),
+  set: (token: string) => localStorage.setItem(TOKEN_KEY, token),
+  clear: () => localStorage.removeItem(TOKEN_KEY)
 };
 
-// Notifications API
-export const notificationsApi = {
-  getAll: (params?: { page?: number; limit?: number; unreadOnly?: boolean }) => {
-    const searchParams = new URLSearchParams();
-    if (params) {
-      Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined) searchParams.append(key, String(value));
-      });
-    }
-    return request<{ data: Notification[]; unreadCount: number; pagination: any }>(
-      `/notifications?${searchParams}`
-    );
-  },
-  
-  markAsRead: (id: string) => 
-    request<Notification>(`/notifications/${id}/read`, { method: 'PATCH' }),
-  
-  markAllAsRead: () => 
-    request<void>('/notifications/read-all', { method: 'PATCH' }),
-  
-  delete: (id: string) => 
-    request<void>(`/notifications/${id}`, { method: 'DELETE' }),
-  
-  clear: () => 
-    request<void>('/notifications', { method: 'DELETE' })
+export const publicApi = {
+  getItems: (filters?: ItemFilters) => request<Paginated<FeedItem>>(withParams('/public/items', filters)),
+  getStories: (filters?: ItemFilters) => request<StoriesResponse>(withParams('/public/stories', filters)),
+  getStats: () => request<PublicStats>('/public/stats'),
+  getSources: () => request<Source[]>('/public/sources')
 };
 
-// Settings API
-export const settingsApi = {
-  getAll: () => request<Record<string, string>>('/settings'),
-  
-  update: (settings: Record<string, string>) => 
-    request<void>('/settings', {
-      method: 'PUT',
-      body: JSON.stringify(settings)
-    })
+export const adminApi = {
+  login: (password: string) => request<{ token: string }>('/admin/login', {
+    method: 'POST',
+    body: JSON.stringify({ password })
+  }),
+  getSources: () => request<Source[]>('/admin/sources', { headers: authHeaders() }),
+  createSource: (source: Partial<Source>) => request<Source>('/admin/sources', {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(source)
+  }),
+  updateSource: (id: string, source: Partial<Source>) => request<Source>(`/admin/sources/${id}`, {
+    method: 'PUT',
+    headers: authHeaders(),
+    body: JSON.stringify(source)
+  }),
+  toggleSource: (id: string) => request<Source>(`/admin/sources/${id}/toggle`, {
+    method: 'PATCH',
+    headers: authHeaders()
+  }),
+  deleteSource: (id: string) => request<void>(`/admin/sources/${id}`, {
+    method: 'DELETE',
+    headers: authHeaders()
+  }),
+  seedDefaults: () => request<{ count: number; sources: Source[] }>('/admin/sources/seed-defaults', {
+    method: 'POST',
+    headers: authHeaders()
+  }),
+  followUrl: (url: string, name?: string) => request<Source>('/admin/sources/follow-url', {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ url, name })
+  }),
+  getItems: (params?: { page?: number; hidden?: string }) => request<Paginated<FeedItem>>(withParams('/admin/items', params), {
+    headers: authHeaders()
+  }),
+  hideItem: (id: string, hidden: boolean) => request<FeedItem>(`/admin/items/${id}/hide`, {
+    method: 'PATCH',
+    headers: authHeaders(),
+    body: JSON.stringify({ hidden })
+  }),
+  analyzeItem: (id: string) => request<FeedItem>(`/admin/items/${id}/analyze`, {
+    method: 'POST',
+    headers: authHeaders()
+  }),
+  runCheck: () => request<{ checkedSources: number; newItems: number; failedSources: number }>('/admin/check', {
+    method: 'POST',
+    headers: authHeaders()
+  }),
+  reanalyzeAll: (limit: number = 100) => request<{ total: number; analyzed: number; failed: number }>('/admin/reanalyze-all', {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ limit })
+  })
 };
-
-// Manual trigger
-export const triggerHotspotCheck = () => 
-  request<{ message: string }>('/check-hotspots', { method: 'POST' });

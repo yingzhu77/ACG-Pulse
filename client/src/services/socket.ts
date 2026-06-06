@@ -1,4 +1,5 @@
 import { io, Socket } from 'socket.io-client';
+import type { FeedItem } from './api';
 
 let socket: Socket | null = null;
 
@@ -8,67 +9,47 @@ export function getSocket(): Socket {
       path: '/socket.io',
       transports: ['websocket', 'polling']
     });
-
-    socket.on('connect', () => {
-      console.log('🔌 Socket connected:', socket?.id);
-    });
-
-    socket.on('disconnect', () => {
-      console.log('🔌 Socket disconnected');
-    });
-
-    socket.on('connect_error', (error) => {
-      console.error('🔌 Socket connection error:', error);
-    });
   }
-
   return socket;
 }
 
-export function subscribeToKeywords(keywords: string[]): void {
+export function subscribeToGames(games: string[]): void {
+  getSocket().emit('subscribe:games', games);
+}
+
+export function onNewItem(callback: (item: FeedItem) => void): () => void {
   const s = getSocket();
-  s.emit('subscribe', keywords);
+  s.on('item:new', callback);
+  return () => s.off('item:new', callback);
 }
 
-export function unsubscribeFromKeywords(keywords: string[]): void {
-  const s = getSocket();
-  s.emit('unsubscribe', keywords);
-}
-
-export interface HotspotEvent {
-  id: string;
-  title: string;
-  content: string;
-  url: string;
-  source: string;
-  importance: string;
-  summary: string | null;
-  keyword?: { text: string } | null;
-}
-
-export interface NotificationEvent {
-  type: string;
-  title: string;
-  content: string;
-  hotspotId?: string;
-  importance?: string;
-}
-
-export function onNewHotspot(callback: (hotspot: HotspotEvent) => void): () => void {
-  const s = getSocket();
-  s.on('hotspot:new', callback);
-  return () => s.off('hotspot:new', callback);
-}
-
-export function onNotification(callback: (notification: NotificationEvent) => void): () => void {
+export function onNotification(callback: (notification: { title: string; content: string; importance?: string }) => void): () => void {
   const s = getSocket();
   s.on('notification', callback);
   return () => s.off('notification', callback);
 }
 
-export function disconnectSocket(): void {
-  if (socket) {
-    socket.disconnect();
-    socket = null;
-  }
+export interface ReanalyzeProgress {
+  total: number;
+  analyzed: number;
+  failed: number;
+  percent: number;
+}
+
+export function onReanalyzeProgress(callback: (progress: ReanalyzeProgress) => void): () => void {
+  const s = getSocket();
+  s.on('reanalyze:progress', callback);
+  return () => s.off('reanalyze:progress', callback);
+}
+
+export function onReanalyzeDone(callback: (result: { total: number; analyzed: number; failed: number }) => void): () => void {
+  const s = getSocket();
+  s.on('reanalyze:done', callback);
+  return () => s.off('reanalyze:done', callback);
+}
+
+export function onReanalyzeError(callback: (error: { error: string }) => void): () => void {
+  const s = getSocket();
+  s.on('reanalyze:error', callback);
+  return () => s.off('reanalyze:error', callback);
 }

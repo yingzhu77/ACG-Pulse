@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../db.js';
 
 const router = Router();
@@ -12,7 +13,7 @@ router.get('/', async (req, res) => {
     const limitNum = parseInt(limit as string);
     const skip = (pageNum - 1) * limitNum;
 
-    const where: any = {};
+    const where: Prisma.NotificationWhereInput = {};
     if (unreadOnly === 'true') {
       where.isRead = false;
     }
@@ -53,8 +54,8 @@ router.patch('/:id/read', async (req, res) => {
     });
 
     res.json(notification);
-  } catch (error: any) {
-    if (error.code === 'P2025') {
+  } catch (error: unknown) {
+    if (isPrismaNotFoundError(error)) {
       return res.status(404).json({ error: 'Notification not found' });
     }
     console.error('Error marking notification as read:', error);
@@ -85,8 +86,8 @@ router.delete('/:id', async (req, res) => {
     });
 
     res.status(204).send();
-  } catch (error: any) {
-    if (error.code === 'P2025') {
+  } catch (error: unknown) {
+    if (isPrismaNotFoundError(error)) {
       return res.status(404).json({ error: 'Notification not found' });
     }
     console.error('Error deleting notification:', error);
@@ -104,5 +105,15 @@ router.delete('/', async (req, res) => {
     res.status(500).json({ error: 'Failed to clear notifications' });
   }
 });
+
+/** Type guard for Prisma P2025 "Record not found" errors. */
+function isPrismaNotFoundError(error: unknown): error is { code: string } {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as Record<string, unknown>).code === 'P2025'
+  );
+}
 
 export default router;

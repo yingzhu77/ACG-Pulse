@@ -1,0 +1,11 @@
+FROM diygod/rsshub:latest
+
+USER root
+
+RUN npm install -g playwright@1.60.0 \
+  && playwright install-deps chromium
+
+COPY docker/rsshub-entrypoint.sh /usr/local/bin/game-pulse-rsshub-entrypoint
+RUN chmod +x /usr/local/bin/game-pulse-rsshub-entrypoint
+
+CMD ["game-pulse-rsshub-entrypoint"]

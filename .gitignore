@@ -1,6 +1,66 @@
+# Dependencies
 node_modules/
+**/node_modules/
+
+# Build outputs
 dist/
+**/dist/
+build/
+**/build/
+
+# Claude Code local config
+.claude/
+
+# Playwright MCP local data
+.playwright-mcp/
+
+# Environment and secrets
 .env
+**/.env
+.env.*
+**/.env.*
+!.env.example
+!**/.env.example
+*.local
+**/*.local
+
+# Databases and runtime state
 *.db
 *.db-journal
+*.sqlite
+*.sqlite3
+server/prisma/*.db
+server/prisma/*.db-journal
+
+# Logs
+logs/
+**/logs/
+*.log
+*.out.log
+*.err.log
+
+# Test/cache artifacts
+coverage/
+**/coverage/
+.vite/
+**/.vite/
+.vitest/
+**/.vitest/
+.cache/
+**/.cache/
+.turbo/
+**/.turbo/
+.parcel-cache/
+**/.parcel-cache/
+playwright-report/
+test-results/
+
+# OS/editor
 .DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Temporary screenshots
+*.png
+!client/public/**/*.png
