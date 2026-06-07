@@ -29,8 +29,7 @@ services:
     volumes:
       - app-data:/app/server/data
     depends_on:
-      rsshub:
-        condition: service_healthy
+      - rsshub
 
   rsshub:
     image: diygod/rsshub:latest
