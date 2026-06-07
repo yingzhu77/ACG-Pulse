@@ -27,14 +27,30 @@ AI 驱动的游戏/ACG 资讯聚合面板，自动采集多源内容，智能分
 
 ## 快速开始
 
-### Docker 部署（推荐）
+### 方式一：一键部署（推荐）
+
+SSH 到服务器后执行：
+
+```bash
+curl -sL https://raw.githubusercontent.com/yingzhu77/personal-hot-monitor/master/auto-deploy.sh | bash
+```
+
+或手动执行：
+
+```bash
+git clone https://github.com/yingzhu77/personal-hot-monitor.git
+cd personal-hot-monitor
+bash auto-deploy.sh
+```
+
+### 方式二：手动部署
 
 ```bash
 git clone https://github.com/yingzhu77/personal-hot-monitor.git
 cd personal-hot-monitor
 cp .env.production.example .env
 # 编辑 .env 配置 AI Provider 和管理员密码
-docker compose up -d
+docker compose up -d --build
 ```
 
 访问 `http://localhost:3001`

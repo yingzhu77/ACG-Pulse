@@ -180,4 +180,29 @@ curl -X POST http://localhost:3001/api/admin/sources/seed-defaults \
 # 触发采集
 curl -X POST http://localhost:3001/api/admin/check \
   -H "Authorization: Bearer $TOKEN"
+
+# 保存 B站 Cookie（重启后生效）
+bash save-cookie.sh
 ```
+
+---
+
+## 已知限制
+
+### 1. B站 Cookie 需要重启服务
+
+**现象**: 前端保存 Cookie 后显示"重启服务后生效"
+**原因**: B站适配器在服务启动时读取 Cookie，运行时不会自动刷新
+**解决**: 保存 Cookie 后执行 `sudo docker compose down && sudo docker compose up -d`
+
+### 2. Cookie 有效期
+
+**现象**: B站源突然全部失败
+**原因**: B站 Cookie 有效期约 6 个月
+**解决**: 重新获取 Cookie 并更新
+
+### 3. 内存限制
+
+**现象**: 服务卡顿或 OOM
+**原因**: 1GB 内存不够同时运行 Node.js + Docker + RSSHub
+**解决**: 升级到 2GB 内存
