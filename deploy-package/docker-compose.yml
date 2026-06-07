@@ -1,0 +1,59 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: game-pulse
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      - DATABASE_URL=file:/app/server/data/prod.db
+      - PORT=3001
+      - CLIENT_URL=http://localhost:3001
+      - RSSHUB_BASE_URLS=http://rsshub:1200,https://rsshub.app
+      - RSS_FETCH_TIMEOUT_MS=30000
+      - SOURCE_CHECK_TIMEOUT_MS=35000
+      - SOURCE_CHECK_CONCURRENCY=5
+      - BILIBILI_DIRECT_API_FALLBACK=true
+      - BILIBILI_DIRECT_API_TIMEOUT_MS=30000
+      - BILIBILI_REQUEST_INTERVAL_MS=6000
+      # AI Provider - fill in your keys
+      - AI_PROVIDER=${AI_PROVIDER:-openrouter}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+      - MIMO_API_KEY=${MIMO_API_KEY:-}
+      # Admin - change these in production!
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-change_me_in_production}
+      - ADMIN_JWT_SECRET=${ADMIN_JWT_SECRET:-change_me_to_random_string}
+    volumes:
+      - app-data:/app/server/data
+    depends_on:
+      rsshub:
+        condition: service_healthy
+
+  rsshub:
+    image: diygod/rsshub:latest
+    container_name: game-pulse-rsshub
+    restart: unless-stopped
+    ports:
+      - "1200:1200"
+    environment:
+      - NODE_ENV=production
+      - CACHE_EXPIRE=600
+      - REQUEST_TIMEOUT=15000
+      - REQUEST_RETRY=2
+    volumes:
+      - rsshub-cache:/app/cache
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:1200"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  app-data:
+    driver: local
+  rsshub-cache:
+    driver: local

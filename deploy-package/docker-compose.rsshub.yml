@@ -1,0 +1,28 @@
+services:
+  rsshub:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.rsshub
+    image: game-pulse-rsshub:latest
+    container_name: game-pulse-rsshub
+    restart: unless-stopped
+    ports:
+      - "1200:1200"
+    volumes:
+      - rsshub-playwright-cache:/root/.cache/ms-playwright
+    environment:
+      NODE_ENV: production
+      CACHE_EXPIRE: "600"
+      REQUEST_TIMEOUT: "15000"
+      REQUEST_RETRY: "2"
+      BILIBILI_DM_IMG_LIST: ${BILIBILI_DM_IMG_LIST:-}
+      BILIBILI_COOKIE_401742377: ${BILIBILI_COOKIE_401742377:-}
+      BILIBILI_COOKIE_1340190821: ${BILIBILI_COOKIE_1340190821:-}
+      BILIBILI_COOKIE_27534330: ${BILIBILI_COOKIE_27534330:-}
+      BILIBILI_COOKIE_1636034895: ${BILIBILI_COOKIE_1636034895:-}
+      BILIBILI_COOKIE_1955897084: ${BILIBILI_COOKIE_1955897084:-}
+      BILIBILI_COOKIE_161775300: ${BILIBILI_COOKIE_161775300:-}
+      BILIBILI_COOKIE_1265652806: ${BILIBILI_COOKIE_1265652806:-}
+
+volumes:
+  rsshub-playwright-cache:

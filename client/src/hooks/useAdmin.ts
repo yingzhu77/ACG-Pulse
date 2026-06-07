@@ -22,11 +22,17 @@ export function useAdmin(showToast: ShowToast, loadPublicData: () => Promise<voi
   });
   const [followUrl, setFollowUrl] = useState('');
   const [followName, setFollowName] = useState('');
+  const [bilibiliCookie, setBilibiliCookie] = useState('');
 
   const loadAdminSources = useCallback(async () => {
     if (!adminToken) return;
     try {
       setAdminSources(await adminApi.getSources());
+      // 加载 B站 Cookie
+      const settings = await adminApi.getSettings();
+      if (settings.BILIBILI_COOKIE) {
+        setBilibiliCookie(settings.BILIBILI_COOKIE);
+      }
     } catch (error) {
       showToast('error', error instanceof Error ? error.message : '后台数据加载失败');
     }
@@ -150,6 +156,16 @@ export function useAdmin(showToast: ShowToast, loadPublicData: () => Promise<voi
     setAdminSources([]);
   }, []);
 
+  const handleSaveCookie = useCallback(async () => {
+    if (!adminToken) return;
+    try {
+      await adminApi.updateSettings({ BILIBILI_COOKIE: bilibiliCookie });
+      showToast('success', 'Cookie 已保存，重启服务后生效');
+    } catch (error) {
+      showToast('error', error instanceof Error ? error.message : '保存失败');
+    }
+  }, [adminToken, bilibiliCookie, showToast]);
+
   return {
     adminOpen,
     setAdminOpen,
@@ -164,6 +180,8 @@ export function useAdmin(showToast: ShowToast, loadPublicData: () => Promise<voi
     setFollowUrl,
     followName,
     setFollowName,
+    bilibiliCookie,
+    setBilibiliCookie,
     handleAdminLogin,
     handleSeedDefaults,
     handleRunCheck,
@@ -171,6 +189,7 @@ export function useAdmin(showToast: ShowToast, loadPublicData: () => Promise<voi
     handleCreateSource,
     handleToggleSource,
     handleFollowUrl,
-    handleLogout
+    handleLogout,
+    handleSaveCookie
   } as const;
 }

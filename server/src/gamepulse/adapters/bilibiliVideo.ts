@@ -53,6 +53,13 @@ async function getBilibiliCookie(): Promise<string> {
     return process.env.BILIBILI_COOKIE.trim();
   }
 
+  // 从数据库设置中读取 Cookie
+  try {
+    const { prisma } = await import('../../db.js');
+    const setting = await prisma.setting.findUnique({ where: { key: 'BILIBILI_COOKIE' } });
+    if (setting?.value?.trim()) return setting.value.trim();
+  } catch { /* ignore */ }
+
   // 优先用 finger/spi 接口获取真实的 buvid3 和 buvid4
   try {
     const spiResp = await axios.get('https://api.bilibili.com/x/frontend/finger/spi', {

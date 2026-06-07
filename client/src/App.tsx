@@ -201,6 +201,9 @@ function App() {
         followName={admin.followName}
         setFollowName={admin.setFollowName}
         onFollowUrl={admin.handleFollowUrl}
+        bilibiliCookie={admin.bilibiliCookie}
+        setBilibiliCookie={admin.setBilibiliCookie}
+        onSaveCookie={admin.handleSaveCookie}
       />
 
       <AnimatePresence>

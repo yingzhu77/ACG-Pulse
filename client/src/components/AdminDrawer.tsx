@@ -36,6 +36,9 @@ export interface AdminDrawerProps {
   followName: string;
   setFollowName: (value: string) => void;
   onFollowUrl: (event: React.FormEvent) => void;
+  bilibiliCookie: string;
+  setBilibiliCookie: (value: string) => void;
+  onSaveCookie: () => void;
 }
 
 export function AdminDrawer(props: AdminDrawerProps) {
@@ -159,6 +162,24 @@ export function AdminDrawer(props: AdminDrawerProps) {
                     添加关注
                   </button>
                 </form>
+
+                <div className="drawer-card">
+                  <h3>B站 Cookie 配置</h3>
+                  <p style={{ color: 'var(--text-soft)', fontSize: 13, margin: '0 0 10px' }}>
+                    填入 B站 Cookie 可稳定采集视频源。获取方法：F12 → Application → Cookies → 复制 SESSDATA、bili_jct、DedeUserID
+                  </p>
+                  <textarea
+                    value={props.bilibiliCookie}
+                    onChange={event => props.setBilibiliCookie(event.target.value)}
+                    placeholder="SESSDATA=xxx; bili_jct=xxx; DedeUserID=xxx"
+                    className="admin-input wide"
+                    rows={3}
+                    style={{ fontFamily: 'monospace', fontSize: 12 }}
+                  />
+                  <button onClick={props.onSaveCookie} className="action-button primary" style={{ marginTop: 8 }}>
+                    保存 Cookie
+                  </button>
+                </div>
 
                 <div className="source-admin-list">
                   {props.sources.map(source => (

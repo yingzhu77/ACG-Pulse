@@ -266,5 +266,11 @@ export const adminApi = {
     method: 'POST',
     headers: authHeaders(),
     body: JSON.stringify({ limit })
+  }),
+  getSettings: () => request<Record<string, string>>('/admin/settings', { headers: authHeaders() }),
+  updateSettings: (settings: Record<string, string>) => request<void>('/admin/settings', {
+    method: 'PUT',
+    headers: authHeaders(),
+    body: JSON.stringify(settings)
   })
 };
