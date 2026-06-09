@@ -99,11 +99,30 @@ export function FeedPanel(props: FeedPanelProps) {
       </div>
 
       {displayStories.length === 0 && (
-        <div className="empty-state">
-          {props.showFavorites
-            ? '暂无收藏。点击资讯卡片上的书签图标即可收藏。'
-            : '暂无情报。进入后台添加默认源并手动同步一次即可开始。'}
-        </div>
+        props.loading ? (
+          <div className="skeleton-list">
+            {Array.from({ length: 5 }, (_, i) => (
+              <div key={i} className="skeleton-card">
+                <div className="skeleton-cover" />
+                <div className="skeleton-body">
+                  <div className="skeleton-tags">
+                    <div className="skeleton-tag" />
+                    <div className="skeleton-tag" />
+                  </div>
+                  <div className="skeleton-line long" />
+                  <div className="skeleton-line medium" />
+                  <div className="skeleton-line short" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="empty-state">
+            {props.showFavorites
+              ? '暂无收藏。点击资讯卡片上的书签图标即可收藏。'
+              : '暂无情报。进入后台添加默认源并手动同步一次即可开始。'}
+          </div>
+        )
       )}
       {displayStories.map((story, index) => (
         <StoryCard
