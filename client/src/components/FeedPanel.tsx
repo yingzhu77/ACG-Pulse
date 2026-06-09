@@ -68,7 +68,7 @@ export function FeedPanel(props: FeedPanelProps) {
 
   // Debounce search input — local state for instant display, delayed filter update
   const [searchQuery, setSearchQuery] = useState(props.filters.q);
-  const searchTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => setSearchQuery(props.filters.q), [props.filters.q]);
   const handleSearchChange = (value: string) => {
     setSearchQuery(value);

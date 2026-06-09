@@ -183,11 +183,11 @@ function App() {
                 isInDrawer={true}
                 favorites={favorites}
                 showFavorites={showFavorites}
+                onToggleFavorites={handleToggleFavorites}
                 showHotPanel={hotSearch.showHotPanel}
                 onToggleHotPanel={hotSearch.toggleHotPanel}
                 selectedHotTag={hotSearch.selectedTag}
                 onSelectHotTag={hotSearch.selectTag}
-                setShowFavorites={setShowFavorites}
               />
             </motion.div>
           </>
