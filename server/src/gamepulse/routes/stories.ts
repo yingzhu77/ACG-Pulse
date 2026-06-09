@@ -180,9 +180,9 @@ router.get('/stories', async (req, res) => {
     // Aggregate stories for display
     const allStories = aggregateFeedItemsToStories(items);
 
-    // Compute facets separately - query all items without candidateLimit, filtered by followGroup
+    // Compute facets from the same base items as stories (no visibility filter to keep counts aligned)
     const facetWhere = { hidden: false };
-    appendAnd(facetWhere, publicVisibilityRelationWhere());
+    appendAnd(facetWhere, { analysis: { status: { in: ['completed', 'failed'] } } });
     applyLowValueNoticeFilter(facetWhere, visibility);
 
     // Apply followGroup filter to facets
@@ -191,9 +191,6 @@ router.get('/stories', async (req, res) => {
     } else if (group === 'game') {
       appendAnd(facetWhere, { source: { is: { followed: false } } });
     }
-
-    // Include items with completed OR failed analysis (failed items may have categories from previous analysis)
-    appendAnd(facetWhere, { analysis: { status: { in: ['completed', 'failed'] } } });
 
     const allItems = await prisma.feedItem.findMany({
       where: facetWhere,

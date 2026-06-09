@@ -1,4 +1,5 @@
-import { Gauge } from 'lucide-react';
+import { useMemo } from 'react';
+import { Flame, Gauge } from 'lucide-react';
 import type { PublicStats, Source, Story } from '../services/api';
 import { sourceNames } from '../constants';
 import { importanceLabel, formatClock } from '../utils/format';
@@ -15,6 +16,13 @@ export interface SummaryColumnProps {
 }
 
 export function SummaryColumn(props: SummaryColumnProps) {
+  // 今日热门：高重要性 + 官方源的故事
+  const hotStories = useMemo(() => {
+    return props.stories
+      .filter(s => s.importance === 'high' && s.sources.some(src => src.isOfficial))
+      .slice(0, 8);
+  }, [props.stories]);
+
   return (
     <aside className="summary-column">
       <section className="glass-panel summary-panel">
@@ -25,12 +33,29 @@ export function SummaryColumn(props: SummaryColumnProps) {
         <div className="metric-grid">
           <SummaryMetric label="情报总数" value={props.stats?.total || 0} note="公开主流" tone="blue" />
           <SummaryMetric label="高重要情报" value={props.stats?.high || 0} note="high" tone="pink" />
-          <SummaryMetric label="涉及游戏" value={Object.keys(props.stats?.byGame || {}).length} note="全部覆盖" tone="cyan" />
+          <SummaryMetric label="今日热门" value={hotStories.length} note="官方高重要" tone="cyan" />
           <SummaryMetric label="活跃来源" value={props.sources.length} note={`${props.health.healthy} 健康`} tone="amber" />
           <SummaryMetric label="AI 处理条数" value={props.stats?.total || 0} note="含规则兜底" tone="violet" />
           <SummaryMetric label="去重率" value={estimateDedupRate(props.stories)} suffix="%" note="多源合并" tone="green" />
         </div>
       </section>
+
+      {hotStories.length > 0 && (
+        <section className="glass-panel hot-panel">
+          <div className="panel-heading compact">
+            <h2><Flame className="h-4 w-4" style={{ display: 'inline', verticalAlign: '-3px', marginRight: 4 }} />今日热门</h2>
+          </div>
+          <div className="notice-list">
+            {hotStories.map(story => (
+              <a key={story.id} href={story.sources[0]?.url} target="_blank" rel="noreferrer" className="notice-row">
+                <span>{formatClock(story.publishedAt || story.createdAt)}</span>
+                <b>{sourceNames[story.sources[0]?.sourceType] || story.sources[0]?.sourceName || '来源'}</b>
+                <em>{story.canonicalTitle}</em>
+              </a>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="glass-panel notice-panel">
         <div className="panel-heading compact">

@@ -1074,6 +1074,32 @@ button:disabled {
   font-weight: 600;
 }
 
+.feed-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 12px 4px 4px;
+  margin-top: 8px;
+  border-top: 1px solid var(--stroke);
+}
+
+.feed-footer-link {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-soft);
+  font-size: 12px;
+  text-decoration: none;
+  opacity: 0.6;
+  transition: opacity 0.2s;
+}
+
+.feed-footer-link:hover {
+  opacity: 1;
+  color: var(--text);
+}
+
 .summary-column {
   grid-column: 3;
   grid-row: 2;
@@ -1085,6 +1111,7 @@ button:disabled {
 
 .summary-panel,
 .notice-panel,
+.hot-panel,
 .health-panel {
   padding: 14px;
 }
