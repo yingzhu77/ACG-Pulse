@@ -132,9 +132,13 @@ export function useAdmin(showToast: ShowToast, loadPublicData: () => Promise<voi
   }, [sourceDraft, showToast, loadAdminSources]);
 
   const handleToggleSource = useCallback(async (id: string) => {
-    await adminApi.toggleSource(id);
-    await loadAdminSources();
-  }, [loadAdminSources]);
+    try {
+      await adminApi.toggleSource(id);
+      await loadAdminSources();
+    } catch (error) {
+      showToast('error', error instanceof Error ? error.message : '切换源状态失败');
+    }
+  }, [loadAdminSources, showToast]);
 
   const handleFollowUrl = useCallback(async (event: React.FormEvent) => {
     event.preventDefault();

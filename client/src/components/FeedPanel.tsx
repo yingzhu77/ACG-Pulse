@@ -1,7 +1,9 @@
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { ChevronDown, ExternalLink, Search, Flame } from 'lucide-react';
 import type { Story, HotSearchItem } from '../services/api';
 import type { HotTag } from '../hooks/useHotSearch';
 import { StoryCard } from './StoryCard';
+import { cn } from '../lib/utils';
 
 const TAG_LABELS: Record<HotTag, string> = {
   all: '热搜',
@@ -58,9 +60,24 @@ export function FeedPanel(props: FeedPanelProps) {
   }
 
   // Normal feed mode
-  const displayStories = props.showFavorites
-    ? props.stories.filter(s => props.favorites.includes(s.id))
-    : props.stories;
+  const favoriteSet = useMemo(() => new Set(props.favorites), [props.favorites]);
+  const displayStories = useMemo(
+    () => props.showFavorites ? props.stories.filter(s => favoriteSet.has(s.id)) : props.stories,
+    [props.stories, props.showFavorites, favoriteSet]
+  );
+
+  // Debounce search input — local state for instant display, delayed filter update
+  const [searchQuery, setSearchQuery] = useState(props.filters.q);
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  useEffect(() => setSearchQuery(props.filters.q), [props.filters.q]);
+  const handleSearchChange = (value: string) => {
+    setSearchQuery(value);
+    clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(() => {
+      props.setFilters(prev => ({ ...prev, q: value }));
+    }, 300);
+  };
+  useEffect(() => () => clearTimeout(searchTimerRef.current), []);
 
   return (
     <section className="feed-panel glass-panel">
@@ -73,8 +90,8 @@ export function FeedPanel(props: FeedPanelProps) {
           <label className="search-field">
             <Search className="h-4 w-4" />
             <input
-              value={props.filters.q}
-              onChange={event => props.setFilters(prev => ({ ...prev, q: event.target.value }))}
+              value={searchQuery}
+              onChange={event => handleSearchChange(event.target.value)}
               placeholder="搜索版本、角色、活动、来源"
             />
           </label>
@@ -170,6 +187,3 @@ function HotSearchCard({ item, rank }: { item: HotSearchItem; rank: number }) {
     </article>
   );
 }
-
-// Import cn utility
-import { cn } from '../lib/utils';

@@ -1,7 +1,7 @@
 import { Gauge } from 'lucide-react';
 import type { PublicStats, Source, Story } from '../services/api';
 import { sourceNames } from '../constants';
-import { importanceShort, formatClock } from '../utils/format';
+import { importanceLabel, formatClock } from '../utils/format';
 import { estimateDedupRate } from '../utils/stats';
 import { SourceIcon } from './SourceIcon';
 import { SummaryMetric } from './SummaryMetric';
@@ -35,15 +35,14 @@ export function SummaryColumn(props: SummaryColumnProps) {
       <section className="glass-panel notice-panel">
         <div className="panel-heading compact">
           <h2>实时通知</h2>
-          <button>清空</button>
         </div>
         <div className="notice-list">
-          {props.stories.map(story => (
+          {props.stories.slice(0, 20).map(story => (
             <a key={story.id} href={story.sources[0]?.url} target="_blank" rel="noreferrer" className="notice-row">
               <span>{formatClock(story.publishedAt || story.createdAt)}</span>
               <b>{sourceNames[story.sources[0]?.sourceType] || story.sources[0]?.sourceName || '来源'}</b>
               <em>{story.canonicalTitle}</em>
-              <Tag tone={story.importance}>{importanceShort(story.importance)}</Tag>
+              <Tag tone={story.importance}>{importanceLabel(story.importance)}</Tag>
             </a>
           ))}
         </div>
