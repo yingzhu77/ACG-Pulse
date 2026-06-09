@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Bot, Bookmark, ChevronDown, Flame, Filter, Gamepad2, Music, Radio } from 'lucide-react';
 import type { Source, StoryFacets } from '../services/api';
 import { cn } from '../lib/utils';
@@ -27,7 +27,7 @@ export interface GameFilterPanelProps {
   isInDrawer?: boolean;
   favorites: string[];
   showFavorites: boolean;
-  setShowFavorites: (v: boolean) => void;
+  onToggleFavorites: () => void;
   showHotPanel: boolean;
   onToggleHotPanel: () => void;
   selectedHotTag: HotTag;
@@ -37,7 +37,7 @@ export interface GameFilterPanelProps {
 export function GameFilterPanel(props: GameFilterPanelProps) {
   const [gamesOpen, setGamesOpen] = useState(false);
   const [followOpen, setFollowOpen] = useState(false);
-  const followedSources = props.sources.filter(s => s.followed);
+  const followedSources = useMemo(() => props.sources.filter(s => s.followed), [props.sources]);
 
   // On mobile, hide the sidebar (drawer handles rendering)
   if (props.isMobile && !props.isInDrawer) {
@@ -248,13 +248,7 @@ export function GameFilterPanel(props: GameFilterPanelProps) {
       <div className="filter-block">
         <button
           className={cn('category-row', props.showFavorites && 'active')}
-          onClick={() => {
-            props.setShowFavorites(!props.showFavorites);
-            if (!props.showFavorites) {
-              props.setCategoryGroup('');
-              props.setCategory('');
-            }
-          }}
+          onClick={props.onToggleFavorites}
           style={{ width: '100%' }}
         >
           <Bookmark className="h-4 w-4" />

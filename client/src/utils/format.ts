@@ -8,10 +8,6 @@ export function importanceLabel(value: string): string {
   return ({ high: '高', medium: '中', low: '低' } as Record<string, string>)[value] || value;
 }
 
-export function importanceShort(value: string): string {
-  return ({ high: '高', medium: '中', low: '低' } as Record<string, string>)[value] || value;
-}
-
 export function formatDateTime(value: string | null | undefined): string {
   if (!value) return '未知';
   const date = new Date(value);

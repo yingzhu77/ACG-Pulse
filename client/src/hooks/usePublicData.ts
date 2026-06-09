@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import type { PublicStats, Source, Story, StoryFacets } from '../services/api';
 import { publicApi } from '../services/api';
 import { subscribeToGames, onNewItem, onNotification, onReanalyzeProgress, onReanalyzeDone, onReanalyzeError } from '../services/socket';
@@ -21,36 +21,41 @@ export function usePublicData(showToast: ShowToast) {
   const [loading, setLoading] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
 
-  // AndScroll wrappers
+  // Ref to track whether the next load should scroll to top after data arrives
+  const scrollToTopRef = useRef(false);
+
+  // Mark scroll-to-top before any state update that triggers loadPublicData
+  const markScrollToTop = useCallback(() => { scrollToTopRef.current = true; }, []);
+
   const setPageAndScroll = useCallback((p: number) => {
+    markScrollToTop();
     setPage(p);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  }, []);
+  }, [markScrollToTop]);
 
   const setSourceFilterAndScroll = useCallback((v: string[]) => {
+    markScrollToTop();
     setSourceFilter(v);
     setPage(1);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  }, []);
+  }, [markScrollToTop]);
 
   const setCategoryGroupAndScroll = useCallback((v: 'game' | 'follow' | '') => {
+    markScrollToTop();
     setCategoryGroup(v);
     setCategory('');
     setPage(1);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  }, []);
+  }, [markScrollToTop]);
 
   const setCategoryAndScroll = useCallback((v: string) => {
+    markScrollToTop();
     setCategory(v);
     setPage(1);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  }, []);
+  }, [markScrollToTop]);
 
   const setFiltersAndScroll = useCallback((v: React.SetStateAction<{ importance: string; q: string }>) => {
+    markScrollToTop();
     setFilters(v);
     setPage(1);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  }, []);
+  }, [markScrollToTop]);
 
   const loadPublicData = useCallback(async () => {
     setLoading(true);
@@ -88,7 +93,14 @@ export function usePublicData(showToast: ShowToast) {
       setSources(sourcesData);
       const games = Object.keys(statsData.byGame || {});
       if (games.length > 0) subscribeToGames(games);
+
+      // Scroll to top after data loads if requested
+      if (scrollToTopRef.current) {
+        scrollToTopRef.current = false;
+        requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'smooth' }));
+      }
     } catch (error) {
+      scrollToTopRef.current = false;
       showToast('error', error instanceof Error ? error.message : '加载失败');
     } finally {
       setLoading(false);
@@ -141,7 +153,7 @@ export function usePublicData(showToast: ShowToast) {
 
   const games = useMemo(() => Object.keys(allFacets.byGame || {}).filter(g => g.trim()).sort(), [allFacets]);
   const health = useMemo(() => summarizeHealth(sources), [sources]);
-  const recentNotices = stories.slice(0, 4);
+  const recentNotices = useMemo(() => stories.slice(0, 4), [stories]);
 
   return {
     stories,
