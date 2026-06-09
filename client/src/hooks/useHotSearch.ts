@@ -1,13 +1,20 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { publicApi, type HotSearchItem } from '../services/api';
 
 export type HotTag = 'game' | 'anime' | 'ai' | 'movie' | 'all';
 
-export function useHotSearch() {
+type ShowToast = (type: 'success' | 'error', message: string) => void;
+
+export function useHotSearch(showToast?: ShowToast) {
   const [hotItems, setHotItems] = useState<HotSearchItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedTag, setSelectedTag] = useState<HotTag>('all');
   const [showHotPanel, setShowHotPanel] = useState(false);
+
+  const selectedTagRef = useRef(selectedTag);
+  const showHotPanelRef = useRef(showHotPanel);
+  selectedTagRef.current = selectedTag;
+  showHotPanelRef.current = showHotPanel;
 
   const loadHotSearch = useCallback(async (tag?: HotTag) => {
     setLoading(true);
@@ -18,25 +25,26 @@ export function useHotSearch() {
       });
       setHotItems(response.data);
     } catch (error) {
+      showToast?.('error', '热搜加载失败');
       console.error('Failed to load hot search:', error);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [showToast]);
 
   const selectTag = useCallback((tag: HotTag) => {
-    // Toggle: click same tag to deselect
-    const newTag = selectedTag === tag ? 'all' : tag;
+    const newTag = selectedTagRef.current === tag ? 'all' : tag;
     setSelectedTag(newTag);
     loadHotSearch(newTag);
-  }, [selectedTag, loadHotSearch]);
+  }, [loadHotSearch]);
 
   const toggleHotPanel = useCallback(() => {
-    setShowHotPanel(prev => !prev);
-    if (!showHotPanel) {
-      loadHotSearch(selectedTag);
+    const opening = !showHotPanelRef.current;
+    setShowHotPanel(opening);
+    if (opening) {
+      loadHotSearch(selectedTagRef.current);
     }
-  }, [showHotPanel, selectedTag, loadHotSearch]);
+  }, [loadHotSearch]);
 
   // Auto-refresh every 30 minutes
   useEffect(() => {

@@ -116,20 +116,20 @@ export function AdminDrawer(props: AdminDrawerProps) {
                 <form onSubmit={props.onCreateSource} className="drawer-card">
                   <h3>添加权威 UP / 官方源</h3>
                   <div className="form-grid">
-                    <input value={props.sourceDraft.name} onChange={event => props.setSourceDraft({ ...props.sourceDraft, name: event.target.value })} placeholder="源名称" className="admin-input" />
-                    <input value={props.sourceDraft.game} onChange={event => props.setSourceDraft({ ...props.sourceDraft, game: event.target.value })} placeholder="游戏" className="admin-input" />
-                    <select value={props.sourceDraft.type} onChange={event => props.setSourceDraft({ ...props.sourceDraft, type: event.target.value })} className="admin-input">
+                    <input value={props.sourceDraft.name} onChange={event => props.setSourceDraft(prev => ({ ...prev, name: event.target.value }))} placeholder="源名称" className="admin-input" />
+                    <input value={props.sourceDraft.game} onChange={event => props.setSourceDraft(prev => ({ ...prev, game: event.target.value }))} placeholder="游戏" className="admin-input" />
+                    <select value={props.sourceDraft.type} onChange={event => props.setSourceDraft(prev => ({ ...prev, type: event.target.value }))} className="admin-input">
                       <option value="bilibili_video">B站投稿</option>
                       <option value="rsshub">RSSHub</option>
                       <option value="rss">RSS</option>
                       <option value="official_site">官网</option>
                     </select>
-                    <input value={props.sourceDraft.uid} onChange={event => props.setSourceDraft({ ...props.sourceDraft, uid: event.target.value })} placeholder="B站 UID" className="admin-input" />
-                    <input value={props.sourceDraft.url} onChange={event => props.setSourceDraft({ ...props.sourceDraft, url: event.target.value })} placeholder="URL" className="admin-input wide" />
-                    <input value={props.sourceDraft.route} onChange={event => props.setSourceDraft({ ...props.sourceDraft, route: event.target.value })} placeholder="RSSHub route" className="admin-input wide" />
+                    <input value={props.sourceDraft.uid} onChange={event => props.setSourceDraft(prev => ({ ...prev, uid: event.target.value }))} placeholder="B站 UID" className="admin-input" />
+                    <input value={props.sourceDraft.url} onChange={event => props.setSourceDraft(prev => ({ ...prev, url: event.target.value }))} placeholder="URL" className="admin-input wide" />
+                    <input value={props.sourceDraft.route} onChange={event => props.setSourceDraft(prev => ({ ...prev, route: event.target.value }))} placeholder="RSSHub route" className="admin-input wide" />
                   </div>
                   <label className="check-line">
-                    <input type="checkbox" checked={props.sourceDraft.isOfficial} onChange={event => props.setSourceDraft({ ...props.sourceDraft, isOfficial: event.target.checked })} />
+                    <input type="checkbox" checked={props.sourceDraft.isOfficial} onChange={event => props.setSourceDraft(prev => ({ ...prev, isOfficial: event.target.checked }))} />
                     官方源
                   </label>
                   <button className="action-button primary">

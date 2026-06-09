@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Activity } from 'lucide-react';
 import { importanceLabel } from '../utils/format';
+import { GAME_CATEGORIES, FOLLOW_CATEGORIES } from '../constants';
 import { Donut } from './Donut';
 
 export interface InsightsPageProps {
@@ -14,33 +15,16 @@ export function InsightsPage({ gameCategoryCounts, followCategoryCounts, importa
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const maxCount = Math.max(...hourlyTrend.map(d => d.count), 1);
 
-  // Generate SVG path for line chart
-  const points = hourlyTrend.map((d, i) => ({
-    x: (i / (hourlyTrend.length - 1)) * 100,
-    y: 100 - (d.count / maxCount) * 80
-  }));
+  // Generate SVG path for line chart — guard against empty/single-point data
+  const points = useMemo(() => {
+    if (hourlyTrend.length <= 1) return [];
+    return hourlyTrend.map((d, i) => ({
+      x: (i / (hourlyTrend.length - 1)) * 100,
+      y: 100 - (d.count / maxCount) * 80
+    }));
+  }, [hourlyTrend, maxCount]);
   const pathD = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
-  const areaD = pathD + ` L 100 100 L 0 100 Z`;
-
-  // Game intelligence category labels
-  const gameCategoryLabels: Record<string, string> = {
-    announcement: '官方公告',
-    event: '活动资讯',
-    version: '版本更新',
-    character: '角色情报',
-    pv: 'PV 影像',
-    game_music: '游戏EP',
-    community: '社区热点',
-    other: '其他'
-  };
-
-  // Follow feed category labels
-  const followCategoryLabels: Record<string, string> = {
-    music: '最新音乐',
-    trailer: 'ACG 内容',
-    movie_trailer: '电影预告',
-    creator_video: '创作者视频'
-  };
+  const areaD = pathD ? pathD + ` L 100 100 L 0 100 Z` : '';
 
   return (
     <section className="glass-panel insights-page">
@@ -51,11 +35,11 @@ export function InsightsPage({ gameCategoryCounts, followCategoryCounts, importa
       <div className="insight-strip">
         <div className="glass-panel chart-panel">
           <h3>游戏情报分布</h3>
-          <Donut counts={gameCategoryCounts} labelFor={(k) => gameCategoryLabels[k] || k} />
+          <Donut counts={gameCategoryCounts} labelFor={(k) => GAME_CATEGORIES[k] || k} />
         </div>
         <div className="glass-panel chart-panel">
           <h3>关注投稿分布</h3>
-          <Donut counts={followCategoryCounts} labelFor={(k) => followCategoryLabels[k] || k} />
+          <Donut counts={followCategoryCounts} labelFor={(k) => FOLLOW_CATEGORIES[k] || k} />
         </div>
         <div className="glass-panel trend-panel">
           <h3>近 24 小时情报趋势</h3>

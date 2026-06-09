@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { CheckCircle2, CircleAlert, Filter } from 'lucide-react';
 import { cn } from './lib/utils';
@@ -35,7 +35,22 @@ function App() {
   const publicData = usePublicData(showToast);
   const admin = useAdmin(showToast, publicData.loadPublicData);
   const { favorites, toggleFavorite } = useFavorites();
-  const hotSearch = useHotSearch();
+  const hotSearch = useHotSearch(showToast);
+
+  const toggleSidebar = useCallback(() => setSidebarCollapsed(c => !c), []);
+  const toggleAutoRefresh = useCallback(() => publicData.setAutoRefresh(a => !a), [publicData.setAutoRefresh]);
+  const openAdmin = useCallback(() => admin.setAdminOpen(true), [admin.setAdminOpen]);
+  const closeMobileDrawer = useCallback(() => setMobileDrawerOpen(false), []);
+  const openMobileDrawer = useCallback(() => setMobileDrawerOpen(true), []);
+  const handleToggleFavorites = useCallback(() => {
+    setShowFavorites(prev => {
+      if (!prev) {
+        publicData.setCategoryGroup('');
+        publicData.setCategory('');
+      }
+      return !prev;
+    });
+  }, [publicData.setCategoryGroup, publicData.setCategory]);
 
   // Close mobile drawer on filter selection
   useEffect(() => {
@@ -64,16 +79,16 @@ function App() {
           filters={publicData.filters}
           setFilters={publicData.setFiltersAndScroll}
           collapsed={sidebarCollapsed}
-          onToggleCollapse={() => setSidebarCollapsed(c => !c)}
+          onToggleCollapse={toggleSidebar}
           sources={publicData.sources}
           isMobile={isMobile}
           favorites={favorites}
           showFavorites={showFavorites}
+          onToggleFavorites={handleToggleFavorites}
           showHotPanel={hotSearch.showHotPanel}
           onToggleHotPanel={hotSearch.toggleHotPanel}
           selectedHotTag={hotSearch.selectedTag}
           onSelectHotTag={hotSearch.selectTag}
-          setShowFavorites={setShowFavorites}
         />
 
         <TopBar
@@ -83,9 +98,9 @@ function App() {
           view={view}
           onViewChange={setView}
           autoRefresh={publicData.autoRefresh}
-          onToggleAutoRefresh={() => publicData.setAutoRefresh(a => !a)}
+          onToggleAutoRefresh={toggleAutoRefresh}
           onRefresh={publicData.loadPublicData}
-          onOpenAdmin={() => admin.setAdminOpen(true)}
+          onOpenAdmin={openAdmin}
         />
 
         <section className="main-column">
@@ -124,7 +139,7 @@ function App() {
       {isMobile && !mobileDrawerOpen && (
         <button
           className="mobile-filter-fab"
-          onClick={() => setMobileDrawerOpen(true)}
+          onClick={openMobileDrawer}
           aria-label="打开筛选"
         >
           <Filter className="h-5 w-5" />
@@ -140,7 +155,7 @@ function App() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              onClick={() => setMobileDrawerOpen(false)}
+              onClick={closeMobileDrawer}
             />
             <motion.div
               className="mobile-drawer"
@@ -162,7 +177,7 @@ function App() {
                 filters={publicData.filters}
                 setFilters={publicData.setFiltersAndScroll}
                 collapsed={false}
-                onToggleCollapse={() => setMobileDrawerOpen(false)}
+                onToggleCollapse={closeMobileDrawer}
                 sources={publicData.sources}
                 isMobile={false}
                 isInDrawer={true}
