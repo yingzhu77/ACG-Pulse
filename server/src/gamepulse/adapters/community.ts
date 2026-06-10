@@ -253,6 +253,43 @@ async function fetchNgaPostContent(tid: number): Promise<NgaPostContent[]> {
   }
 }
 
+// ===== Parallel comment fetching =====
+
+async function fetchCommentsParallel(
+  aids: number[], concurrency: number, limitPerVideo: number
+): Promise<BilibiliComment[][]> {
+  const results: BilibiliComment[][] = new Array(aids.length);
+  for (let i = 0; i < aids.length; i += concurrency) {
+    const batch = aids.slice(i, i + concurrency);
+    const batchResults = await Promise.allSettled(
+      batch.map((aid, j) => fetchVideoHotComments(aid, limitPerVideo).then(c => { results[i + j] = c; }))
+    );
+    // Log failures
+    batchResults.forEach((r, j) => {
+      if (r.status === 'rejected') console.error(`[Community] Comments error for aid=${aids[i + j]}:`, r.reason);
+    });
+    if (i + concurrency < aids.length) await new Promise(r => setTimeout(r, 500));
+  }
+  return results;
+}
+
+async function fetchNgaCommentsParallel(
+  tids: number[], concurrency: number
+): Promise<NgaPostContent[][]> {
+  const results: NgaPostContent[][] = new Array(tids.length);
+  for (let i = 0; i < tids.length; i += concurrency) {
+    const batch = tids.slice(i, i + concurrency);
+    const batchResults = await Promise.allSettled(
+      batch.map((tid, j) => fetchNgaPostContent(tid).then(c => { results[i + j] = c; }))
+    );
+    batchResults.forEach((r) => {
+      if (r.status === 'rejected') console.error(`[Community] NGA comment error:`, r.reason);
+    });
+    if (i + concurrency < tids.length) await new Promise(r => setTimeout(r, 300));
+  }
+  return results;
+}
+
 // ===== ACG Keywords =====
 
 const ACG_KEYWORDS = [
@@ -265,7 +302,7 @@ const ACG_KEYWORDS = [
   '王者荣耀', '英雄联盟', 'VALORANT', 'CS2', 'Dota2'
 ];
 
-function isAcerelated(text: string): boolean {
+function isAcgRelated(text: string): boolean {
   return ACG_KEYWORDS.some(kw => text.includes(kw));
 }
 
@@ -545,19 +582,28 @@ export async function aggregateCommunityTopics(): Promise<CommunityTopic[]> {
       return true;
     });
 
-    const acgVideos = deduped.filter(v => isAcerelated(`${v.title} ${v.desc || ''} ${v.tname || ''}`));
+    const acgVideos = deduped.filter(v => isAcgRelated(`${v.title} ${v.desc || ''} ${v.tname || ''}`));
     console.log(`[Community] Bilibili ACG videos: ${acgVideos.length}`);
 
     acgVideos.sort((a, b) => (b.stat?.view || 0) - (a.stat?.view || 0));
     const topVideos = acgVideos.slice(0, 12);
 
+    // Fetch comments in parallel (batches of 4)
+    const commentResults = await fetchCommentsParallel(topVideos.map(v => v.aid), 4, 5);
+
+    // Batch AI sentiment analysis for all comment sets
+    const allCommentTexts = commentResults.map(comments =>
+      comments.slice(0, 3).map(c => c.content?.message || '').filter(Boolean).join('\n')
+    );
+    const allSentiments = await aiSentimentBatch(allCommentTexts);
+
     for (let i = 0; i < topVideos.length; i++) {
       const video = topVideos[i];
-      const comments = await fetchVideoHotComments(video.aid, 5);
+      const comments = commentResults[i];
 
       if (comments.length === 0) continue;
 
-      const sentiment = await analyzeComments(comments);
+      const sentiment = allSentiments[i] || keywordSentiment(video.title);
       const totalLikes = comments.reduce((sum, c) => sum + (c.like || 0), 0);
       const topComment = comments.reduce((best, c) =>
         (c.like || 0) > (best.like || 0) ? c : best, comments[0]);
@@ -578,13 +624,11 @@ export async function aggregateCommunityTopics(): Promise<CommunityTopic[]> {
         heatScore,
         category: classifyTopic(`${title} ${video.desc || ''}`),
         source: 'bilibili',
-        trend: [heatScore], // Will be enriched later
+        trend: [heatScore],
         summary: topComment.content?.message?.slice(0, 120) || video.desc?.slice(0, 120) || title,
         url: `https://www.bilibili.com/video/${video.bvid}`,
         publishedAt: new Date((video.pubdate || 0) * 1000).toISOString()
       });
-
-      if (i < topVideos.length - 1) await new Promise(r => setTimeout(r, 800));
     }
   }
 
@@ -599,21 +643,24 @@ export async function aggregateCommunityTopics(): Promise<CommunityTopic[]> {
     // Fetch comments for top 15 posts (by reply count) for better sentiment analysis
     const topPosts = validPosts.sort((a, b) => (b.replies || 0) - (a.replies || 0)).slice(0, 15);
 
-    for (const post of topPosts) {
-      const heatScore = calculateNgaHeatScore(post);
+    // Fetch NGA comments in parallel (batches of 5)
+    const ngaCommentResults = await fetchNgaCommentsParallel(topPosts.map(p => p.tid), 5);
 
-      // Fetch post comments for sentiment analysis
-      const comments = await fetchNgaPostContent(post.tid);
-      await new Promise(r => setTimeout(r, 300));
-
-      let sentiment: SentimentResult;
+    // Batch AI analysis for NGA posts
+    const ngaTexts = topPosts.map((post, i) => {
+      const comments = ngaCommentResults[i];
       if (comments.length > 0) {
-        // Use title + top comments for AI analysis
-        const allText = [post.subject, ...comments.slice(0, 3).map(c => c.content)].join('\n');
-        sentiment = await analyzeSentiment(allText);
-      } else {
-        sentiment = await analyzeSentiment(post.subject);
+        return [post.subject, ...comments.slice(0, 3).map(c => c.content)].join('\n');
       }
+      return post.subject;
+    });
+    const ngaSentiments = await aiSentimentBatch(ngaTexts);
+
+    for (let i = 0; i < topPosts.length; i++) {
+      const post = topPosts[i];
+      const heatScore = calculateNgaHeatScore(post);
+      const comments = ngaCommentResults[i];
+      const sentiment = ngaSentiments[i] || keywordSentiment(post.subject);
 
       topics.push({
         id: `nga-${post.tid}`,
@@ -639,7 +686,7 @@ export async function aggregateCommunityTopics(): Promise<CommunityTopic[]> {
     console.log(`[Community] Xiaoheihe news: ${xhhTopics.length}`);
 
     for (const item of xhhTopics) {
-      if (!isAcerelated(item.title)) continue;
+      if (!isAcgRelated(item.title)) continue;
       if (isDuplicate(item.title, seenTitles)) continue;
 
       const sentiment = await analyzeSentiment(item.title);
@@ -680,17 +727,3 @@ async function fetchAllNgaHotPosts(): Promise<NgaPost[]> {
   return allPosts;
 }
 
-async function analyzeComments(comments: BilibiliComment[]): Promise<SentimentResult> {
-  const texts = comments.map(c => c.content?.message || '');
-  const sentiments = await Promise.all(texts.map(t => analyzeSentiment(t)));
-  const posWeight = sentiments.filter(s => s.label === 'positive').reduce((sum, s) => sum + Math.abs(s.score), 0);
-  const negWeight = sentiments.filter(s => s.label === 'negative').reduce((sum, s) => sum + Math.abs(s.score), 0);
-  const totalWeight = sentiments.reduce((sum, s) => sum + Math.abs(s.score), 0);
-
-  if (totalWeight === 0) return { label: 'neutral', score: 0 };
-  const avgScore = (posWeight - negWeight) / totalWeight;
-
-  if (posWeight > negWeight) return { label: 'positive', score: avgScore };
-  if (negWeight > posWeight) return { label: 'negative', score: avgScore };
-  return { label: 'neutral', score: 0 };
-}

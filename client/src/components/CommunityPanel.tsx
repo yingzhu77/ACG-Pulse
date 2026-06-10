@@ -9,25 +9,33 @@ import { SummaryMetric } from './SummaryMetric';
 export function CommunityPanel() {
   const [topics, setTopics] = useState<CommunityTopic[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [sentimentFilter, setSentimentFilter] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
   const [sourceFilter, setSourceFilter] = useState('');
   const [summary, setSummary] = useState<{ sentimentCounts: { positive: number; negative: number; neutral: number }; avgHeat: number } | null>(null);
 
-  useEffect(() => {
+  const fetchData = () => {
     setLoading(true);
+    setError('');
     fetch('/api/community/topics')
-      .then(r => r.json())
+      .then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
       .then(data => {
         setTopics(data.data || []);
         setSummary(data.summary || null);
       })
-      .catch(() => {
+      .catch(err => {
         setTopics([]);
         setSummary(null);
+        setError(err.message || '加载失败');
       })
       .finally(() => setLoading(false));
-  }, []);
+  };
+
+  useEffect(() => { fetchData(); }, []);
 
   const filtered = useMemo(() => {
     return topics.filter(t => {
@@ -100,7 +108,11 @@ export function CommunityPanel() {
 
       <div className="community-topic-list">
         {loading ? (
-          <div className="empty-state">正在从 B站 获取社区热点...</div>
+          <div className="empty-state">正在获取社区热点...</div>
+        ) : error ? (
+          <div className="empty-state" style={{ cursor: 'pointer' }} onClick={fetchData}>
+            加载失败: {error} · 点击重试
+          </div>
         ) : filtered.length === 0 ? (
           <div className="empty-state">暂无匹配的社区话题</div>
         ) : (

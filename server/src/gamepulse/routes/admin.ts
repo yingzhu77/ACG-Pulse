@@ -52,15 +52,20 @@ export function createAdminRouter(io: Server): Router {
   router.use(requireAdmin);
 
   router.get('/sources', async (_req, res) => {
-    const sources = await prisma.source.findMany({
-      orderBy: [{ enabled: 'desc' }, { game: 'asc' }, { priority: 'asc' }],
-      include: {
-        _count: {
-          select: { feedItems: true }
+    try {
+      const sources = await prisma.source.findMany({
+        orderBy: [{ enabled: 'desc' }, { game: 'asc' }, { priority: 'asc' }],
+        include: {
+          _count: {
+            select: { feedItems: true }
+          }
         }
-      }
-    });
-    res.json(sources);
+      });
+      res.json(sources);
+    } catch (error) {
+      console.error('Fetch sources failed:', error);
+      res.status(500).json({ error: 'Failed to fetch sources' });
+    }
   });
 
   router.post('/sources', async (req, res) => {
@@ -88,23 +93,38 @@ export function createAdminRouter(io: Server): Router {
   });
 
   router.patch('/sources/:id/toggle', async (req, res) => {
-    const current = await prisma.source.findUnique({ where: { id: req.params.id } });
-    if (!current) return res.status(404).json({ error: 'Source not found' });
-    const source = await prisma.source.update({
-      where: { id: req.params.id },
-      data: { enabled: !current.enabled }
-    });
-    res.json(source);
+    try {
+      const current = await prisma.source.findUnique({ where: { id: req.params.id } });
+      if (!current) return res.status(404).json({ error: 'Source not found' });
+      const source = await prisma.source.update({
+        where: { id: req.params.id },
+        data: { enabled: !current.enabled }
+      });
+      res.json(source);
+    } catch (error) {
+      console.error('Toggle source failed:', error);
+      res.status(400).json({ error: 'Failed to toggle source' });
+    }
   });
 
   router.delete('/sources/:id', async (req, res) => {
-    await prisma.source.delete({ where: { id: req.params.id } });
-    res.status(204).send();
+    try {
+      await prisma.source.delete({ where: { id: req.params.id } });
+      res.status(204).send();
+    } catch (error) {
+      console.error('Delete source failed:', error);
+      res.status(400).json({ error: 'Failed to delete source' });
+    }
   });
 
   router.post('/sources/seed-defaults', async (_req, res) => {
-    const sources = await seedDefaultSources();
-    res.json({ count: sources.length, sources });
+    try {
+      const sources = await seedDefaultSources();
+      res.json({ count: sources.length, sources });
+    } catch (error) {
+      console.error('Seed defaults failed:', error);
+      res.status(500).json({ error: 'Failed to seed defaults' });
+    }
   });
 
   router.post('/sources/follow-url', async (req, res) => {

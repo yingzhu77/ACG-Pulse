@@ -18,10 +18,6 @@ export function CommunityTopicCard({ topic, index }: CommunityTopicCardProps) {
     topic.sentiment === 'positive' ? 'var(--green)' :
     topic.sentiment === 'negative' ? 'var(--pink)' : 'var(--cyan)';
 
-  const trendColor =
-    topic.sentiment === 'positive' ? 'var(--green)' :
-    topic.sentiment === 'negative' ? 'var(--pink)' : 'var(--cyan)';
-
   return (
     <motion.article
       className={cn('story-card', 'community-card')}
@@ -51,7 +47,7 @@ export function CommunityTopicCard({ topic, index }: CommunityTopicCardProps) {
             <Flame className="h-3 w-3" />
             热度 {topic.heatScore}
           </span>
-          <SentimentTrendMini data={topic.trend} color={trendColor} />
+          <SentimentTrendMini data={topic.trend} color={sentimentColor} />
         </div>
       </div>
 

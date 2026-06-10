@@ -1,6 +1,6 @@
 /**
  * Community hot topics API endpoint.
- * Returns sentiment-analyzed community topics from Bilibili.
+ * Returns sentiment-analyzed community topics from Bilibili + NGA.
  */
 
 import { Router } from 'express';
@@ -8,37 +8,40 @@ import { aggregateCommunityTopics, type CommunityTopic } from '../adapters/commu
 
 const router = Router();
 
-// In-memory cache
+// In-memory cache with concurrency lock
 let cachedTopics: CommunityTopic[] = [];
 let lastFetchTime = 0;
+let fetchPromise: Promise<CommunityTopic[]> | null = null;
 const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
+
+const VALID_SENTIMENTS = new Set(['positive', 'negative', 'neutral']);
+const VALID_SOURCES = new Set(['bilibili', 'nga', 'xiaoheihe']);
 
 router.get('/topics', async (req, res) => {
   try {
     const now = Date.now();
 
-    // Refresh cache if expired
+    // Refresh cache if expired (with concurrency lock)
     if (now - lastFetchTime > CACHE_TTL_MS || cachedTopics.length === 0) {
-      cachedTopics = await aggregateCommunityTopics();
-      lastFetchTime = now;
+      if (!fetchPromise) {
+        fetchPromise = aggregateCommunityTopics().finally(() => { fetchPromise = null; });
+      }
+      cachedTopics = await fetchPromise;
+      lastFetchTime = Date.now();
     }
 
     const { sentiment, category, source, page = '1', limit = '50' } = req.query;
 
     let filtered = [...cachedTopics];
 
-    // Filter by sentiment
-    if (sentiment && sentiment !== 'all') {
+    // Filter with validation
+    if (sentiment && sentiment !== 'all' && VALID_SENTIMENTS.has(String(sentiment))) {
       filtered = filtered.filter(t => t.sentiment === sentiment);
     }
-
-    // Filter by category
     if (category && category !== 'all') {
       filtered = filtered.filter(t => t.category === category);
     }
-
-    // Filter by source
-    if (source && source !== 'all') {
+    if (source && source !== 'all' && VALID_SOURCES.has(String(source))) {
       filtered = filtered.filter(t => t.source === source);
     }
 
@@ -49,7 +52,7 @@ router.get('/topics', async (req, res) => {
     const start = (pageNum - 1) * limitNum;
     const paged = filtered.slice(start, start + limitNum);
 
-    // Summary stats (from full dataset, not filtered)
+    // Summary stats (from full dataset)
     const sentimentCounts = { positive: 0, negative: 0, neutral: 0 };
     let totalHeat = 0;
     for (const t of cachedTopics) {

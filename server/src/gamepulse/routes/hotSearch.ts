@@ -4,12 +4,12 @@
  */
 
 import { Router } from 'express';
-import { fetchAllHotSearch, classifyHotTopic } from '../adapters/hotSearch.js';
+import { fetchAllHotSearch, classifyHotTopic, type HotSearchItem } from '../adapters/hotSearch.js';
 
 const router = Router();
 
 // In-memory cache
-let cachedData: any[] = [];
+let cachedData: HotSearchItem[] = [];
 let lastFetchTime = 0;
 const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
