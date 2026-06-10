@@ -11,6 +11,7 @@ AI 驱动的游戏/ACG 资讯聚合面板，自动采集多源内容，智能分
 - **多源数据采集** — B站、米游社、RSS、官网等 24+ 数据源
 - **AI 智能分类** — 支持 OpenRouter / DeepSeek / Xiaomi MiMo 三种 AI Provider
 - **故事聚合** — 多源内容自动合并为故事卡片
+- **社区热点风向** — B站热门视频评论 + AI 情绪分析 + 话题分类
 - **热搜监控** — B站热搜、微博热搜、豆瓣热榜
 - **实时推送** — WebSocket 实时更新
 - **移动端适配** — 抽屉式筛选面板 + FAB
@@ -29,43 +30,54 @@ AI 驱动的游戏/ACG 资讯聚合面板，自动采集多源内容，智能分
 
 ## 快速开始
 
-### 方式一：一键部署（推荐）
-
-SSH 到服务器后执行：
-
-```bash
-curl -sL https://raw.githubusercontent.com/yingzhu77/personal-hot-monitor/master/auto-deploy.sh | bash
-```
-
-或手动执行：
+### 方式一：Docker 部署（推荐）
 
 ```bash
 git clone https://github.com/yingzhu77/personal-hot-monitor.git
 cd personal-hot-monitor
-bash auto-deploy.sh
-```
 
-### 方式二：手动部署
-
-```bash
-git clone https://github.com/yingzhu77/personal-hot-monitor.git
-cd personal-hot-monitor
+# 复制环境变量模板并编辑
 cp .env.production.example .env
-# 编辑 .env 配置 AI Provider 和管理员密码
+nano .env  # 填写 ADMIN_PASSWORD、ADMIN_JWT_SECRET、AI Provider Key
+
+# 启动
 docker compose up -d --build
 ```
 
 访问 `http://localhost:3001`
 
-### 本地开发
+### 方式二：一键部署脚本
 
 ```bash
+# 设置环境变量（必须）
+export ADMIN_PASSWORD=你的强密码
+export ADMIN_JWT_SECRET=$(openssl rand -hex 32)
+export MIMO_API_KEY=你的key
+
+# 执行部署
+git clone https://github.com/yingzhu77/personal-hot-monitor.git
+cd personal-hot-monitor
+bash auto-deploy.sh
+```
+
+### 方式三：本地开发
+
+```bash
+# 前置条件：Node.js 18+、npm、Docker（运行 RSSHub）
+
+# 启动 RSSHub（需 Docker）
+docker run -d --name rsshub -p 1200:1200 diygod/rsshub:latest
+
 # 后端
-cd server && npm install && npm run dev
+cd server && cp .env.example .env && npm install && npm run dev
 
 # 前端
 cd client && npm install && npm run dev
 ```
+
+访问 `http://localhost:5173`
+
+> **首次部署注意**：服务启动时会校验 `ADMIN_PASSWORD` 和 `ADMIN_JWT_SECRET`，若未设置或使用默认值将拒绝启动。
 
 ## 环境变量
 
