@@ -62,7 +62,7 @@ export function SummaryColumn(props: SummaryColumnProps) {
           <h2>实时通知</h2>
         </div>
         <div className="notice-list">
-          {props.stories.slice(0, 20).map(story => (
+          {props.stories.slice(0, 10).map(story => (
             <a key={story.id} href={story.sources[0]?.url} target="_blank" rel="noreferrer" className="notice-row">
               <span>{formatClock(story.publishedAt || story.createdAt)}</span>
               <b>{sourceNames[story.sources[0]?.sourceType] || story.sources[0]?.sourceName || '来源'}</b>

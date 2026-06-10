@@ -615,10 +615,10 @@ button:disabled {
 
 .nav-tabs {
   display: grid;
-  grid-template-columns: repeat(2, minmax(86px, 1fr));
-  flex: 1 1 240px;
+  grid-template-columns: repeat(3, minmax(72px, 1fr));
+  flex: 1 1 320px;
   gap: 4px;
-  min-width: min(240px, 100%);
+  min-width: min(320px, 100%);
   border-radius: 8px;
   background: var(--panel-soft);
   padding: 4px;
@@ -1717,7 +1717,7 @@ button:disabled {
   }
 
   .nav-tabs {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr 1fr 1fr;
     min-width: 0;
     width: 100%;
   }
@@ -1823,6 +1823,24 @@ button:disabled {
     grid-column: 1 / -1;
     flex-direction: row;
     flex-wrap: wrap;
+  }
+
+  /* Community Panel Mobile */
+  .community-stats-strip {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .community-filter-bar {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .community-card {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .community-card-ring {
+    display: none;
   }
 }
 
@@ -2125,4 +2143,90 @@ button:disabled {
   border-radius: 3px;
   background: rgba(255, 255, 255, 0.05);
   color: var(--text-soft);
+}
+
+/* ===== Community Panel ===== */
+.community-panel {
+  padding: 14px;
+}
+
+.community-stats-strip {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  padding-top: 14px;
+}
+
+.community-stats-strip .summary-metric {
+  min-height: 72px;
+}
+
+.community-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--stroke);
+  margin-top: 14px;
+}
+
+.community-filter-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.community-filter-group .filter-label {
+  margin-right: 4px;
+  font-size: 0.75rem;
+  color: var(--text-soft);
+  font-weight: 600;
+}
+
+.community-topic-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 10px;
+}
+
+.community-card {
+  border-left-width: 4px;
+  grid-template-columns: 56px minmax(0, 1fr) 40px;
+}
+
+.community-card-ring {
+  display: grid;
+  place-items: center;
+}
+
+/* Sentiment tag variants */
+.tag-sentiment-positive {
+  border-color: rgba(31, 185, 130, 0.38);
+  background: rgba(31, 185, 130, 0.14);
+  color: var(--green);
+}
+
+.tag-sentiment-negative {
+  border-color: rgba(245, 87, 134, 0.38);
+  background: rgba(245, 87, 134, 0.14);
+  color: var(--pink);
+}
+
+.tag-sentiment-neutral {
+  border-color: rgba(43, 183, 232, 0.34);
+  background: rgba(43, 183, 232, 0.12);
+  color: var(--cyan);
+}
+
+/* Heat score ring */
+.heat-score-ring {
+  display: block;
+}
+
+/* Sentiment trend mini chart */
+.sentiment-trend-mini {
+  display: inline-block;
+  vertical-align: middle;
 }

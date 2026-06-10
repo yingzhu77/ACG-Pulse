@@ -1,15 +1,15 @@
 import { useEffect, useState } from 'react';
 import { Moon, RefreshCw, Settings, Sun } from 'lucide-react';
 import { cn } from '../lib/utils';
-import type { Theme } from '../constants';
+import type { Theme, ViewMode } from '../constants';
 import { formatDateTime } from '../utils/format';
 
 export interface TopBarProps {
   theme: Theme;
   setTheme: (theme: Theme) => void;
   loading: boolean;
-  view: 'feed' | 'insights';
-  onViewChange: (view: 'feed' | 'insights') => void;
+  view: ViewMode;
+  onViewChange: (view: ViewMode) => void;
   autoRefresh: boolean;
   onToggleAutoRefresh: () => void;
   onRefresh: () => void;
@@ -35,6 +35,7 @@ export function TopBar(props: TopBarProps) {
 
       <nav className="nav-tabs" aria-label="ACG Pulse">
         <button className={props.view === 'feed' ? 'active' : ''} onClick={() => props.onViewChange('feed')}>情报总览</button>
+        <button className={props.view === 'community' ? 'active' : ''} onClick={() => props.onViewChange('community')}>社区风向</button>
         <button className={props.view === 'insights' ? 'active' : ''} onClick={() => props.onViewChange('insights')}>数据洞察</button>
       </nav>
 

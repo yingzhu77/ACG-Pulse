@@ -45,3 +45,46 @@ export const gameIconUrls: Record<string, string> = {
   '明日方舟：终末地': 'https://hypergryph.com/favicon.ico',
   异环: 'https://yh.wanmei.com/favicon.ico'
 };
+
+// ===== Community Hot Topics =====
+
+export type ViewMode = 'feed' | 'insights' | 'community';
+
+export const SENTIMENT_TYPES: Record<string, string> = {
+  positive: '正面',
+  negative: '负面',
+  neutral: '中性'
+};
+
+export const TOPIC_CATEGORIES: Record<string, string> = {
+  gameplay: '玩法讨论',
+  character: '角色话题',
+  event: '活动争议',
+  update: '版本更新',
+  lore: '剧情世界观',
+  community: '社区事件',
+  esports: '赛事竞技',
+  other: '其他'
+};
+
+export const COMMUNITY_SOURCES: Record<string, string> = {
+  bilibili: 'B站',
+  nga: 'NGA',
+  xiaoheihe: '小黑盒'
+};
+
+export interface CommunityTopic {
+  id: string;
+  title: string;
+  sentiment: 'positive' | 'negative' | 'neutral';
+  sentimentScore: number;
+  heatScore: number;
+  category: string;
+  source: string;
+  trend: number[];
+  summary: string;
+  url: string;
+  publishedAt: string;
+}
+
+

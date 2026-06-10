@@ -8,17 +8,19 @@ import { usePublicData } from './hooks/usePublicData';
 import { useAdmin } from './hooks/useAdmin';
 import { useFavorites } from './hooks/useFavorites';
 import { useHotSearch } from './hooks/useHotSearch';
+import type { ViewMode } from './constants';
 import { GameFilterPanel } from './components/GameFilterPanel';
 import { TopBar } from './components/TopBar';
 import { FeedPanel } from './components/FeedPanel';
 import { InsightsPage } from './components/InsightsPage';
+import { CommunityPanel } from './components/CommunityPanel';
 import { SummaryColumn } from './components/SummaryColumn';
 import { AdminDrawer } from './components/AdminDrawer';
 
 function App() {
   const { toast, showToast } = useToast();
   const { theme, setTheme } = useTheme();
-  const [view, setView] = useState<'feed' | 'insights'>('feed');
+  const [view, setView] = useState<ViewMode>('feed');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
@@ -122,13 +124,15 @@ function App() {
               hotLoading={hotSearch.loading}
               selectedHotTag={hotSearch.selectedTag}
             />
-          ) : (
+          ) : view === 'insights' ? (
             <InsightsPage
               gameCategoryCounts={publicData.stats?.byCategory || {}}
               followCategoryCounts={publicData.stats?.byFollowCategory || {}}
               importanceCounts={publicData.stats?.byImportance || {}}
               hourlyTrend={publicData.stats?.hourlyTrend || []}
             />
+          ) : (
+            <CommunityPanel />
           )}
         </section>
 
