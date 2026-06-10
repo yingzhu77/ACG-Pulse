@@ -68,8 +68,6 @@ Thumbs.db
 !client/public/**/*.png
 
 # Internal docs (dev tooling, not for deployment)
-AGENTS.md
-CLAUDE.md
 LESSONS.md
 docs/game-pulse-dedup-ranking-plan.zh.md
 docs/game-pulse-frontend-and-launch-plan.zh.md
