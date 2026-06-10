@@ -46,7 +46,10 @@ export function isValidAdminPassword(password: unknown): boolean {
 }
 
 function sign(value: string): string {
-  const secret = process.env.ADMIN_JWT_SECRET || process.env.ADMIN_PASSWORD || 'game-pulse-dev-secret';
+  const secret = process.env.ADMIN_JWT_SECRET;
+  if (!secret || secret.length < 32) {
+    throw new Error('ADMIN_JWT_SECRET must be set and at least 32 characters');
+  }
   return crypto.createHmac('sha256', secret).update(value).digest('base64url');
 }
 

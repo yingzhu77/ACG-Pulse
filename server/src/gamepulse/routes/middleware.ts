@@ -22,7 +22,11 @@ export const errorHandler: ErrorRequestHandler = (
   res: Response,
   _next: NextFunction
 ): void => {
-  console.error(`[Error] ${err.message}`, err.stack);
+  if (process.env.NODE_ENV === 'development') {
+    console.error(`[Error] ${err.message}`, err.stack);
+  } else {
+    console.error(`[Error] ${err.message}`);
+  }
 
   res.status(500).json({
     error: 'Internal server error',

@@ -17,13 +17,35 @@ import {
   validateOrThrow
 } from '../validation.js';
 
+// Login brute-force protection
+const loginAttempts = new Map<string, { count: number; resetAt: number }>();
+const LOGIN_MAX_ATTEMPTS = 5;
+const LOGIN_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
+
 export function createAdminRouter(io: Server): Router {
   const router = Router();
 
   router.post('/login', (req, res) => {
+    const ip = req.ip || req.socket.remoteAddress || 'unknown';
+    const now = Date.now();
+    const record = loginAttempts.get(ip);
+
+    if (record && record.resetAt > now && record.count >= LOGIN_MAX_ATTEMPTS) {
+      return res.status(429).json({ error: 'Too many login attempts, try again in 15 minutes' });
+    }
+
+    if (!record || record.resetAt <= now) {
+      loginAttempts.set(ip, { count: 1, resetAt: now + LOGIN_WINDOW_MS });
+    } else {
+      record.count++;
+    }
+
     if (!isValidAdminPassword(req.body?.password)) {
       return res.status(401).json({ error: 'Invalid password or ADMIN_PASSWORD is not configured' });
     }
+
+    // Reset on successful login
+    loginAttempts.delete(ip);
     res.json({ token: createAdminToken() });
   });
 

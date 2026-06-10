@@ -1,8 +1,10 @@
 import { Router } from 'express';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../db.js';
+import { requireAdmin } from '../gamepulse/auth.js';
 
 const router = Router();
+router.use(requireAdmin);
 
 // 获取所有通知
 router.get('/', async (req, res) => {
