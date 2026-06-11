@@ -2,13 +2,13 @@ import { Router } from 'express';
 import { prisma } from '../../db.js';
 import { aggregateFeedItemsToStories, toPublicFeedItem } from '../storyAggregation.js';
 import { normalizeImportance } from '../storyAggregation.js';
+import { computeStoryFacets } from '../storyFacets.js';
 import type { PrismaWhereClause } from '../types.js';
 import {
   toArray,
   appendAnd,
   applyAnalysisFilters,
-  applyLowValueNoticeFilter,
-  publicVisibilityRelationWhere
+  applyLowValueNoticeFilter
 } from './helpers.js';
 import {
   PublicItemsQuerySchema,
@@ -98,9 +98,6 @@ router.get('/items', async (req, res) => {
   }
 });
 
-const FOLLOW_CATEGORIES_SET = new Set(['music', 'trailer', 'movie_trailer', 'creator_video']);
-const GAME_CATEGORIES_SET = new Set(['announcement', 'event', 'version', 'character', 'pv', 'game_music', 'community', 'other']);
-
 /**
  * GET /stories - 获取聚合故事列表
  */
@@ -189,60 +186,11 @@ router.get('/stories', async (req, res) => {
     // Aggregate stories for display
     const allStories = aggregateFeedItemsToStories(items);
 
-    // Compute facets from the same base items as stories (no visibility filter to keep counts aligned)
-    const facetWhere = { hidden: false };
-    appendAnd(facetWhere, { analysis: { status: { in: ['completed', 'failed'] } } });
-    applyLowValueNoticeFilter(facetWhere, visibility);
-
-    // Apply followGroup filter to facets
-    if (group === 'follow') {
-      appendAnd(facetWhere, { source: { is: { followed: true } } });
-    } else if (group === 'game') {
-      appendAnd(facetWhere, { source: { is: { followed: false } } });
-    }
-
-    const allItems = await prisma.feedItem.findMany({
-      where: facetWhere,
-      include: {
-        source: {
-          select: {
-            id: true,
-            name: true,
-            type: true,
-            game: true,
-            isOfficial: true,
-            followed: true,
-            healthStatus: true
-          }
-        },
-        analysis: true
-      }
+    const facets = await computeStoryFacets(prisma, {
+      followGroup: group,
+      sourceUid: sourceUid ? String(sourceUid) : undefined,
+      visibility: visibility ? String(visibility) : undefined
     });
-
-    // Compute facets from all items (not stories) to show total counts
-    const byGame: Record<string, number> = {};
-    const byCategory: Record<string, number> = {};
-    const byFollowCategory: Record<string, number> = {};
-    const byImportance: Record<string, number> = {};
-    for (const item of allItems) {
-      const isFollow = item.source.followed === true;
-      const cat = item.analysis?.category || 'other';
-      const importance = item.analysis?.importance || 'low';
-
-      if (isFollow) {
-        if (FOLLOW_CATEGORIES_SET.has(cat)) {
-          byFollowCategory[cat] = (byFollowCategory[cat] || 0) + 1;
-        }
-      } else {
-        if (item.game) {
-          byGame[item.game] = (byGame[item.game] || 0) + 1;
-        }
-        if (GAME_CATEGORIES_SET.has(cat)) {
-          byCategory[cat] = (byCategory[cat] || 0) + 1;
-        }
-      }
-      byImportance[importance] = (byImportance[importance] || 0) + 1;
-    }
 
     // Apply importance filter for display
     const importanceSet = importanceArr.length > 0
@@ -262,7 +210,7 @@ router.get('/stories', async (req, res) => {
         total: stories.length,
         totalPages: Math.ceil(stories.length / limitNum)
       },
-      facets: { byGame, byCategory, byFollowCategory, byImportance }
+      facets
     });
   } catch (error) {
     console.error('Game Pulse public stories failed:', error);

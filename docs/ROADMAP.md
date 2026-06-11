@@ -10,7 +10,7 @@
 ## 第二阶段：稳定性、性能与可观测性（待办）
 
 - 优化 `/api/public/stories` 查询：
-  - 将 facet 统计改为数据库聚合或短 TTL 缓存。
+  - ✅ 已将 facet 统计改为数据库聚合，避免每次全量拉取 feedItem 到内存统计。
   - 降低内存聚合的候选数据规模，必要时为故事聚合结果增加缓存层。
   - 对搜索参数 `q` 评估 SQLite FTS 或迁移到更合适的全文搜索方案。
 - 将 AI 分析队列持久化：
@@ -24,7 +24,7 @@
 - 补齐测试：
   - AI JSON 解析与 fallback 测试。
   - source 创建/更新/布尔值解析测试。
-  - stories filter/facet 组合测试。
+  - ✅ stories filter/facet 组合测试。
   - checker 去重、清理和失败源状态测试。
 
 ## 第三阶段：产品能力扩展（待办）
