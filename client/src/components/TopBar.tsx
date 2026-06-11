@@ -27,10 +27,6 @@ export function TopBar(props: TopBarProps) {
 
   return (
     <header className="topbar">
-      <div className="brand-lockup">
-        <h1 className="brand-title">ACG Pulse</h1>
-      </div>
-
       <nav className="nav-tabs" aria-label="ACG Pulse">
         <button className={props.view === 'feed' ? 'active' : ''} onClick={() => props.onViewChange('feed')}>情报总览</button>
         <button className={props.view === 'community' ? 'active' : ''} onClick={() => props.onViewChange('community')}>社区风向</button>
