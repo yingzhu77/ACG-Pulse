@@ -37,6 +37,7 @@ router.get('/stats', async (_req, res) => {
       }),
       prisma.source.groupBy({
         by: ['healthStatus'],
+        where: { enabled: true },
         _count: { healthStatus: true }
       }),
       prisma.analysis.findMany({

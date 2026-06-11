@@ -95,9 +95,15 @@ export function SummaryColumn(props: SummaryColumnProps) {
                 </span>
               </div>
               <div className="health-track">
-                <span style={{ width: source.healthStatus === 'healthy' ? '100%' : '42%' }} />
+                <span style={{
+                  width: source.healthStatus === 'healthy' ? '100%' : source.healthStatus === 'degraded' ? '60%' : source.healthStatus === 'failed' ? '42%' : '30%',
+                  backgroundColor: source.healthStatus === 'healthy' ? '#6bd69a' : source.healthStatus === 'degraded' ? '#f0ad4e' : source.healthStatus === 'failed' ? '#ff6b6b' : 'rgba(255,255,255,0.2)'
+                }} />
               </div>
-              <em style={{ color: source.healthStatus === 'healthy' ? '#6bd69a' : '#ff6b6b', fontSize: '0.7rem' }}>{source.healthStatus === 'healthy' ? '✓' : '✗'}</em>
+              <em style={{
+                color: source.healthStatus === 'healthy' ? '#6bd69a' : source.healthStatus === 'degraded' ? '#f0ad4e' : source.healthStatus === 'failed' ? '#ff6b6b' : 'rgba(255,255,255,0.3)',
+                fontSize: '0.7rem'
+              }}>{source.healthStatus === 'healthy' ? '✓' : source.healthStatus === 'failed' ? '✗' : source.healthStatus === 'degraded' ? '!' : '–'}</em>
             </div>
           ))}
         </div>
