@@ -74,7 +74,7 @@ export function usePublicData(showToast: ShowToast) {
         }
       }
       if (category) apiFilters.category = category;
-      if (categoryGroup && !category) apiFilters.followGroup = categoryGroup === 'follow' ? 'follow' : 'game';
+      if (categoryGroup) apiFilters.followGroup = categoryGroup === 'follow' ? 'follow' : 'game';
       if (filters.importance) apiFilters.importance = filters.importance;
       if (filters.q) apiFilters.q = filters.q;
 
