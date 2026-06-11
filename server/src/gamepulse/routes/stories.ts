@@ -10,6 +10,11 @@ import {
   applyLowValueNoticeFilter,
   publicVisibilityRelationWhere
 } from './helpers.js';
+import {
+  PublicItemsQuerySchema,
+  PublicStoriesQuerySchema,
+  validateOrThrow
+} from '../validation.js';
 
 const router = Router();
 
@@ -19,8 +24,8 @@ const router = Router();
 router.get('/items', async (req, res) => {
   try {
     const {
-      page = '1',
-      limit = '24',
+      page,
+      limit,
       game,
       sourceId,
       itemKind,
@@ -29,10 +34,10 @@ router.get('/items', async (req, res) => {
       visibility,
       official,
       q
-    } = req.query;
+    } = validateOrThrow(PublicItemsQuerySchema, req.query, 'items query');
 
-    const pageNum = Math.max(1, parseInt(String(page), 10) || 1);
-    const limitNum = Math.min(60, Math.max(1, parseInt(String(limit), 10) || 24));
+    const pageNum = page;
+    const limitNum = limit;
     const where: PrismaWhereClause = { hidden: false };
 
     if (game) where.game = String(game);
@@ -85,6 +90,10 @@ router.get('/items', async (req, res) => {
     });
   } catch (error) {
     console.error('Game Pulse public items failed:', error);
+    if (error instanceof Error && error.message.startsWith('Validation failed')) {
+      res.status(400).json({ error: error.message });
+      return;
+    }
     res.status(500).json({ error: 'Failed to fetch items' });
   }
 });
@@ -98,8 +107,8 @@ const GAME_CATEGORIES_SET = new Set(['announcement', 'event', 'version', 'charac
 router.get('/stories', async (req, res) => {
   try {
     const {
-      page = '1',
-      limit = '24',
+      page,
+      limit,
       game,
       sourceId,
       itemKind,
@@ -110,10 +119,10 @@ router.get('/stories', async (req, res) => {
       q,
       followGroup,
       sourceUid
-    } = req.query;
+    } = validateOrThrow(PublicStoriesQuerySchema, req.query, 'stories query');
 
-    const pageNum = Math.max(1, parseInt(String(page), 10) || 1);
-    const limitNum = Math.min(60, Math.max(1, parseInt(String(limit), 10) || 24));
+    const pageNum = page;
+    const limitNum = limit;
     const candidateLimit = Math.min(1000, Math.max(300, pageNum * limitNum * 4));
     const gameArr = toArray(game);
     const categoryArr = toArray(category);
@@ -257,6 +266,10 @@ router.get('/stories', async (req, res) => {
     });
   } catch (error) {
     console.error('Game Pulse public stories failed:', error);
+    if (error instanceof Error && error.message.startsWith('Validation failed')) {
+      res.status(400).json({ error: error.message });
+      return;
+    }
     res.status(500).json({ error: 'Failed to fetch stories' });
   }
 });

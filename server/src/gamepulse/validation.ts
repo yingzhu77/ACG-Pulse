@@ -56,6 +56,31 @@ const optionalNullableTrimmedString = z.preprocess(
   z.string().nullable()
 );
 
+const booleanLike = z.preprocess(
+  (v) => {
+    if (typeof v === 'boolean') return v;
+    if (typeof v === 'string') {
+      const s = v.trim().toLowerCase();
+      if (s === 'true') return true;
+      if (s === 'false') return false;
+    }
+    return v;
+  },
+  z.boolean()
+);
+
+const sourceConfigString = z.preprocess(
+  (v) => {
+    if (v === undefined || v === null) return null;
+    if (typeof v === 'string') {
+      const s = v.trim();
+      return s || null;
+    }
+    return JSON.stringify(v);
+  },
+  z.string().nullable()
+);
+
 // --- Admin: Source CRUD ---
 
 export const CreateSourceSchema = z.object({
@@ -65,24 +90,26 @@ export const CreateSourceSchema = z.object({
   url: optionalNullableTrimmedString,
   uid: optionalNullableTrimmedString,
   route: optionalNullableTrimmedString,
-  isOfficial: z.boolean().default(false),
-  followed: z.boolean().default(false),
-  enabled: z.boolean().default(true),
+  isOfficial: booleanLike.default(false),
+  followed: booleanLike.default(false),
+  enabled: booleanLike.default(true),
   priority: z.number().int().min(0).max(100).default(50),
-  config: z.preprocess(
-    (v) => {
-      if (v === undefined || v === null) return null;
-      if (typeof v === 'string') {
-        const s = v.trim();
-        return s || null;
-      }
-      return JSON.stringify(v);
-    },
-    z.string().nullable()
-  )
+  config: sourceConfigString
 });
 
-export const UpdateSourceSchema = CreateSourceSchema.partial();
+export const UpdateSourceSchema = z.object({
+  name: z.string().trim().min(1, 'name is required').optional(),
+  type: z.string().trim().min(1, 'type is required').optional(),
+  game: z.string().trim().min(1, 'game is required').optional(),
+  url: optionalNullableTrimmedString.optional(),
+  uid: optionalNullableTrimmedString.optional(),
+  route: optionalNullableTrimmedString.optional(),
+  isOfficial: booleanLike.optional(),
+  followed: booleanLike.optional(),
+  enabled: booleanLike.optional(),
+  priority: z.number().int().min(0).max(100).optional(),
+  config: sourceConfigString.optional()
+});
 
 export type CreateSourceInput = z.infer<typeof CreateSourceSchema>;
 export type UpdateSourceInput = z.infer<typeof UpdateSourceSchema>;

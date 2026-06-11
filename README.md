@@ -30,6 +30,9 @@ AI 驱动的游戏/ACG 资讯聚合面板，自动采集多源内容，智能分
 
 ## 快速开始
 
+> **编码约定**：项目源码和文档均使用 UTF-8。Windows PowerShell 读取中文文件时建议显式使用
+> `Get-Content -Encoding UTF8 <file>`，避免控制台默认编码造成中文显示乱码。
+
 ### 方式一：Docker 部署（推荐）
 
 ```bash

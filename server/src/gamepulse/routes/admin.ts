@@ -26,6 +26,13 @@ export function createAdminRouter(io: Server): Router {
   const router = Router();
 
   router.post('/login', (req, res) => {
+    let credentials: { password: string };
+    try {
+      credentials = validateOrThrow(LoginSchema, req.body, 'login');
+    } catch (error) {
+      return res.status(400).json({ error: error instanceof Error ? error.message : 'Invalid login input' });
+    }
+
     const ip = req.ip || req.socket.remoteAddress || 'unknown';
     const now = Date.now();
     const record = loginAttempts.get(ip);
@@ -40,7 +47,7 @@ export function createAdminRouter(io: Server): Router {
       record.count++;
     }
 
-    if (!isValidAdminPassword(req.body?.password)) {
+    if (!isValidAdminPassword(credentials.password)) {
       return res.status(401).json({ error: 'Invalid password or ADMIN_PASSWORD is not configured' });
     }
 
@@ -70,25 +77,26 @@ export function createAdminRouter(io: Server): Router {
 
   router.post('/sources', async (req, res) => {
     try {
-      const data = normalizeSourceInput(req.body);
+      const data = validateOrThrow(CreateSourceSchema, req.body, 'source');
       const source = await prisma.source.create({ data });
       res.status(201).json(source);
     } catch (error) {
       console.error('Create source failed:', error);
-      res.status(400).json({ error: 'Failed to create source' });
+      res.status(400).json({ error: error instanceof Error ? error.message : 'Failed to create source' });
     }
   });
 
   router.put('/sources/:id', async (req, res) => {
     try {
+      const data = validateOrThrow(UpdateSourceSchema, req.body, 'source');
       const source = await prisma.source.update({
         where: { id: req.params.id },
-        data: normalizeSourceInput(req.body, true)
+        data
       });
       res.json(source);
     } catch (error) {
       console.error('Update source failed:', error);
-      res.status(400).json({ error: 'Failed to update source' });
+      res.status(400).json({ error: error instanceof Error ? error.message : 'Failed to update source' });
     }
   });
 
@@ -129,13 +137,14 @@ export function createAdminRouter(io: Server): Router {
 
   router.post('/sources/follow-url', async (req, res) => {
     try {
-      const rawUrl = String(req.body?.url || '').trim();
+      const input = validateOrThrow(FollowUrlSchema, req.body, 'follow url');
+      const rawUrl = input.url;
       const uidMatch = rawUrl.match(/space\.bilibili\.com\/(\d+)/);
       if (!uidMatch) {
         return res.status(400).json({ error: '无法解析 B站 URL，格式应为 https://space.bilibili.com/UID' });
       }
       const uid = uidMatch[1];
-      const name = String(req.body?.name || '').trim() || `UP主-${uid}`;
+      const name = input.name || `UP主-${uid}`;
 
       const existing = await prisma.source.findFirst({
         where: { type: 'bilibili_video', uid }
@@ -143,7 +152,7 @@ export function createAdminRouter(io: Server): Router {
       if (existing) {
         const updated = await prisma.source.update({
           where: { id: existing.id },
-          data: { followed: true, name: req.body?.name ? name : existing.name }
+          data: { followed: true, name: input.name ? name : existing.name }
         });
         return res.json(updated);
       }
@@ -189,12 +198,17 @@ export function createAdminRouter(io: Server): Router {
   });
 
   router.patch('/items/:id/hide', async (req, res) => {
-    const item = await prisma.feedItem.update({
-      where: { id: req.params.id },
-      data: { hidden: Boolean(req.body?.hidden) },
-      include: { source: true, analysis: true }
-    });
-    res.json(item);
+    try {
+      const input = validateOrThrow(HideItemSchema, req.body, 'hide item');
+      const item = await prisma.feedItem.update({
+        where: { id: req.params.id },
+        data: { hidden: input.hidden },
+        include: { source: true, analysis: true }
+      });
+      res.json(item);
+    } catch (error) {
+      res.status(400).json({ error: error instanceof Error ? error.message : 'Failed to update item visibility' });
+    }
   });
 
   router.post('/items/:id/analyze', async (req, res) => {
@@ -218,7 +232,7 @@ export function createAdminRouter(io: Server): Router {
 
   router.post('/reanalyze-all', async (req, res) => {
     try {
-      const limit = Math.min(500, Math.max(1, Number(req.body?.limit) || 100));
+      const { limit } = validateOrThrow(ReanalyzeSchema, req.body, 'reanalyze');
       const items = await prisma.feedItem.findMany({
         where: { hidden: false },
         include: { source: true, analysis: true },
@@ -272,77 +286,21 @@ export function createAdminRouter(io: Server): Router {
   });
 
   router.put('/settings', async (req, res) => {
-    const entries = Object.entries(req.body || {});
-    for (const [key, value] of entries) {
-      await prisma.setting.upsert({
-        where: { key },
-        create: { key, value: String(value) },
-        update: { value: String(value) }
-      });
+    try {
+      const input = validateOrThrow(UpdateSettingsSchema, req.body || {}, 'settings');
+      const entries = Object.entries(input);
+      for (const [key, value] of entries) {
+        await prisma.setting.upsert({
+          where: { key },
+          create: { key, value: String(value) },
+          update: { value: String(value) }
+        });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(400).json({ error: error instanceof Error ? error.message : 'Failed to update settings' });
     }
-    res.status(204).send();
   });
 
   return router;
-}
-
-/** Source data shape compatible with Prisma create/update. */
-interface NormalizedSourceData {
-  name?: string;
-  type?: string;
-  game?: string;
-  url?: string | null;
-  uid?: string | null;
-  route?: string | null;
-  isOfficial?: boolean;
-  followed?: boolean;
-  enabled?: boolean;
-  priority?: number;
-  config?: string | null;
-}
-
-/** Full source data with required fields for create operations. */
-interface NormalizedSourceDataFull extends NormalizedSourceData {
-  name: string;
-  type: string;
-  game: string;
-}
-
-function normalizeSourceInput(input: Record<string, unknown>): NormalizedSourceDataFull;
-function normalizeSourceInput(input: Record<string, unknown>, partial: true): NormalizedSourceData;
-function normalizeSourceInput(input: Record<string, unknown>, partial = false): NormalizedSourceData {
-  const data: NormalizedSourceData = {};
-  const assign = <K extends keyof NormalizedSourceData>(
-    key: K,
-    transform: (value: unknown) => NormalizedSourceData[K]
-  ): void => {
-    if (input[key] !== undefined) {
-      data[key] = transform(input[key]);
-    }
-  };
-
-  assign('name', value => String(value).trim());
-  assign('type', value => String(value).trim());
-  assign('game', value => String(value).trim());
-  assign('url', value => optionalString(value));
-  assign('uid', value => optionalString(value));
-  assign('route', value => optionalString(value));
-  assign('isOfficial', value => Boolean(value));
-  assign('followed', value => Boolean(value));
-  assign('enabled', value => Boolean(value));
-  assign('priority', value => Number(value) || 50);
-  assign('config', value => typeof value === 'string' ? optionalString(value) : JSON.stringify(value || {}));
-
-  if (!partial) {
-    for (const key of ['name', 'type', 'game'] as const) {
-      if (!data[key]) throw new Error(`${key} is required`);
-    }
-  }
-
-  return data;
-}
-
-function optionalString(value: unknown): string | null {
-  const normalized = String(value || '').trim();
-  return normalized ? normalized : null;
 }
