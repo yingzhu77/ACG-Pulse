@@ -45,6 +45,39 @@ export interface Analysis {
   analyzedAt: string | null;
 }
 
+export interface AnalysisQueueTask {
+  id: string;
+  feedItemId: string;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  retryCount: number;
+  maxRetries: number;
+  lastError: string | null;
+  provider: string | null;
+  model: string | null;
+  durationMs: number | null;
+  nextRunAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  failedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  feedItem: {
+    id: string;
+    title: string;
+    game: string;
+    createdAt: string;
+    source: {
+      name: string;
+    };
+  };
+}
+
+export interface AnalysisQueueOverview {
+  counts: Record<string, number>;
+  processing: boolean;
+  recentTasks: AnalysisQueueTask[];
+}
+
 export interface FeedItem {
   id: string;
   sourceId: string;
@@ -259,6 +292,17 @@ export const adminApi = {
     headers: authHeaders()
   }),
   runCheck: () => request<{ checkedSources: number; newItems: number; failedSources: number }>('/admin/check', {
+    method: 'POST',
+    headers: authHeaders()
+  }),
+  getAnalysisQueue: () => request<AnalysisQueueOverview>('/admin/analysis-queue', {
+    headers: authHeaders()
+  }),
+  retryAnalysisTask: (id: string) => request<void>(`/admin/analysis-queue/${id}/retry`, {
+    method: 'POST',
+    headers: authHeaders()
+  }),
+  retryFailedAnalysisTasks: () => request<{ count: number }>('/admin/analysis-queue/retry-failed', {
     method: 'POST',
     headers: authHeaders()
   }),

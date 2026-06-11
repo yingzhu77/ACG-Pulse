@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { adminApi, tokenStore, type Source } from '../services/api';
+import { adminApi, tokenStore, type AnalysisQueueOverview, type Source } from '../services/api';
 import type { ReanalyzeProgress } from '../services/socket';
 import { onReanalyzeProgress, onReanalyzeDone, onReanalyzeError } from '../services/socket';
 
@@ -10,6 +10,7 @@ export function useAdmin(showToast: ShowToast, loadPublicData: () => Promise<voi
   const [adminToken, setAdminToken] = useState(tokenStore.get());
   const [password, setPassword] = useState('');
   const [adminSources, setAdminSources] = useState<Source[]>([]);
+  const [analysisQueue, setAnalysisQueue] = useState<AnalysisQueueOverview | null>(null);
   const [reanalyzeProgress, setReanalyzeProgress] = useState<ReanalyzeProgress | null>(null);
   const [sourceDraft, setSourceDraft] = useState({
     name: '',
@@ -25,7 +26,7 @@ export function useAdmin(showToast: ShowToast, loadPublicData: () => Promise<voi
   const [bilibiliCookie, setBilibiliCookie] = useState('');
 
   const loadAdminSources = useCallback(async () => {
-    if (!adminToken) return;
+    if (!adminToken && !tokenStore.get()) return;
     try {
       setAdminSources(await adminApi.getSources());
       // 加载 B站 Cookie
@@ -38,9 +39,21 @@ export function useAdmin(showToast: ShowToast, loadPublicData: () => Promise<voi
     }
   }, [adminToken, showToast]);
 
+  const loadAnalysisQueue = useCallback(async () => {
+    if (!adminToken && !tokenStore.get()) return;
+    try {
+      setAnalysisQueue(await adminApi.getAnalysisQueue());
+    } catch (error) {
+      showToast('error', error instanceof Error ? error.message : '队列状态加载失败');
+    }
+  }, [adminToken, showToast]);
+
   useEffect(() => {
-    if (adminOpen) loadAdminSources();
-  }, [adminOpen, loadAdminSources]);
+    if (adminOpen) {
+      void loadAdminSources();
+      void loadAnalysisQueue();
+    }
+  }, [adminOpen, loadAdminSources, loadAnalysisQueue]);
 
   // Reanalyze WebSocket progress tracking
   useEffect(() => {
@@ -69,7 +82,7 @@ export function useAdmin(showToast: ShowToast, loadPublicData: () => Promise<voi
       setAdminToken(result.token);
       setPassword('');
       showToast('success', '后台已解锁');
-      await loadAdminSources();
+      await Promise.all([loadAdminSources(), loadAnalysisQueue()]);
     } catch (error) {
       showToast('error', error instanceof Error ? error.message : '登录失败');
     }
@@ -97,11 +110,11 @@ export function useAdmin(showToast: ShowToast, loadPublicData: () => Promise<voi
     try {
       const result = await adminApi.runCheck();
       showToast('success', `检查完成：新增 ${result.newItems}，失败 ${result.failedSources}`);
-      await Promise.all([loadAdminSources(), loadPublicData()]);
+      await Promise.all([loadAdminSources(), loadAnalysisQueue(), loadPublicData()]);
     } catch (error) {
       showToast('error', error instanceof Error ? error.message : '检查失败');
     }
-  }, [adminToken, showToast, loadAdminSources, loadPublicData]);
+  }, [adminToken, showToast, loadAdminSources, loadAnalysisQueue, loadPublicData]);
 
   const handleReanalyzeAll = useCallback(async () => {
     if (!adminToken) {
@@ -114,6 +127,28 @@ export function useAdmin(showToast: ShowToast, loadPublicData: () => Promise<voi
       showToast('error', error instanceof Error ? error.message : '重新分类失败');
     }
   }, [adminToken, showToast]);
+
+  const handleRetryAnalysisTask = useCallback(async (id: string) => {
+    if (!adminToken) return;
+    try {
+      await adminApi.retryAnalysisTask(id);
+      showToast('success', '分析任务已重新入队');
+      await loadAnalysisQueue();
+    } catch (error) {
+      showToast('error', error instanceof Error ? error.message : '重试任务失败');
+    }
+  }, [adminToken, showToast, loadAnalysisQueue]);
+
+  const handleRetryFailedAnalysisTasks = useCallback(async () => {
+    if (!adminToken) return;
+    try {
+      const result = await adminApi.retryFailedAnalysisTasks();
+      showToast('success', `已重新入队 ${result.count} 个失败任务`);
+      await loadAnalysisQueue();
+    } catch (error) {
+      showToast('error', error instanceof Error ? error.message : '批量重试失败');
+    }
+  }, [adminToken, showToast, loadAnalysisQueue]);
 
   const handleCreateSource = useCallback(async (event: React.FormEvent) => {
     event.preventDefault();
@@ -158,6 +193,7 @@ export function useAdmin(showToast: ShowToast, loadPublicData: () => Promise<voi
     tokenStore.clear();
     setAdminToken(null);
     setAdminSources([]);
+    setAnalysisQueue(null);
   }, []);
 
   const handleSaveCookie = useCallback(async () => {
@@ -177,6 +213,7 @@ export function useAdmin(showToast: ShowToast, loadPublicData: () => Promise<voi
     password,
     setPassword,
     adminSources,
+    analysisQueue,
     reanalyzeProgress,
     sourceDraft,
     setSourceDraft,
@@ -190,6 +227,8 @@ export function useAdmin(showToast: ShowToast, loadPublicData: () => Promise<voi
     handleSeedDefaults,
     handleRunCheck,
     handleReanalyzeAll,
+    handleRetryAnalysisTask,
+    handleRetryFailedAnalysisTasks,
     handleCreateSource,
     handleToggleSource,
     handleFollowUrl,

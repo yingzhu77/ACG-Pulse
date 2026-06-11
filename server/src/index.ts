@@ -16,6 +16,7 @@ import gamePulsePublicRouter from './gamepulse/routes/public.js';
 import hotSearchRouter from './gamepulse/routes/hotSearch.js';
 import { createAdminRouter } from './gamepulse/routes/admin.js';
 import communityRouter from './gamepulse/routes/community.js';
+import { startAnalysisQueueWorker } from './gamepulse/ai/analysisQueue.js';
 import { runGamePulseCheck } from './gamepulse/jobs/checker.js';
 import { scheduledCommunityRefresh } from './gamepulse/services/communityService.js';
 import { requestLogger, errorHandler, notFoundHandler } from './gamepulse/routes/middleware.js';
@@ -148,6 +149,8 @@ io.on('connection', (socket) => {
     console.log('Client disconnected:', socket.id);
   });
 });
+
+startAnalysisQueueWorker(io);
 
 cron.schedule('*/30 * * * *', async () => {
   console.log('[GamePulse] Running scheduled check...');

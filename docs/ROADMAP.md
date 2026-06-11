@@ -14,9 +14,9 @@
   - 降低内存聚合的候选数据规模，必要时为故事聚合结果增加缓存层。
   - 对搜索参数 `q` 评估 SQLite FTS 或迁移到更合适的全文搜索方案。
 - 将 AI 分析队列持久化：
-  - 增加任务状态：`pending / running / completed / failed`。
-  - 记录 `retryCount`、最近错误、耗时和 provider/model。
-  - 管理后台展示队列长度、失败任务和手动重试入口。
+  - ✅ 增加任务状态：`pending / running / completed / failed`。
+  - ✅ 记录 `retryCount`、最近错误、耗时和 provider/model。
+  - ✅ 管理后台展示队列长度、失败任务和手动重试入口。
 - 增强运维能力：
   - 增加 SQLite 自动备份与恢复文档。
   - 增加源健康历史、失败率和最近错误统计。

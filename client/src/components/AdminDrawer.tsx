@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { Lock, LogOut, Play, Plus, RefreshCw, X } from 'lucide-react';
-import type { Source } from '../services/api';
+import { Lock, LogOut, Play, Plus, RefreshCw, RotateCcw, X } from 'lucide-react';
+import type { AnalysisQueueOverview, Source } from '../services/api';
 import type { ReanalyzeProgress } from '../services/socket';
 import { cn } from '../lib/utils';
 
@@ -30,6 +30,9 @@ export interface AdminDrawerProps {
   onRunCheck: () => void;
   onReanalyzeAll: () => void;
   reanalyzeProgress: ReanalyzeProgress | null;
+  analysisQueue: AnalysisQueueOverview | null;
+  onRetryAnalysisTask: (id: string) => void;
+  onRetryFailedAnalysisTasks: () => void;
   onToggleSource: (id: string) => void;
   followUrl: string;
   setFollowUrl: (value: string) => void;
@@ -112,6 +115,50 @@ export function AdminDrawer(props: AdminDrawerProps) {
                     </div>
                   </div>
                 )}
+
+                <div className="drawer-card">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
+                    <h3>AI 分析队列</h3>
+                    <button
+                      onClick={props.onRetryFailedAnalysisTasks}
+                      className="action-button"
+                      disabled={!props.analysisQueue?.counts.failed}
+                      type="button"
+                    >
+                      <RotateCcw className="h-4 w-4" />
+                      重试失败
+                    </button>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginTop: 10 }}>
+                    {['pending', 'running', 'completed', 'failed'].map(status => (
+                      <div key={status} className="queue-stat">
+                        <span>{status}</span>
+                        <strong>{props.analysisQueue?.counts[status] || 0}</strong>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ marginTop: 10, display: 'grid', gap: 8 }}>
+                    {(props.analysisQueue?.recentTasks || []).slice(0, 5).map(task => (
+                      <div key={task.id} className="queue-task-row">
+                        <div>
+                          <p>{task.feedItem.title}</p>
+                          <span>
+                            {task.status} · {task.retryCount}/{task.maxRetries} · {task.feedItem.source.name}
+                          </span>
+                          {task.lastError && <em>{task.lastError}</em>}
+                        </div>
+                        {task.status === 'failed' && (
+                          <button onClick={() => props.onRetryAnalysisTask(task.id)} type="button" className="icon-button" aria-label="重试任务">
+                            <RotateCcw className="h-4 w-4" />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                    {!props.analysisQueue?.recentTasks.length && (
+                      <p style={{ color: 'var(--text-soft)', fontSize: 13, margin: 0 }}>暂无分析任务</p>
+                    )}
+                  </div>
+                </div>
 
                 <form onSubmit={props.onCreateSource} className="drawer-card">
                   <h3>添加权威 UP / 官方源</h3>

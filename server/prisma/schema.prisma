@@ -76,6 +76,7 @@ model FeedItem {
   updatedAt   DateTime       @updatedAt
   source      Source         @relation(fields: [sourceId], references: [id], onDelete: Cascade)
   analysis    Analysis?
+  analysisTasks AnalysisTask[]
   notifications Notification[]
 
   @@unique([sourceId, contentHash])
@@ -106,6 +107,29 @@ model Analysis {
   @@index([importance])
   @@index([visibility])
   @@index([category])
+}
+
+model AnalysisTask {
+  id          String   @id @default(uuid())
+  feedItemId  String
+  status      String   @default("pending") // pending, running, completed, failed
+  retryCount  Int      @default(0)
+  maxRetries  Int      @default(3)
+  lastError   String?
+  provider    String?
+  model       String?
+  durationMs  Int?
+  nextRunAt   DateTime @default(now())
+  startedAt   DateTime?
+  completedAt DateTime?
+  failedAt    DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  feedItem    FeedItem @relation(fields: [feedItemId], references: [id], onDelete: Cascade)
+
+  @@index([status, nextRunAt])
+  @@index([feedItemId, status])
+  @@index([createdAt])
 }
 
 model CommunityTopic {

@@ -1,9 +1,8 @@
 import type { Server } from 'socket.io';
 import { prisma } from '../../db.js';
-import { ensureAnalysis } from '../ai/analyzer.js';
+import { enqueueAnalysisTask } from '../ai/analysisQueue.js';
 import { getAdapter } from '../adapters/registry.js';
 import { contentHash, normalizeUrl, truncate } from '../utils.js';
-import { sendFeedItemEmail } from '../../services/email.js';
 import { fetchBilibiliAvatar } from '../adapters/bilibiliVideo.js';
 
 export interface CheckResult {
@@ -16,12 +15,6 @@ interface SourceCheckResult {
   newItems: number;
   failed: boolean;
 }
-
-// 批量分析队列
-const analysisQueue: { itemId: string; io?: Server }[] = [];
-let analysisProcessing = false;
-const ANALYSIS_BATCH_SIZE = 2;
-const ANALYSIS_BATCH_DELAY_MS = 5000;
 
 // Maximum feed items to keep (configurable via env)
 function getMaxFeedItems(): number {
@@ -152,7 +145,7 @@ async function checkSource(
         importance: 'pending'
       });
 
-      queueAnalysis(item.id, io);
+      await enqueueAnalysisTask(item.id, io);
     }
 
     // 获取 B站用户头像（如果还没有）
@@ -218,59 +211,6 @@ async function runWithConcurrency<T, R>(
   });
   await Promise.all(workers);
   return results;
-}
-
-function queueAnalysis(itemId: string, io?: Server): void {
-  analysisQueue.push({ itemId, io });
-  if (!analysisProcessing) {
-    processAnalysisQueue();
-  }
-}
-
-async function processAnalysisQueue(): Promise<void> {
-  if (analysisProcessing || analysisQueue.length === 0) return;
-  analysisProcessing = true;
-
-  while (analysisQueue.length > 0) {
-    const { itemId, io } = analysisQueue.shift()!;
-    await analyzeAndNotify(itemId, io).catch(error => {
-      console.error(`[GamePulse] analysis failed for item ${itemId}`, error);
-    });
-    // 逐条延迟避免 API 限流
-    if (analysisQueue.length > 0) {
-      await new Promise(r => setTimeout(r, ANALYSIS_BATCH_DELAY_MS));
-    }
-  }
-
-  analysisProcessing = false;
-}
-
-async function analyzeAndNotify(itemId: string, io?: Server): Promise<void> {
-  const item = await prisma.feedItem.findUnique({
-    where: { id: itemId },
-    include: { source: true }
-  });
-  if (!item) return;
-
-  await ensureAnalysis(item);
-  const withAnalysis = await prisma.feedItem.findUnique({
-    where: { id: item.id },
-    include: { source: true, analysis: true }
-  });
-  if (!withAnalysis) return;
-
-  io?.to(`game:${withAnalysis.game}`).emit('item:analyzed', withAnalysis);
-  io?.emit('notification', {
-    type: 'analysis',
-    title: withAnalysis.title,
-    content: withAnalysis.analysis?.summary || withAnalysis.content.slice(0, 120),
-    feedItemId: withAnalysis.id,
-    importance: withAnalysis.analysis?.importance || 'low'
-  });
-
-  if (['high', 'urgent'].includes(withAnalysis.analysis?.importance || '')) {
-    await sendFeedItemEmail(withAnalysis);
-  }
 }
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {

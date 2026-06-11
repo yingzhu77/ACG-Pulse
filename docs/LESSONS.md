@@ -299,6 +299,16 @@ Get-Content -Encoding UTF8 docs\LESSONS.md
 
 ---
 
+### 3.4 AI 队列不要只放进程内存
+
+**问题**：进程内数组队列在服务重启、异常退出或多入口触发时会丢任务；失败只写日志，管理端无法知道 pending/running/failed 的真实状态，也无法手动重试。
+
+**解决**：队列状态进入数据库，任务记录 `pending/running/completed/failed`、`retryCount`、`lastError`、`provider/model` 和耗时；服务启动时恢复卡在 `running` 的任务，失败任务用 `nextRunAt` 做退避重试，管理端提供状态查询和重试入口。
+
+**规则**：只要任务结果需要跨进程存活、可观测或可重试，就不要只依赖内存队列；即使暂不引入 Redis/BullMQ，也应先用现有数据库保存最小任务状态。
+
+---
+
 ## 四、接口变更踩坑
 
 ### 4.1 改接口后遗漏使用处

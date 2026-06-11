@@ -2,18 +2,34 @@ import type { FeedItem, Source } from '@prisma/client';
 import { prisma } from '../../db.js';
 import { analyzeWithProvider, fallbackAnalysis } from './provider.js';
 
+export interface AnalysisExecutionResult {
+  status: 'completed' | 'failed' | 'skipped';
+  provider?: string;
+  model?: string;
+  error?: string;
+}
+
 // 内容预筛：太短的内容跳过 AI，直接用规则
 function shouldSkipAI(item: FeedItem & { source: Source }): boolean {
   const text = `${item.title} ${item.content}`.trim();
   return text.length < 15;
 }
 
-export async function ensureAnalysis(item: FeedItem & { source: Source }, options: { force?: boolean } = {}): Promise<void> {
+export async function ensureAnalysis(
+  item: FeedItem & { source: Source },
+  options: { force?: boolean } = {}
+): Promise<AnalysisExecutionResult> {
   const existing = await prisma.analysis.findUnique({
     where: { feedItemId: item.id }
   });
 
-  if (existing?.status === 'completed' && !options.force) return;
+  if (existing?.status === 'completed' && !options.force) {
+    return {
+      status: 'skipped',
+      provider: existing.provider || undefined,
+      model: existing.model || undefined
+    };
+  }
 
   await prisma.analysis.upsert({
     where: { feedItemId: item.id },
@@ -56,7 +72,7 @@ export async function ensureAnalysis(item: FeedItem & { source: Source }, option
         analyzedAt: new Date()
       }
     });
-    return;
+    return { status: 'completed', provider: 'rules', model: 'fallback' };
   }
 
   try {
@@ -129,13 +145,16 @@ export async function ensureAnalysis(item: FeedItem & { source: Source }, option
         analyzedAt: new Date()
       }
     });
+    return { status: 'completed', provider: result.provider, model: result.model };
   } catch (error) {
+    const message = error instanceof Error ? error.message.slice(0, 500) : 'Unknown AI analysis error';
     await prisma.analysis.update({
       where: { feedItemId: item.id },
       data: {
         status: 'failed',
-        error: error instanceof Error ? error.message.slice(0, 500) : 'Unknown AI analysis error'
+        error: message
       }
     });
+    return { status: 'failed', error: message };
   }
 }

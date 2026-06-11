@@ -4,6 +4,11 @@ import { prisma } from '../../db.js';
 import { createAdminToken, isValidAdminPassword, requireAdmin } from '../auth.js';
 import { seedDefaultSources } from '../defaultSources.js';
 import { ensureAnalysis } from '../ai/analyzer.js';
+import {
+  getAnalysisQueueOverview,
+  retryAnalysisTask,
+  retryFailedAnalysisTasks
+} from '../ai/analysisQueue.js';
 import { runGamePulseCheck } from '../jobs/checker.js';
 import type { PrismaWhereClause } from '../types.js';
 import {
@@ -228,6 +233,35 @@ export function createAdminRouter(io: Server): Router {
   router.post('/check', async (_req, res) => {
     const result = await runGamePulseCheck(io);
     res.json(result);
+  });
+
+  router.get('/analysis-queue', async (_req, res) => {
+    try {
+      res.json(await getAnalysisQueueOverview());
+    } catch (error) {
+      console.error('Fetch analysis queue failed:', error);
+      res.status(500).json({ error: 'Failed to fetch analysis queue' });
+    }
+  });
+
+  router.post('/analysis-queue/retry-failed', async (_req, res) => {
+    try {
+      const count = await retryFailedAnalysisTasks(io);
+      res.json({ count });
+    } catch (error) {
+      console.error('Retry failed analysis tasks failed:', error);
+      res.status(500).json({ error: 'Failed to retry analysis tasks' });
+    }
+  });
+
+  router.post('/analysis-queue/:id/retry', async (req, res) => {
+    try {
+      await retryAnalysisTask(req.params.id, io);
+      res.status(204).send();
+    } catch (error) {
+      console.error('Retry analysis task failed:', error);
+      res.status(400).json({ error: 'Failed to retry analysis task' });
+    }
   });
 
   router.post('/reanalyze-all', async (req, res) => {

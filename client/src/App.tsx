@@ -214,6 +214,9 @@ function App() {
         onRunCheck={admin.handleRunCheck}
         onReanalyzeAll={admin.handleReanalyzeAll}
         reanalyzeProgress={admin.reanalyzeProgress}
+        analysisQueue={admin.analysisQueue}
+        onRetryAnalysisTask={admin.handleRetryAnalysisTask}
+        onRetryFailedAnalysisTasks={admin.handleRetryFailedAnalysisTasks}
         onToggleSource={admin.handleToggleSource}
         followUrl={admin.followUrl}
         setFollowUrl={admin.setFollowUrl}
