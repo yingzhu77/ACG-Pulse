@@ -29,7 +29,7 @@ function dateKeyInTz(value: string | null | undefined): string {
 export interface SummaryColumnProps {
   stats: PublicStats | null;
   sources: Source[];
-  health: { healthy: number; failed: number; unknown: number };
+  health: { healthy: number; degraded: number; failed: number; unknown: number };
   stories: Story[];
   hotStories: Story[];
 }
@@ -47,6 +47,9 @@ export function SummaryColumn(props: SummaryColumnProps) {
       })
       .slice(0, 10);
   }, [props.hotStories]);
+  const activeSourceNote = props.health.degraded > 0
+    ? `${props.health.healthy} 健康 · ${props.health.degraded} 降级`
+    : `${props.health.healthy} 健康`;
 
   return (
     <aside className="summary-column">
@@ -59,7 +62,7 @@ export function SummaryColumn(props: SummaryColumnProps) {
           <SummaryMetric label="情报总数" value={props.stats?.total || 0} note="公开主流" tone="blue" />
           <SummaryMetric label="高重要情报" value={props.stats?.high || 0} note="high" tone="pink" />
           <SummaryMetric label="今日热门" value={hotStories.length} note="游戏资讯" tone="cyan" />
-          <SummaryMetric label="活跃来源" value={props.sources.length} note={`${props.health.healthy} 健康`} tone="amber" />
+          <SummaryMetric label="活跃来源" value={props.sources.length} note={activeSourceNote} tone="amber" />
           <SummaryMetric label="AI 处理条数" value={props.stats?.total || 0} note="含规则兜底" tone="violet" />
           <SummaryMetric label="去重率" value={estimateDedupRate(props.stories)} suffix="%" note="多源合并" tone="green" />
         </div>
@@ -101,7 +104,7 @@ export function SummaryColumn(props: SummaryColumnProps) {
       <section className="glass-panel health-panel">
         <div className="panel-heading compact">
           <h2>源健康</h2>
-          <span>{props.health.healthy}/{props.sources.length} 正常</span>
+          <span>{props.health.healthy}/{props.sources.length} 正常 · {props.health.degraded} 降级</span>
         </div>
         <div className="health-list" style={{ maxHeight: '240px', overflowY: 'auto' }}>
           {props.sources.map(source => (

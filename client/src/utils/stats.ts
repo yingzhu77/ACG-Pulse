@@ -4,11 +4,12 @@ export function summarizeHealth(sources: Source[]) {
   return sources.reduce(
     (acc, source) => {
       if (source.healthStatus === 'healthy') acc.healthy++;
+      else if (source.healthStatus === 'degraded') acc.degraded++;
       else if (source.healthStatus === 'failed') acc.failed++;
       else acc.unknown++;
       return acc;
     },
-    { healthy: 0, failed: 0, unknown: 0 }
+    { healthy: 0, degraded: 0, failed: 0, unknown: 0 }
   );
 }
 

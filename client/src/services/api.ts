@@ -271,12 +271,48 @@ export interface ReportResponse {
   summary: ReportSummary;
 }
 
+export interface CommunityTopTopic {
+  id: string;
+  title: string;
+  heatScore: number;
+  sentiment: string;
+  source: string;
+  category: string;
+  url: string;
+}
+
+export interface CommunitySourceShare {
+  source: string;
+  count: number;
+  heatScore: number;
+  percent: number;
+}
+
+export interface CommunityHeatPoint {
+  index: number;
+  heatScore: number;
+  topicCount: number;
+}
+
+export interface CommunityInsights {
+  topTopics: CommunityTopTopic[];
+  sourceShare: CommunitySourceShare[];
+  heatTrend: CommunityHeatPoint[];
+  meta: {
+    totalTopics: number;
+    lastUpdated: string | null;
+    isStale: boolean;
+    isRefreshing: boolean;
+  };
+}
+
 export const publicApi = {
   getItems: (filters?: ItemFilters) => request<Paginated<FeedItem>>(withParams('/public/items', filters)),
   getStories: (filters?: ItemFilters) => request<StoriesResponse>(withParams('/public/stories', filters)),
   getStats: () => request<PublicStats>('/public/stats'),
   getSources: () => request<Source[]>('/public/sources'),
   getHotSearch: (filters?: { tag?: string; limit?: number }) => request<{ data: HotSearchItem[]; total: number; lastUpdated: string }>(withParams('/public/hot-search', filters)),
+  getCommunityInsights: () => request<CommunityInsights>('/community/insights'),
   getDailyReport: (filters?: ReportFilters) => request<ReportResponse>(withParams('/public/reports/daily', filters as Record<string, unknown>)),
   getWeeklyReport: (filters?: ReportFilters) => request<ReportResponse>(withParams('/public/reports/weekly', filters as Record<string, unknown>)),
   exportReportUrl: (filters?: ReportFilters): string => {

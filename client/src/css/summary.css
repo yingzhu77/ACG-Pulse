@@ -570,6 +570,189 @@
   background: rgba(245, 87, 134, 0.22);
 }
 
+/* ===== Community Insights (数据洞察 → 社区风向) ===== */
+
+.community-insights {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--stroke);
+}
+
+.community-insights > h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  margin: 0 0 14px;
+  color: var(--text-strong);
+}
+
+.ci-meta {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-soft);
+}
+
+.ci-spin {
+  animation: ci-spin 1s linear infinite;
+}
+@keyframes ci-spin { to { transform: rotate(360deg); } }
+
+.ci-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 80px;
+  color: var(--text-soft);
+  font-size: 13px;
+}
+.ci-empty-sm { min-height: 48px; }
+.ci-error { color: #f87171; }
+
+.ci-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.ci-card {
+  padding: 14px;
+}
+
+.ci-card h4 {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: var(--text-strong);
+}
+
+.ci-right-col {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* Top topics horizontal bar chart */
+.ci-bar-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ci-bar-row {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) 90px 34px;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  border-radius: 6px;
+  padding: 2px 6px;
+  background: rgba(127, 151, 190, 0.06);
+  color: var(--text-main);
+  text-decoration: none;
+  transition: background 0.15s;
+}
+.ci-bar-row:hover {
+  background: rgba(127, 151, 190, 0.14);
+}
+
+.ci-bar-rank {
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--text-soft);
+  text-align: center;
+}
+
+.ci-bar-title {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.ci-bar-track {
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(126, 148, 187, 0.15);
+  overflow: hidden;
+}
+
+.ci-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  transition: width 0.4s ease;
+  min-width: 2px;
+}
+
+.ci-bar-heat {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-soft);
+  text-align: right;
+}
+
+/* Source share horizontal stacked bar */
+.ci-source-bar-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ci-source-bar {
+  display: flex;
+  height: 14px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(126, 148, 187, 0.12);
+}
+
+.ci-source-segment {
+  min-width: 4px;
+  transition: width 0.4s ease;
+}
+
+.ci-source-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.ci-source-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--text-soft);
+}
+
+.ci-source-legend-item i {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.ci-source-legend-item em {
+  font-style: normal;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+/* Heat trend sparkline */
+.ci-spark-chart {
+  position: relative;
+  height: 64px;
+}
+
+.ci-spark-svg {
+  width: 100%;
+  height: 100%;
+}
+
 @media (max-width: 1500px) {
   .game-pulse-layout {
     grid-template-columns: 200px minmax(0, 1fr) 300px;
@@ -849,5 +1032,13 @@
 
   .community-card-ring {
     display: none;
+  }
+
+  .ci-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .ci-bar-row {
+    grid-template-columns: 20px minmax(0, 1fr) 60px 30px;
   }
 }

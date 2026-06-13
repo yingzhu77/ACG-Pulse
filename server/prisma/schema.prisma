@@ -43,7 +43,7 @@ model Source {
   followed      Boolean    @default(false)
   enabled       Boolean    @default(true)
   priority      Int        @default(50)
-  healthStatus  String     @default("unknown") // unknown, healthy, failed
+  healthStatus  String     @default("unknown") // unknown, healthy, degraded, failed
   lastSuccessAt DateTime?
   lastCheckedAt DateTime?
   lastError     String?
@@ -59,7 +59,7 @@ model Source {
 model SourceHealthLog {
   id            String   @id @default(uuid())
   sourceId      String
-  status        String   // healthy, failed
+  status        String   // healthy, degraded, failed
   error         String?
   checkedAt     DateTime @default(now())
   source        Source   @relation(fields: [sourceId], references: [id], onDelete: Cascade)

@@ -260,6 +260,10 @@ function getDirectApiParams(uid: string): Record<string, string | number> {
     pn: 1,
     ps: 20,
     order: 'pubdate',
+    keyword: '',
+    platform: 'web',
+    gaia_source: 'main_web',
+    web_location: 1550101,
     dm_img_list: '[]',
     dm_img_str: 'V2ViR0w=',
     dm_cover_img_str: 'QU5HTEUgKE5WSURJQSBHZUZvcmNlIEdUWCA5NTAgICAgICAgICAgICAgICAgICApIERpcmVjdDNEMTEgdnNfNV8wIHBzXzVfMCwgRDNEMTEp'
@@ -278,6 +282,7 @@ function requestBilibiliSpaceVideos(
       headers: {
         'User-Agent': getUserAgent(),
         Referer: `https://space.bilibili.com/${uid}`,
+        Origin: 'https://space.bilibili.com',
         Accept: 'application/json',
         Cookie: cookie
       },

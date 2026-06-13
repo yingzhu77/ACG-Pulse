@@ -49,13 +49,94 @@ export async function fetchRssHubRoute(source: Source, routeOrUrl: string): Prom
       return await fetchRss(source, feedUrl);
     } catch (error) {
       if (isEmptyRssHubRoute(error)) {
+        const directMihoyoItems = await fetchMihoyoOfficialFallback(source, routeOrUrl);
+        if (directMihoyoItems) {
+          return directMihoyoItems;
+        }
         return [];
       }
       errors.push(formatError(feedUrl, error));
     }
   }
 
+  const directMihoyoItems = await fetchMihoyoOfficialFallback(source, routeOrUrl);
+  if (directMihoyoItems) {
+    return directMihoyoItems;
+  }
+
   throw new AdapterError(`RSSHub route failed: ${routeOrUrl}; ${errors.join(' | ')}`, source.type);
+}
+
+async function fetchMihoyoOfficialFallback(source: Source, routeOrUrl: string): Promise<RawFeedItem[] | null> {
+  const match = routeOrUrl.match(/^\/?mihoyo\/bbs\/official\/(\d+)\/(\d+)\/(\d+)/);
+  if (!match) return null;
+
+  const [, gids, type, limit] = match;
+  const config = parseSourceConfig(source);
+  const apiUrl = 'https://bbs-api-static.miyoushe.com/painter/wapi/getNewsList';
+
+  try {
+    const resp = await axios.get(apiUrl, {
+      params: {
+        client_type: 4,
+        gids,
+        type,
+        page_size: Math.min(Math.max(Number(limit) || 20, 1), 50),
+        last_id: ''
+      },
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36',
+        Referer: 'https://www.miyoushe.com/'
+      },
+      timeout: 10000
+    });
+
+    const list: MihoyoNewsEntry[] = Array.isArray(resp.data?.data?.list) ? resp.data.data.list : [];
+    return list
+      .map((entry: MihoyoNewsEntry): RawFeedItem | null => {
+        const post = entry.post;
+        if (!post?.post_id || !post.subject) return null;
+        const summary = post.summary || post.content || post.subject;
+        return {
+          externalId: post.post_id,
+          itemKind: config.itemKind ?? 'official_post',
+          title: post.subject,
+          content: summary,
+          url: `https://www.miyoushe.com/${mihoyoSiteFromGids(gids)}/article/${post.post_id}`,
+          authorName: source.name,
+          coverUrl: entry.cover?.url || post.cover || post.images?.[0],
+          publishedAt: post.created_at ? new Date(post.created_at * 1000) : undefined
+        };
+      })
+      .filter((item): item is RawFeedItem => Boolean(item));
+  } catch (error) {
+    throw new AdapterError(`MiHoYo direct fallback failed: ${error instanceof Error ? error.message : String(error)}`, source.type);
+  }
+}
+
+function mihoyoSiteFromGids(gids: string): string {
+  const map: Record<string, string> = {
+    '1': 'bh3',
+    '2': 'ys',
+    '6': 'sr',
+    '8': 'zzz'
+  };
+  return map[gids] || 'ys';
+}
+
+interface MihoyoNewsEntry {
+  post?: {
+    post_id?: string;
+    subject?: string;
+    content?: string;
+    summary?: string;
+    cover?: string;
+    images?: string[];
+    created_at?: number;
+  };
+  cover?: {
+    url?: string;
+  };
 }
 
 export function getRssHubBaseUrls(source?: Source): string[] {

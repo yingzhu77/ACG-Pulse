@@ -157,7 +157,7 @@ async function fetchNgaHotPosts(fid: number, limit = 10): Promise<NgaPost[]> {
 
 // ===== Xiaoheihe API (hkey signing — ported from RSSHub) =====
 
-const XHH_DICT = 'JKMNPQRTX1234OABCDFG56789';
+const XHH_DICT = 'JKMNPQRTX1234OABCDFG56789H';
 
 function xhhMd5(str: string): Buffer {
   return crypto.createHash('md5').update(str).digest();
@@ -173,10 +173,12 @@ function xhhC3(v: number): number { return xhhConvertByte(v) ^ v; }
 function xhhC0(v: number): number { return xhhC1(v) ^ xhhC2(v) ^ xhhC3(v); }
 
 function xhhChecksum(data: number[]): number {
-  return (xhhC0(data[0]) ^ xhhC1(data[1]) ^ xhhC2(data[2]) ^ xhhC3(data[3])
-    + xhhC3(data[0]) ^ xhhC0(data[1]) ^ xhhC1(data[2]) ^ xhhC2(data[3])
-    + xhhC2(data[0]) ^ xhhC3(data[1]) ^ xhhC0(data[2]) ^ xhhC1(data[3])
-    + xhhC1(data[0]) ^ xhhC2(data[1]) ^ xhhC3(data[2]) ^ xhhC0(data[3])) % 100;
+  return [
+    xhhC0(data[0]) ^ xhhC1(data[1]) ^ xhhC2(data[2]) ^ xhhC3(data[3]),
+    xhhC3(data[0]) ^ xhhC0(data[1]) ^ xhhC1(data[2]) ^ xhhC2(data[3]),
+    xhhC2(data[0]) ^ xhhC3(data[1]) ^ xhhC0(data[2]) ^ xhhC1(data[3]),
+    xhhC1(data[0]) ^ xhhC2(data[1]) ^ xhhC3(data[2]) ^ xhhC0(data[3])
+  ].reduce((sum, value) => sum + value, 0) % 100;
 }
 
 function calculateXhhUrl(url: string, timestamp?: number, nonce?: string): string {
@@ -853,4 +855,3 @@ async function fetchAllNgaHotPosts(): Promise<NgaPost[]> {
 
   return allPosts;
 }
-

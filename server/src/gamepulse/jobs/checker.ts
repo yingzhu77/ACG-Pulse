@@ -7,6 +7,7 @@ import { fetchBilibiliAvatar } from '../adapters/bilibiliVideo.js';
 
 let checkRunning = false;
 let checkStartedAt: Date | null = null;
+let healthLogUnavailableWarned = false;
 
 export interface CheckResult {
   checkedSources: number;
@@ -36,14 +37,19 @@ async function cleanupExpiredHealthLogs(): Promise<number> {
   const retentionDays = getHealthLogRetentionDays();
   const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
 
-  const result = await prisma.sourceHealthLog.deleteMany({
-    where: { checkedAt: { lt: cutoff } }
-  });
+  try {
+    const result = await prisma.sourceHealthLog.deleteMany({
+      where: { checkedAt: { lt: cutoff } }
+    });
 
-  if (result.count > 0) {
-    console.log(`[GamePulse] Cleaned up ${result.count} health logs older than ${retentionDays} days`);
+    if (result.count > 0) {
+      console.log(`[GamePulse] Cleaned up ${result.count} health logs older than ${retentionDays} days`);
+    }
+    return result.count;
+  } catch (error) {
+    warnHealthLogUnavailable(error);
+    return 0;
   }
-  return result.count;
 }
 
 // Clean up old feed items when limit is exceeded
@@ -217,25 +223,23 @@ async function checkSource(
       }
     });
 
-    await prisma.sourceHealthLog.create({
-      data: { sourceId: source.id, status: 'healthy' }
-    });
+    await writeSourceHealthLog(source.id, 'healthy');
 
     return { newItems: sourceNewCount, failed: false };
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown source error';
+    const healthStatus = shouldMarkSourceDegraded(source.lastSuccessAt) ? 'degraded' : 'failed';
+
     await prisma.source.update({
       where: { id: source.id },
       data: {
-        healthStatus: 'failed',
+        healthStatus,
         lastCheckedAt: new Date(),
         lastError: message.slice(0, 500)
       }
     });
 
-    await prisma.sourceHealthLog.create({
-      data: { sourceId: source.id, status: 'failed', error: message.slice(0, 500) }
-    });
+    await writeSourceHealthLog(source.id, healthStatus, message.slice(0, 500));
     io?.emit('source:error', {
       sourceId: source.id,
       sourceName: source.name,
@@ -245,6 +249,34 @@ async function checkSource(
     console.error(`[GamePulse] source failed: ${source.name}`, error);
     return { newItems: 0, failed: true };
   }
+}
+
+async function writeSourceHealthLog(
+  sourceId: string,
+  status: 'healthy' | 'degraded' | 'failed',
+  error?: string
+): Promise<void> {
+  try {
+    await prisma.sourceHealthLog.create({
+      data: { sourceId, status, error }
+    });
+  } catch (err) {
+    warnHealthLogUnavailable(err);
+  }
+}
+
+function shouldMarkSourceDegraded(lastSuccessAt: Date | null): boolean {
+  if (!lastSuccessAt) return false;
+  const lastSuccessTime = lastSuccessAt.getTime();
+  if (!Number.isFinite(lastSuccessTime)) return false;
+  return Date.now() - lastSuccessTime <= getSourceDegradedGraceMs();
+}
+
+function warnHealthLogUnavailable(error: unknown): void {
+  if (healthLogUnavailableWarned) return;
+  healthLogUnavailableWarned = true;
+  const message = error instanceof Error ? error.message : String(error);
+  console.warn(`[GamePulse] Source health log unavailable; continuing checks without history. ${message}`);
 }
 
 async function runWithConcurrency<T, R>(
@@ -277,6 +309,12 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string)
 function getSourceCheckTimeoutMs(): number {
   const parsed = Number(process.env.SOURCE_CHECK_TIMEOUT_MS);
   return Number.isFinite(parsed) && parsed >= 5000 ? parsed : 45000;
+}
+
+function getSourceDegradedGraceMs(): number {
+  const parsed = Number(process.env.SOURCE_DEGRADED_GRACE_HOURS);
+  const hours = Number.isFinite(parsed) && parsed >= 1 ? parsed : 24;
+  return hours * 60 * 60 * 1000;
 }
 
 function getSourceCheckConcurrency(): number {
