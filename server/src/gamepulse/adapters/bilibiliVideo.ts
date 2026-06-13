@@ -156,13 +156,6 @@ export class BilibiliVideoAdapter implements SourceAdapter {
     }
 
     const config = parseSourceConfig(source);
-    const useDirectApi = shouldUseDirectApiFallback(config.directApiFallback);
-
-    // When direct API is available (cookie set), skip RSSHub entirely — faster and more reliable
-    if (useDirectApi) {
-      return fetchDirectBilibiliVideos(source, uid, []);
-    }
-
     const rssHubErrors: string[] = [];
     for (const route of getBilibiliRssHubRoutes(source, uid)) {
       try {
@@ -174,10 +167,14 @@ export class BilibiliVideoAdapter implements SourceAdapter {
       }
     }
 
-    throw new AdapterError(
-      `Bilibili RSSHub failed and direct API fallback is disabled. ${rssHubErrors.join(' | ')}`,
-      source.type
-    );
+    if (!shouldUseDirectApiFallback(config.directApiFallback)) {
+      throw new AdapterError(
+        `Bilibili RSSHub fallback failed and direct API fallback is disabled. ${rssHubErrors.join(' | ')}`,
+        source.type
+      );
+    }
+
+    return fetchDirectBilibiliVideos(source, uid, rssHubErrors);
   }
 }
 
