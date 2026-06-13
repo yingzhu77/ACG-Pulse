@@ -133,6 +133,7 @@ SOURCE_CHECK_CONCURRENCY=5
 BILIBILI_DIRECT_API_FALLBACK=true
 BILIBILI_DIRECT_API_TIMEOUT_MS=30000
 BILIBILI_REQUEST_INTERVAL_MS=6000
+BILIBILI_COOKIE="buvid4=你的值; buvid3=你的值; SESSDATA=你的值; bili_jct=你的值"
 HEALTH_LOG_RETENTION_DAYS=30
 EOF
 
@@ -250,6 +251,19 @@ curl -s -X POST http://localhost:3001/api/admin/login \
 ```
 
 本地开发如果设置面板打开后提示登录过期，先清理浏览器里旧的 `game_pulse_admin_token`，再用当前 `.env` 里的 `ADMIN_PASSWORD` 登录。修改本地密码后需要重启后端进程。
+
+---
+
+### 11. RSSHub B站路由 503（Playwright/Chromium 缺失）
+
+**问题**: RSSHub 的 `/bilibili/user/video/*` 路由返回 503，日志报 `Executable doesn't exist at .../chrome-headless-shell`
+**原因**: RSSHub `latest` 版的 B站用户视频路由依赖 Playwright（无头浏览器），但标准 Docker 镜像未预装 Chromium
+**解决**: 项目已提供自定义 `rsshub/Dockerfile`，自动安装 Chromium。`docker-compose.yml` 已配置为从该 Dockerfile 构建
+**验证**:
+```bash
+docker exec game-pulse wget -q -O- --timeout=15 http://rsshub:1200/bilibili/user/video/1340190821 | head -c 200
+```
+应返回 RSS XML 而非 503
 
 ---
 

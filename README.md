@@ -123,52 +123,31 @@ MAX_FEED_ITEMS=2000
 
 ## B站数据源配置
 
-B站视频源（官方账号 + UP主）需要 Cookie 才能稳定采集。不配置 Cookie 时：
-- 匿名请求会被 B站限流（403 错误）
-- 部分源会显示"采集失败"
-- 米游社 RSS 源不受影响，可正常工作
+B站视频源需要 Cookie 才能稳定采集。不配置时匿名请求会被限流。
 
 ### 获取 B站 Cookie
 
 1. 浏览器登录 https://www.bilibili.com
-2. 按 `F12` 打开开发者工具
-3. 点击 **Application**（应用程序）标签
-4. 左侧展开 **Cookies** → `https://www.bilibili.com`
-5. 复制以下三个值：
-   - `SESSDATA`（登录凭证）
-   - `bili_jct`（CSRF Token）
-   - `DedeUserID`（用户 ID）
+2. F12 → **Application** → **Cookies** → `https://www.bilibili.com`
+3. 复制 `SESSDATA`、`bili_jct`、`buvid3`、`buvid4` 四个值
 
 ### 配置 Cookie
 
-在 `.env` 文件中添加（所有 UID 共用同一个 Cookie 即可）：
+在 `.env` 中设置一行（所有源共用）：
 
 ```bash
-BILIBILI_COOKIE_401742377=SESSDATA=你的SESSDATA; bili_jct=你的bili_jct; DedeUserID=你的DedeUserID
-BILIBILI_COOKIE_1340190821=SESSDATA=你的SESSDATA; bili_jct=你的bili_jct; DedeUserID=你的DedeUserID
-# ... 为每个 B站 UID 添加一行
+BILIBILI_COOKIE="buvid4=你的值; buvid3=你的值; SESSDATA=你的值; bili_jct=你的值"
 ```
 
-需要配置的 UID 列表（默认数据源）：
-
-| UID | 名称 |
-|-----|------|
-| 401742377 | 原神 |
-| 1340190821 | 崩坏：星穹铁道 |
-| 27534330 | 崩坏3第一偶像爱酱 |
-| 1636034895 | 绝区零 |
-| 1955897084 | 鸣潮 |
-| 161775300 | 明日方舟 |
-| 1265652806 | 明日方舟终末地 |
-| 3546636978489848 | 异环 |
-| 652239032 | IGN中国（UP主） |
-| 8465957 | 乌鸦预告片（UP主） |
+`docker-compose.yml` 已配置将此变量传入 app 和 RSSHub 容器。
 
 ### Cookie 过期
 
-B站 Cookie 有效期约 **6 个月**，过期后需要重新获取并更新 `.env`。症状：
-- B站源显示"采集失败"
-- 日志中出现 `403` 或 `-352 风控校验失败`
+B站 Cookie 有效期约 **6 个月**。过期症状：
+- B站源显示"采集失败"或"degraded"
+- 日志中出现 `-352 风控校验失败`
+
+更新 Cookie 后执行 `docker compose restart app` 生效。
 
 ## 一键部署到服务器
 

@@ -40,7 +40,9 @@ services:
       start_period: 15s
 
   rsshub:
-    image: diygod/rsshub:latest
+    build:
+      context: ./rsshub
+      dockerfile: Dockerfile
     container_name: game-pulse-rsshub
     restart: unless-stopped
     expose:

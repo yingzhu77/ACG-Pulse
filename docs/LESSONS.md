@@ -676,6 +676,21 @@ END
 
 ---
 
+### 5.19 RSSHub Docker 镜像标签与浏览器依赖
+
+**问题**: RSSHub `latest` 版的 B站 `/user/video` 路由返回 503，报 Playwright Chromium 可执行文件不存在。旧版标签（如 `2024.12.16`）已被 Docker Hub 下架。
+
+**根因**: RSSHub 新版将部分 B站路由从直接 API 调用改为 Playwright 无头浏览器渲染，但标准 Docker 镜像未打包 Chromium。
+
+**解决**: 创建自定义 `rsshub/Dockerfile`，基于 `diygod/rsshub:latest` 安装 Chromium 依赖和 Playwright 浏览器。`docker-compose.yml` 改为从该 Dockerfile 构建。
+
+**规则**:
+- 上游 Docker 镜像的 breaking change 可能在 `latest` 标签更新时静默引入
+- 依赖浏览器渲染的路由需要自定义镜像，不能用标准标签
+- 自定义 Dockerfile 应纳入版本控制，确保可复现部署
+
+---
+
 ## 更新日志
 
 | 日期 | 内容 |
