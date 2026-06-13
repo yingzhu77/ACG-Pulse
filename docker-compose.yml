@@ -40,7 +40,7 @@ services:
       start_period: 15s
 
   rsshub:
-    image: diygod/rsshub:2024.12.16
+    image: diygod/rsshub:latest
     container_name: game-pulse-rsshub
     restart: unless-stopped
     expose:
@@ -50,6 +50,7 @@ services:
       - CACHE_EXPIRE=600
       - REQUEST_TIMEOUT=15000
       - REQUEST_RETRY=2
+      - BILIBILI_COOKIE=${BILIBILI_COOKIE}
     volumes:
       - rsshub-cache:/app/cache
     healthcheck:
