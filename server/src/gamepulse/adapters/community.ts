@@ -846,11 +846,18 @@ export async function aggregateCommunityTopics(options?: {
 async function fetchAllNgaHotPosts(): Promise<NgaPost[]> {
   const allPosts: NgaPost[] = [];
   const fids = Object.values(NGA_FORUMS);
+  const BATCH_SIZE = 3;
 
-  for (const fid of fids) {
-    const posts = await fetchNgaHotPosts(fid, 8);
-    allPosts.push(...posts);
-    await new Promise(r => setTimeout(r, 500));
+  for (let i = 0; i < fids.length; i += BATCH_SIZE) {
+    const batch = fids.slice(i, i + BATCH_SIZE);
+    const results = await Promise.allSettled(
+      batch.map(fid => fetchNgaHotPosts(fid, 8))
+    );
+    for (const r of results) {
+      if (r.status === 'fulfilled') allPosts.push(...r.value);
+      else console.error('[Community] NGA batch error:', r.reason);
+    }
+    if (i + BATCH_SIZE < fids.length) await new Promise(r => setTimeout(r, 500));
   }
 
   return allPosts;

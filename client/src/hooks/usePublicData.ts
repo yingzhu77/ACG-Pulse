@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import type { PublicStats, Source, Story, StoryFacets } from '../services/api';
 import { publicApi } from '../services/api';
-import { subscribeToGames, onNewItem, onNotification } from '../services/socket';
+// Socket 订阅已移至 App.tsx，按需连接
 import { summarizeHealth } from '../utils/stats';
 
 type ShowToast = (type: 'success' | 'error', message: string) => void;
@@ -100,8 +100,6 @@ export function usePublicData(showToast: ShowToast) {
         setAllFacets(storiesData.facets);
       }
       setSources(sourcesData);
-      const games = Object.keys(statsData.byGame || {});
-      if (games.length > 0) subscribeToGames(games);
 
       // Scroll to top after data loads if requested
       if (scrollToTopRef.current) {
@@ -133,21 +131,6 @@ export function usePublicData(showToast: ShowToast) {
     }, 5 * 60 * 1000);
     return () => window.clearInterval(timer);
   }, [autoRefresh, loadPublicData]);
-
-  // Socket subscriptions
-  useEffect(() => {
-    const offItem = onNewItem((item) => {
-      showToast('success', `新情报：${item.title.slice(0, 24)}`);
-      void loadPublicData();
-    });
-    const offNotification = onNotification((notification) => {
-      showToast(notification.importance === 'urgent' ? 'error' : 'success', notification.title.slice(0, 36));
-    });
-    return () => {
-      offItem();
-      offNotification();
-    };
-  }, [loadPublicData, showToast]);
 
   const games = useMemo(() => Object.keys(allFacets.byGame || {}).filter(g => g.trim()).sort(), [allFacets]);
   const health = useMemo(() => summarizeHealth(sources), [sources]);

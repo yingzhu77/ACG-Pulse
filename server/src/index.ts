@@ -126,7 +126,16 @@ const possiblePaths = [
   path.resolve(process.cwd(), 'dist')
 ];
 const clientDistPath = possiblePaths.find(p => fs.existsSync(path.join(p, 'index.html'))) || possiblePaths[0];
-app.use(express.static(clientDistPath));
+// Vite 哈希文件可安全长期缓存；index.html 不缓存（SPA 入口）
+app.use(express.static(clientDistPath, {
+  maxAge: '1y',
+  immutable: true,
+  setHeaders(res, filePath) {
+    if (filePath.endsWith('.html')) {
+      res.setHeader('Cache-Control', 'no-cache');
+    }
+  }
+}));
 
 // SPA 回退：非 API 路由返回 index.html
 app.use((req, res, next) => {

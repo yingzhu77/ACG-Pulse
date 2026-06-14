@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { CheckCircle2, CircleAlert, Filter } from 'lucide-react';
 import { cn } from './lib/utils';
@@ -9,14 +9,16 @@ import { useAdmin } from './hooks/useAdmin';
 import { useFavorites } from './hooks/useFavorites';
 import { useHotSearch } from './hooks/useHotSearch';
 import type { ViewMode } from './constants';
+import { subscribeToGames, onNewItem, onNotification } from './services/socket';
 import { GameFilterPanel } from './components/GameFilterPanel';
 import { LogoBrand } from './components/LogoBrand';
 import { TopBar } from './components/TopBar';
 import { FeedPanel } from './components/FeedPanel';
-import { InsightsPage } from './components/InsightsPage';
-import { CommunityPanel } from './components/CommunityPanel';
 import { SummaryColumn } from './components/SummaryColumn';
-import { AdminDrawer } from './components/AdminDrawer';
+
+const InsightsPage = lazy(() => import('./components/InsightsPage').then(m => ({ default: m.InsightsPage })));
+const CommunityPanel = lazy(() => import('./components/CommunityPanel').then(m => ({ default: m.CommunityPanel })));
+const AdminDrawer = lazy(() => import('./components/AdminDrawer').then(m => ({ default: m.AdminDrawer })));
 
 function App() {
   const { toast, showToast } = useToast();
@@ -40,6 +42,21 @@ function App() {
   const admin = useAdmin(showToast, publicData.loadPublicData);
   const { favorites, toggleFavorite } = useFavorites();
   const hotSearch = useHotSearch(showToast);
+
+  // Socket 订阅：仅 Feed 页激活时连接，避免非 Feed 用户白白建立 WebSocket
+  useEffect(() => {
+    if (view !== 'feed') return;
+    const games = Object.keys(publicData.stats?.byGame || {});
+    if (games.length > 0) subscribeToGames(games);
+    const offItem = onNewItem((item) => {
+      showToast('success', `新情报：${item.title.slice(0, 24)}`);
+      void publicData.loadPublicData();
+    });
+    const offNotification = onNotification((n) => {
+      showToast(n.importance === 'urgent' ? 'error' : 'success', n.title.slice(0, 36));
+    });
+    return () => { offItem(); offNotification(); };
+  }, [view, publicData.stats?.byGame, publicData.loadPublicData, showToast]);
 
   const toggleSidebar = useCallback(() => setSidebarCollapsed(c => !c), []);
   const toggleAutoRefresh = useCallback(() => publicData.setAutoRefresh(a => !a), [publicData.setAutoRefresh]);
@@ -155,14 +172,18 @@ function App() {
               selectedHotTag={hotSearch.selectedTag}
             />
           ) : view === 'insights' ? (
-            <InsightsPage
-              gameCategoryCounts={publicData.stats?.byCategory || {}}
-              followCategoryCounts={publicData.stats?.byFollowCategory || {}}
-              importanceCounts={publicData.stats?.byImportance || {}}
-              hourlyTrend={publicData.stats?.hourlyTrend || []}
-            />
+            <Suspense fallback={<div className="ci-empty">加载中…</div>}>
+              <InsightsPage
+                gameCategoryCounts={publicData.stats?.byCategory || {}}
+                followCategoryCounts={publicData.stats?.byFollowCategory || {}}
+                importanceCounts={publicData.stats?.byImportance || {}}
+                hourlyTrend={publicData.stats?.hourlyTrend || []}
+              />
+            </Suspense>
           ) : (
-            <CommunityPanel />
+            <Suspense fallback={<div className="ci-empty">加载中…</div>}>
+              <CommunityPanel />
+            </Suspense>
           )}
         </section>
 
@@ -234,6 +255,7 @@ function App() {
         )}
       </AnimatePresence>
 
+      <Suspense fallback={null}>
       <AdminDrawer
         open={admin.adminOpen}
         onClose={() => admin.setAdminOpen(false)}
@@ -262,6 +284,7 @@ function App() {
         setBilibiliCookie={admin.setBilibiliCookie}
         onSaveCookie={admin.handleSaveCookie}
       />
+      </Suspense>
 
       <AnimatePresence>
         {toast && (

@@ -19,6 +19,34 @@ import { searchFeedItems, isFTS5Ready } from '../search.js';
 
 const router = Router();
 
+// Stories 聚合缓存：相同查询条件 60s 内直接返回缓存结果
+const storiesCache = new Map<string, { data: unknown; expires: number }>();
+const STORIES_CACHE_TTL = 60_000;
+
+function getStoriesCacheKey(params: Record<string, unknown>): string {
+  return Object.entries(params)
+    .filter(([, v]) => v !== undefined && v !== '')
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([k, v]) => `${k}=${Array.isArray(v) ? v.join(',') : v}`)
+    .join('&');
+}
+
+function getCachedStories(key: string): unknown | null {
+  const entry = storiesCache.get(key);
+  if (entry && Date.now() < entry.expires) return entry.data;
+  if (entry) storiesCache.delete(key);
+  return null;
+}
+
+function setCachedStories(key: string, data: unknown): void {
+  storiesCache.set(key, { data, expires: Date.now() + STORIES_CACHE_TTL });
+  // 防止缓存无限增长
+  if (storiesCache.size > 100) {
+    const oldest = storiesCache.keys().next().value;
+    if (oldest) storiesCache.delete(oldest);
+  }
+}
+
 /**
  * GET /items - 获取公开情报列表
  */
@@ -148,6 +176,16 @@ router.get('/stories', async (req, res) => {
     const importanceArr = toArray(importance);
     const group = followGroup ? String(followGroup) : '';
 
+    // 检查缓存（仅第 1 页且无搜索词时缓存，搜索结果不缓存）
+    const cacheKey = getStoriesCacheKey({ page, limit, game, sourceId, itemKind, category, importance, visibility, official, followGroup, sourceUid });
+    if (pageNum === 1 && !q) {
+      const cached = getCachedStories(cacheKey);
+      if (cached) {
+        res.json(cached);
+        return;
+      }
+    }
+
     // Build WHERE
     const where: PrismaWhereClause = { hidden: false };
     if (gameArr.length === 1) where.game = gameArr[0];
@@ -245,7 +283,7 @@ router.get('/stories', async (req, res) => {
 
     const data = stories.slice((pageNum - 1) * limitNum, pageNum * limitNum);
 
-    res.json({
+    const result = {
       data,
       pagination: {
         page: pageNum,
@@ -254,7 +292,14 @@ router.get('/stories', async (req, res) => {
         totalPages: Math.ceil(stories.length / limitNum)
       },
       facets
-    });
+    };
+
+    // 缓存第 1 页非搜索结果
+    if (pageNum === 1 && !q) {
+      setCachedStories(cacheKey, result);
+    }
+
+    res.json(result);
   } catch (error) {
     console.error('Game Pulse public stories failed:', error);
     if (error instanceof Error && error.message.startsWith('Validation failed')) {
