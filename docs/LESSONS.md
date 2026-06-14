@@ -680,14 +680,26 @@ END
 
 **问题**: RSSHub `latest` 版的 B站 `/user/video` 路由返回 503，报 Playwright Chromium 可执行文件不存在。旧版标签（如 `2024.12.16`）已被 Docker Hub 下架。
 
-**根因**: RSSHub 新版将部分 B站路由从直接 API 调用改为 Playwright 无头浏览器渲染，但标准 Docker 镜像未打包 Chromium。
+**根因**: RSSHub 新版将部分 B站路由从直接 API 调用改为 Patchright（Playwright fork）无头浏览器渲染，但标准 Docker 镜像未打包 Chromium。且 RSSHub 以 `node` 用户运行，浏览器缓存路径为 `/home/node/.cache/ms-playwright/`，而非 `/root/.cache/`。
 
-**解决**: 创建自定义 `rsshub/Dockerfile`，基于 `diygod/rsshub:latest` 安装 Chromium 依赖和 Playwright 浏览器。`docker-compose.yml` 改为从该 Dockerfile 构建。
+**解决**: 创建自定义 `rsshub/Dockerfile`：
+1. 安装 Chromium 系统依赖（含 `libxfixes3`，缺失会导致浏览器启动即崩溃）
+2. `npx playwright install chromium` 安装浏览器到 `/root/.cache/`
+3. 复制到 `/home/node/.cache/` 并设置 `node` 用户权限
+
+**踩坑链**:
+- 标准镜像无 Chromium → 安装后仍 503
+- RSSHub 用 Patchright 非 Playwright → 浏览器缓存路径不同
+- 以 root 安装但以 node 运行 → 需要复制到 `/home/node/.cache/`
+- 缺少 `libxfixes3` → 浏览器启动即崩溃（`Target page, context or browser has been closed`）
+- RSSHub 的 `BILIBILI_COOKIE` 环境变量格式为 `BILIBILI_COOKIE_{uid}`（per-uid），通用 `BILIBILI_COOKIE` 无效
 
 **规则**:
 - 上游 Docker 镜像的 breaking change 可能在 `latest` 标签更新时静默引入
 - 依赖浏览器渲染的路由需要自定义镜像，不能用标准标签
+- Docker 容器以非 root 用户运行时，root 安装的浏览器需要复制到用户 home 目录
 - 自定义 Dockerfile 应纳入版本控制，确保可复现部署
+- RSSHub B站路由需要 per-uid cookie 环境变量（`BILIBILI_COOKIE_{uid}`），不认通用 `BILIBILI_COOKIE`
 
 ---
 
