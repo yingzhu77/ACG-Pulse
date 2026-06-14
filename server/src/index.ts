@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 import path from 'path';
 import fs from 'fs';
@@ -53,6 +54,9 @@ const io = new Server(httpServer, {
     methods: ['GET', 'POST']
   }
 });
+
+// Gzip compression
+app.use(compression());
 
 // Security headers
 app.use(helmet({

@@ -134,7 +134,7 @@ export function toPublicFeedItem(item: FeedItemWithRelations): PublicFeedItem {
     itemKind: item.itemKind,
     game: item.game,
     title: item.title,
-    content: item.content,
+    content: (item.content || '').slice(0, 200),
     url: item.url,
     authorName: item.authorName,
     authorUrl: item.authorUrl,

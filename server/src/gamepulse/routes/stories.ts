@@ -142,7 +142,7 @@ router.get('/stories', async (req, res) => {
 
     const pageNum = page;
     const limitNum = limit;
-    const candidateLimit = Math.min(1000, Math.max(300, pageNum * limitNum * 4));
+    const candidateLimit = Math.min(500, Math.max(150, pageNum * limitNum * 3));
     const gameArr = toArray(game);
     const categoryArr = toArray(category);
     const importanceArr = toArray(importance);
