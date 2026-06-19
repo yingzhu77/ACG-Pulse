@@ -211,7 +211,7 @@ function App() {
       </div>
 
       {/* Mobile Filter FAB */}
-      {isMobile && !mobileDrawerOpen && (
+      {isMobile && view === 'feed' && !mobileDrawerOpen && (
         <button
           className="mobile-filter-fab"
           onClick={openMobileDrawer}

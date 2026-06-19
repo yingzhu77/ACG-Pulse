@@ -3,6 +3,7 @@ import { Activity, Loader2 } from 'lucide-react';
 import { importanceLabel } from '../utils/format';
 import { GAME_CATEGORIES, FOLLOW_CATEGORIES, COMMUNITY_SOURCES } from '../constants';
 import { Donut } from './Donut';
+import { InteractiveTrendChart, type TrendChartDatum } from './InteractiveTrendChart';
 import { onCommunityUpdate } from '../services/socket';
 import { publicApi, type CommunityInsights, type CommunityHeatPoint } from '../services/api';
 
@@ -22,9 +23,6 @@ const SOURCE_COLORS: Record<string, string> = {
 const EMPTY_HEAT_TREND: CommunityHeatPoint[] = [];
 
 export function InsightsPage({ gameCategoryCounts, followCategoryCounts, importanceCounts, hourlyTrend }: InsightsPageProps) {
-  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
-  const maxCount = Math.max(...hourlyTrend.map(d => d.count), 1);
-
   // Community insights state
   const [ci, setCi] = useState<CommunityInsights | null>(null);
   const [ciLoading, setCiLoading] = useState(true);
@@ -54,33 +52,18 @@ export function InsightsPage({ gameCategoryCounts, followCategoryCounts, importa
   // Socket-triggered refresh
   useEffect(() => onCommunityUpdate(() => setTimeout(fetchInsights, 3000)), [fetchInsights]);
 
-  // Generate SVG path for line chart — guard against empty/single-point data
-  const points = useMemo(() => {
-    if (hourlyTrend.length <= 1) return [];
-    return hourlyTrend.map((d, i) => ({
-      x: (i / (hourlyTrend.length - 1)) * 100,
-      y: 100 - (d.count / maxCount) * 80
-    }));
-  }, [hourlyTrend, maxCount]);
-  const pathD = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
-  const areaD = pathD ? pathD + ` L 100 100 L 0 100 Z` : '';
+  const hourlyTrendData = useMemo<TrendChartDatum[]>(() => hourlyTrend.map(point => ({
+    label: point.hour,
+    value: point.count,
+  })), [hourlyTrend]);
 
   // Community sparkline points
   const ciTrend = ci?.heatTrend || EMPTY_HEAT_TREND;
-  const ciMaxHeat = Math.max(...ciTrend.map(p => p.heatScore), 1);
-  const sparkPoints = useMemo(() => {
-    if (ciTrend.length <= 1) return [];
-    return ciTrend.map((p, i) => ({
-      x: (i / (ciTrend.length - 1)) * 100,
-      y: 100 - (p.heatScore / ciMaxHeat) * 80,
-      heat: p.heatScore,
-      count: p.topicCount
-    }));
-  }, [ciTrend, ciMaxHeat]);
-  const sparkPath = sparkPoints.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
-  const sparkArea = sparkPath ? sparkPath + ` L 100 100 L 0 100 Z` : '';
-
-  const [sparkHover, setSparkHover] = useState<number | null>(null);
+  const communityTrendData = useMemo<TrendChartDatum[]>(() => ciTrend.map(point => ({
+    label: `第 ${point.index + 1} 次采集`,
+    value: point.heatScore,
+    detail: `${point.topicCount} 话题`,
+  })), [ciTrend]);
 
   const topMaxHeat = ci?.topTopics.length ? Math.max(...ci.topTopics.map(t => t.heatScore), 1) : 1;
 
@@ -100,48 +83,13 @@ export function InsightsPage({ gameCategoryCounts, followCategoryCounts, importa
           <Donut counts={followCategoryCounts} labelFor={(k) => FOLLOW_CATEGORIES[k] || k} />
         </div>
         <div className="glass-panel trend-panel">
-          <h3>近 24 小时情报趋势</h3>
-          <div className="trend-chart">
-            <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="trend-svg">
-              <defs>
-                <linearGradient id="trendGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="var(--pink)" stopOpacity="0.4" />
-                  <stop offset="100%" stopColor="var(--blue)" stopOpacity="0.05" />
-                </linearGradient>
-              </defs>
-              <path d={areaD} fill="url(#trendGradient)" />
-              <path d={pathD} fill="none" stroke="var(--pink)" strokeWidth="0.8" strokeLinecap="round" strokeLinejoin="round" />
-              {points.map((p, i) => (
-                <circle
-                  key={i}
-                  cx={p.x}
-                  cy={p.y}
-                  r={hoveredIndex === i ? "1.5" : "0.8"}
-                  fill="var(--pink)"
-                  opacity={hoveredIndex === i ? 1 : 0.8}
-                  onMouseEnter={() => setHoveredIndex(i)}
-                  onMouseLeave={() => setHoveredIndex(null)}
-                  style={{ cursor: 'pointer', transition: 'r 0.15s, opacity 0.15s' }}
-                />
-              ))}
-            </svg>
-            {hoveredIndex !== null && (
-              <div
-                className="trend-tooltip"
-                style={{
-                  left: `${points[hoveredIndex].x}%`,
-                  top: `${points[hoveredIndex].y - 5}%`
-                }}
-              >
-                {hourlyTrend[hoveredIndex].hour}: {hourlyTrend[hoveredIndex].count} 条
-              </div>
-            )}
-          </div>
-          <div className="trend-labels">
-            {hourlyTrend.filter((_, i) => i % 4 === 0).map((data, index) => (
-              <span key={index}>{data.hour}</span>
-            ))}
-          </div>
+          <InteractiveTrendChart
+            title="近 24 小时情报趋势"
+            data={hourlyTrendData}
+            valueLabel="情报"
+            unit=" 条"
+            color="var(--pink)"
+          />
         </div>
       </div>
       <div className="importance-bar">
@@ -250,47 +198,16 @@ export function InsightsPage({ gameCategoryCounts, followCategoryCounts, importa
 
               {/* Heat Trend Sparkline */}
               <div className="glass-panel ci-card">
-                <h4>近期热度趋势</h4>
-                {sparkPoints.length <= 1 ? (
-                  <div className="ci-empty ci-empty-sm">趋势数据不足</div>
-                ) : (
-                  <div className="ci-spark-chart">
-                    <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="ci-spark-svg">
-                      <defs>
-                        <linearGradient id="ciSparkGrad" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor="var(--cyan)" stopOpacity="0.35" />
-                          <stop offset="100%" stopColor="var(--cyan)" stopOpacity="0.03" />
-                        </linearGradient>
-                      </defs>
-                      <path d={sparkArea} fill="url(#ciSparkGrad)" />
-                      <path d={sparkPath} fill="none" stroke="var(--cyan)" strokeWidth="0.8" strokeLinecap="round" strokeLinejoin="round" />
-                      {sparkPoints.map((p, i) => (
-                        <circle
-                          key={i}
-                          cx={p.x}
-                          cy={p.y}
-                          r={sparkHover === i ? "1.5" : "0.8"}
-                          fill="var(--cyan)"
-                          opacity={sparkHover === i ? 1 : 0.8}
-                          onMouseEnter={() => setSparkHover(i)}
-                          onMouseLeave={() => setSparkHover(null)}
-                          style={{ cursor: 'pointer', transition: 'r 0.15s, opacity 0.15s' }}
-                        />
-                      ))}
-                    </svg>
-                    {sparkHover !== null && (
-                      <div
-                        className="trend-tooltip"
-                        style={{
-                          left: `${sparkPoints[sparkHover].x}%`,
-                          top: `${sparkPoints[sparkHover].y - 5}%`
-                        }}
-                      >
-                        平均热度 {sparkPoints[sparkHover].heat} · {sparkPoints[sparkHover].count} 话题
-                      </div>
-                    )}
-                  </div>
-                )}
+                <InteractiveTrendChart
+                  title="近期热度趋势"
+                  data={communityTrendData}
+                  valueLabel="平均热度"
+                  color="var(--cyan)"
+                  compact
+                  headingLevel={4}
+                  edgeLabels={['较早', '最新']}
+                  emptyText="趋势数据不足"
+                />
               </div>
             </div>
           </div>
