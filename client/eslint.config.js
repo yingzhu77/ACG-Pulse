@@ -19,5 +19,11 @@ export default defineConfig([
       ecmaVersion: 2020,
       globals: globals.browser,
     },
+    rules: {
+      // The project does not use React Compiler; keep the core Hooks rules
+      // without treating compiler-only optimization diagnostics as errors.
+      'react-hooks/preserve-manual-memoization': 'off',
+      'react-hooks/set-state-in-effect': 'off',
+    },
   },
 ])

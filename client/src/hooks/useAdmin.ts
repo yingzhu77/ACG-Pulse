@@ -94,7 +94,7 @@ export function useAdmin(showToast: ShowToast, loadPublicData: () => Promise<voi
     } catch (error) {
       handleAdminError(error, '种子源失败');
     }
-  }, [adminToken, handleAdminError, loadAdminSources, loadPublicData]);
+  }, [adminToken, handleAdminError, loadAdminSources, loadPublicData, showToast]);
 
   const handleRunCheck = useCallback(async () => {
     if (!adminToken) {
@@ -108,7 +108,7 @@ export function useAdmin(showToast: ShowToast, loadPublicData: () => Promise<voi
     } catch (error) {
       handleAdminError(error, '检查失败');
     }
-  }, [adminToken, handleAdminError, loadAdminSources, loadAnalysisQueue, loadPublicData]);
+  }, [adminToken, handleAdminError, loadAdminSources, loadAnalysisQueue, loadPublicData, showToast]);
 
   const handleReanalyzeAll = useCallback(async () => {
     if (!adminToken) {
@@ -122,7 +122,7 @@ export function useAdmin(showToast: ShowToast, loadPublicData: () => Promise<voi
     } catch (error) {
       handleAdminError(error, '重新分类失败');
     }
-  }, [adminToken, handleAdminError, loadAnalysisQueue]);
+  }, [adminToken, handleAdminError, loadAnalysisQueue, showToast]);
 
   const handleRetryAnalysisTask = useCallback(async (id: string) => {
     if (!adminToken) return;
@@ -133,7 +133,7 @@ export function useAdmin(showToast: ShowToast, loadPublicData: () => Promise<voi
     } catch (error) {
       handleAdminError(error, '重试任务失败');
     }
-  }, [adminToken, handleAdminError, loadAnalysisQueue]);
+  }, [adminToken, handleAdminError, loadAnalysisQueue, showToast]);
 
   const handleRetryFailedAnalysisTasks = useCallback(async () => {
     if (!adminToken) return;
@@ -144,7 +144,7 @@ export function useAdmin(showToast: ShowToast, loadPublicData: () => Promise<voi
     } catch (error) {
       handleAdminError(error, '批量重试失败');
     }
-  }, [adminToken, handleAdminError, loadAnalysisQueue]);
+  }, [adminToken, handleAdminError, loadAnalysisQueue, showToast]);
 
   const handleCreateSource = useCallback(async (event: React.FormEvent) => {
     event.preventDefault();
@@ -160,7 +160,7 @@ export function useAdmin(showToast: ShowToast, loadPublicData: () => Promise<voi
     } catch (error) {
       handleAdminError(error, '添加失败');
     }
-  }, [sourceDraft, handleAdminError, loadAdminSources]);
+  }, [sourceDraft, handleAdminError, loadAdminSources, showToast]);
 
   const handleToggleSource = useCallback(async (id: string) => {
     try {
@@ -183,7 +183,7 @@ export function useAdmin(showToast: ShowToast, loadPublicData: () => Promise<voi
     } catch (error) {
       handleAdminError(error, '添加关注失败');
     }
-  }, [adminToken, followUrl, followName, handleAdminError, loadAdminSources, loadPublicData]);
+  }, [adminToken, followUrl, followName, handleAdminError, loadAdminSources, loadPublicData, showToast]);
 
   const handleLogout = useCallback(() => {
     clearAdminSession();
@@ -197,7 +197,7 @@ export function useAdmin(showToast: ShowToast, loadPublicData: () => Promise<voi
     } catch (error) {
       handleAdminError(error, '保存失败');
     }
-  }, [adminToken, bilibiliCookie, handleAdminError]);
+  }, [adminToken, bilibiliCookie, handleAdminError, showToast]);
 
   return {
     adminOpen,

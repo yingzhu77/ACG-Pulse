@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { motion } from 'framer-motion';
 import { ExternalLink, Flame } from 'lucide-react';
 import { cn } from '../lib/utils';
@@ -10,10 +11,9 @@ import { SentimentTrendMini } from './SentimentTrendMini';
 
 interface CommunityTopicCardProps {
   topic: CommunityTopic;
-  index: number;
 }
 
-export function CommunityTopicCard({ topic, index }: CommunityTopicCardProps) {
+export const CommunityTopicCard = memo(function CommunityTopicCard({ topic }: CommunityTopicCardProps) {
   const sentimentColor =
     topic.sentiment === 'positive' ? 'var(--green)' :
     topic.sentiment === 'negative' ? 'var(--pink)' : 'var(--cyan)';
@@ -22,9 +22,9 @@ export function CommunityTopicCard({ topic, index }: CommunityTopicCardProps) {
     <motion.article
       className={cn('story-card', 'community-card')}
       style={{ borderLeftColor: sentimentColor }}
-      initial={{ opacity: 0, y: 12 }}
+      initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: index * 0.05, duration: 0.3 }}
+      transition={{ duration: 0.2 }}
     >
       <div className="community-card-ring">
         <HeatScoreRing score={topic.heatScore} size={48} />
@@ -64,4 +64,4 @@ export function CommunityTopicCard({ topic, index }: CommunityTopicCardProps) {
       </div>
     </motion.article>
   );
-}
+});

@@ -22,18 +22,17 @@ for var in ADMIN_PASSWORD MIMO_API_KEY ADMIN_JWT_SECRET; do
   fi
 done
 
-# 1. 清理旧资源
-echo "[1/7] 清理旧资源..."
-kill $(pgrep -f "node dist/index.js") 2>/dev/null || true
-cd /opt/personal-hot-monitor 2>/dev/null && sudo docker compose down 2>/dev/null || true
-cd /opt && sudo rm -rf personal-hot-monitor acg-pulse-*.tar.gz
-
-# 2. 克隆仓库
-echo "[2/7] 克隆仓库..."
-cd /opt
-sudo git clone https://github.com/yingzhu77/personal-hot-monitor.git
-sudo chown -R admin:admin /opt/personal-hot-monitor
-cd personal-hot-monitor
+# 1-2. 快进更新或首次克隆，保留现有数据卷与工作目录
+echo "[1/7] 获取代码..."
+if [ -d /opt/personal-hot-monitor/.git ]; then
+  cd /opt/personal-hot-monitor
+  sudo -u admin git pull --ff-only origin master
+else
+  cd /opt
+  sudo git clone https://github.com/yingzhu77/ACG-Pulse.git personal-hot-monitor
+  sudo chown -R admin:admin /opt/personal-hot-monitor
+  cd personal-hot-monitor
+fi
 
 # 3. 创建 .env
 echo "[3/7] 配置环境变量..."
@@ -47,7 +46,8 @@ ADMIN_JWT_SECRET=${ADMIN_JWT_SECRET}
 MAX_FEED_ITEMS=2000
 DATABASE_URL=file:/app/server/data/prod.db
 PORT=3001
-CLIENT_URL=http://localhost:3001
+CLIENT_URL=https://acg.yingzhu.xyz
+TRUST_PROXY_HOPS=1
 RSSHUB_BASE_URLS=http://rsshub:1200
 RSS_FETCH_TIMEOUT_MS=30000
 SOURCE_CHECK_TIMEOUT_MS=35000
@@ -56,10 +56,14 @@ BILIBILI_DIRECT_API_FALLBACK=true
 BILIBILI_DIRECT_API_TIMEOUT_MS=30000
 BILIBILI_REQUEST_INTERVAL_MS=10000
 EOF
+sudo chmod 600 .env
 
 # 4. Docker 构建
 echo "[4/7] Docker 构建（约 3-5 分钟）..."
-sudo docker compose up -d --build
+sudo bash scripts/check-config.sh .env
+sudo docker compose build
+sudo bash scripts/pre-deploy-backup.sh
+sudo docker compose up -d
 
 # 5. 等待启动
 echo "[5/7] 等待服务启动..."

@@ -42,25 +42,35 @@ function App() {
   const admin = useAdmin(showToast, publicData.loadPublicData);
   const { favorites, toggleFavorite } = useFavorites();
   const hotSearch = useHotSearch(showToast);
+  const {
+    stats,
+    loadPublicData,
+    setAutoRefresh,
+    setCategoryGroup,
+    setCategory,
+    categoryGroup,
+    category
+  } = publicData;
+  const { setAdminOpen } = admin;
 
   // Socket 订阅：仅 Feed 页激活时连接，避免非 Feed 用户白白建立 WebSocket
   useEffect(() => {
     if (view !== 'feed') return;
-    const games = Object.keys(publicData.stats?.byGame || {});
+    const games = Object.keys(stats?.byGame || {});
     if (games.length > 0) subscribeToGames(games);
     const offItem = onNewItem((item) => {
       showToast('success', `新情报：${item.title.slice(0, 24)}`);
-      void publicData.loadPublicData();
+      void loadPublicData();
     });
     const offNotification = onNotification((n) => {
       showToast(n.importance === 'urgent' ? 'error' : 'success', n.title.slice(0, 36));
     });
     return () => { offItem(); offNotification(); };
-  }, [view, publicData.stats?.byGame, publicData.loadPublicData, showToast]);
+  }, [view, stats?.byGame, loadPublicData, showToast]);
 
   const toggleSidebar = useCallback(() => setSidebarCollapsed(c => !c), []);
-  const toggleAutoRefresh = useCallback(() => publicData.setAutoRefresh(a => !a), [publicData.setAutoRefresh]);
-  const openAdmin = useCallback(() => admin.setAdminOpen(true), [admin.setAdminOpen]);
+  const toggleAutoRefresh = useCallback(() => setAutoRefresh(a => !a), [setAutoRefresh]);
+  const openAdmin = useCallback(() => setAdminOpen(true), [setAdminOpen]);
   const closeMobileDrawer = useCallback(() => setMobileDrawerOpen(false), []);
   const openMobileDrawer = useCallback(() => setMobileDrawerOpen(true), []);
   useEffect(() => {
@@ -85,19 +95,19 @@ function App() {
   const handleToggleFavorites = useCallback(() => {
     setShowFavorites(prev => {
       if (!prev) {
-        publicData.setCategoryGroup('');
-        publicData.setCategory('');
+        setCategoryGroup('');
+        setCategory('');
       }
       return !prev;
     });
-  }, [publicData.setCategoryGroup, publicData.setCategory]);
+  }, [setCategoryGroup, setCategory]);
 
   // Close mobile drawer on filter selection
   useEffect(() => {
     if (mobileDrawerOpen) {
       setMobileDrawerOpen(false);
     }
-  }, [publicData.categoryGroup, publicData.category]);
+  }, [categoryGroup, category, mobileDrawerOpen]);
 
   return (
     <main

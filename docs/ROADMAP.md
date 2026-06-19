@@ -25,10 +25,10 @@
   - ✅ 为定时任务增加互斥锁，避免重叠执行。
   - ✅ 源健康日志保留策略（默认 30 天，可配置 HEALTH_LOG_RETENTION_DAYS）。
 - 补齐测试：
-  - AI JSON 解析与 fallback 测试。
-  - source 创建/更新/布尔值解析测试。
+  - AI JSON 解析与 fallback 测试（未实现）。
+  - ✅ source 创建/更新/布尔值解析测试（`validation.test.ts`）。
   - ✅ stories filter/facet 组合测试。
-  - checker 去重、清理和失败源状态测试。
+  - checker 去重测试（未实现；清理和失败源状态已在 `checkerMutex.test.ts` 覆盖）。
   - ✅ FTS5 触发器生命周期测试（mock + 真实 SQLite 集成）。
 
 ## 第三阶段：产品能力扩展（待办）
@@ -48,16 +48,15 @@
   - 评估英文 UI 与内容摘要翻译。
   - 优化移动端批量筛选、刷新提示和空状态。
 - 数据洞察页增强：
-  - 待办：加入社区风向分析，优先复用 `CommunityTopic` 数据，不在前端重复计算。
-  - 实现方向：新增后端聚合接口，返回情绪分布、来源占比、分类占比、热度 TopN、最近趋势和 lastUpdated/isStale。
-  - 前端方向：在数据洞察页增加“社区风向”分区，使用紧凑图表展示情绪、来源、分类和趋势；冷启动时展示旧数据状态。
-  - 验收重点：社区接口不可阻塞主洞察页，移动端图表不溢出，数据为空时有明确空状态。
+  - ✅ 已实现社区风向分析（`GET /api/community/insights` + InsightsPage 社区风向分区）。
+  - ✅ 复用 `CommunityTopic` 数据，后端聚合返回 topTopics、sourceShare、heatTrend。
+  - ✅ 前端热门话题 Top 8、来源热度占比、近期热度趋势折线图，stale-first + Socket 刷新。
 - 数据库升级预案：
   - 当写入并发或公开访问量明显提升时，评估从 SQLite 迁移到 PostgreSQL。
 - 社区热点页性能优化：
   - ✅ P0：先返回旧数据、后台异步刷新，消除冷启动 30-60s 阻塞。
-  - P1：NGA 6 论坛并行抓取（3 个一批），替换串行+500ms 延迟。
-  - P1：Framer Motion 去掉逐帧 stagger delay，加 React.memo。
-  - P2：跳过低热话题 AI 情绪分析，减少 API 调用。
-  - P2：数据库批量 upsert 替代逐条写入。
-  - P3：API 响应加 Cache-Control 头。
+  - ✅ P1：NGA 6 论坛并行抓取（3 个一批），替换串行+500ms 延迟。
+  - ✅ P1：Framer Motion 去掉逐帧 stagger delay，加 React.memo。
+  - ✅ P2：数据库批量 upsert 替代逐条写入（findMany + createMany）。
+  - ✅ P3：API 响应加 Cache-Control 头（公开接口 60-3600s，管理端 no-store）。
+  - 不做：跳过低热话题 AI 情绪分析——保留全量 AI 分析以保证情绪数据完整性。

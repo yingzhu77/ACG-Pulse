@@ -6,11 +6,13 @@ services:
     container_name: game-pulse
     restart: unless-stopped
     ports:
-      - "3001:3001"
+      - "127.0.0.1:3001:3001"
     environment:
+      - NODE_ENV=production
       - DATABASE_URL=file:/app/server/data/prod.db
       - PORT=3001
-      - CLIENT_URL=http://localhost:3001
+      - CLIENT_URL=${CLIENT_URL:-https://acg.yingzhu.xyz}
+      - TRUST_PROXY_HOPS=1
       - RSSHUB_BASE_URLS=http://rsshub:1200,https://rsshub.app
       - RSS_FETCH_TIMEOUT_MS=30000
       - SOURCE_CHECK_TIMEOUT_MS=35000

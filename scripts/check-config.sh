@@ -82,6 +82,28 @@ check_not_default "ADMIN_JWT_SECRET" "change_me_to_a_long_random_secret"
 check_not_default "ADMIN_JWT_SECRET" "your_random_secret_here_at_least_32_chars"
 check_min_length "ADMIN_JWT_SECRET" 32
 
+check_var "CLIENT_URL"
+CLIENT_URL_VALUE="$(get_env_value "CLIENT_URL")"
+case "$CLIENT_URL_VALUE" in
+  https://*) ;;
+  "")
+    ;;
+  *)
+    echo "INSECURE: CLIENT_URL must use the public HTTPS origin, not '$CLIENT_URL_VALUE'."
+    ERRORS=$((ERRORS + 1))
+    ;;
+esac
+
+check_var "TRUST_PROXY_HOPS"
+TRUST_PROXY_VALUE="$(get_env_value "TRUST_PROXY_HOPS")"
+case "$TRUST_PROXY_VALUE" in
+  "") ;;
+  *[!0-9]*|0)
+    echo "INSECURE: TRUST_PROXY_HOPS must be a positive integer behind Caddy."
+    ERRORS=$((ERRORS + 1))
+    ;;
+esac
+
 # AI provider check
 check_var "AI_PROVIDER"
 AI_PROVIDER_VALUE="$(get_env_value "AI_PROVIDER")"

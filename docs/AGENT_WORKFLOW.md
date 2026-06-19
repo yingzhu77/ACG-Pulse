@@ -86,11 +86,9 @@ docker compose config
 
 ## 当前项目优先级
 
-短期优先第二阶段：
+第二阶段（稳定性/性能/可观测性）已完成。
 
-1. `/api/public/stories` 性能与 facet 统计。
-2. AI 分析队列持久化与可观测性。
-3. SQLite 备份与恢复。
-4. AI provider / stories / checker 的测试补齐。
+第三阶段可推进方向：
 
-第三阶段能力扩展应等第二阶段稳定后再推进。
+- 自定义数据源管理（RSS/RSSHub/官网源）。
+- 数据库升级预案评估（SQLite → PostgreSQL）。

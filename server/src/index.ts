@@ -47,6 +47,10 @@ if (startupErrors.length > 0) {
 const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5173';
 
 const app = express();
+const trustProxyHops = Number(process.env.TRUST_PROXY_HOPS || 0);
+if (Number.isInteger(trustProxyHops) && trustProxyHops > 0) {
+  app.set('trust proxy', trustProxyHops);
+}
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
@@ -91,6 +95,32 @@ app.use(express.json({ limit: '1mb' }));
 
 // 请求日志
 app.use(requestLogger);
+
+// Cache-Control for public API routes (admin/settings/notifications are never cached)
+app.use('/api/public', (_req, res, next) => {
+  // Reports are date-based and immutable once generated
+  if (_req.path.startsWith('/reports/')) {
+    res.setHeader('Cache-Control', 'public, max-age=3600, stale-while-revalidate=86400');
+  }
+  // Hot-search changes frequently
+  else if (_req.path === '/hot-search') {
+    res.setHeader('Cache-Control', 'public, max-age=30, stale-while-revalidate=120');
+  }
+  // Sources config changes rarely
+  else if (_req.path === '/sources') {
+    res.setHeader('Cache-Control', 'public, max-age=600, stale-while-revalidate=3600');
+  }
+  // Items/Stories: 15min collection cycle
+  else {
+    res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
+  }
+  next();
+});
+app.use('/api/community', (_req, res, next) => {
+  // Community data: 30min TTL
+  res.setHeader('Cache-Control', 'public, max-age=120, stale-while-revalidate=600');
+  next();
+});
 
 app.use('/api/public', gamePulsePublicRouter);
 app.use('/api/public', hotSearchRouter);

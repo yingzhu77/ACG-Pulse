@@ -8,6 +8,7 @@ let mockTopics: Array<{
 }> = [];
 
 let mockFetchedAt: Date = new Date();
+let batchCreateShouldFail = false;
 
 vi.mock('../../db.js', () => ({
   prisma: {
@@ -32,6 +33,11 @@ vi.mock('../../db.js', () => ({
         const topic = { ...data, fetchedAt: new Date(), lastSeenAt: new Date() } as typeof mockTopics[0];
         mockTopics.push(topic);
         return topic;
+      }),
+      createMany: vi.fn(async ({ data }: { data: Array<Record<string, unknown>> }) => {
+        if (batchCreateShouldFail) throw new Error('simulated batch failure');
+        mockTopics.push(...data as typeof mockTopics);
+        return { count: data.length };
       }),
       update: vi.fn(async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
         const idx = mockTopics.findIndex(t => t.id === where.id);
@@ -60,13 +66,14 @@ vi.mock('../services/communityService.js', () => ({
 }));
 
 // ---- Tests ----
-import { getStalenessInfo } from '../db/communityDb.js';
+import { getStalenessInfo, upsertTopics } from '../db/communityDb.js';
 import { refreshCommunityData } from '../services/communityService.js';
 
 describe('Community stale-first behavior', () => {
   beforeEach(() => {
     mockTopics = [];
     refreshCallCount = 0;
+    batchCreateShouldFail = false;
     vi.clearAllMocks();
   });
 
@@ -103,10 +110,55 @@ describe('Community stale-first behavior', () => {
   });
 });
 
+describe('Community topic persistence', () => {
+  beforeEach(() => {
+    mockTopics = [];
+    batchCreateShouldFail = false;
+    vi.clearAllMocks();
+  });
+
+  test('falls back to individual creates when a batch insert fails', async () => {
+    batchCreateShouldFail = true;
+    const publishedAt = new Date().toISOString();
+
+    await upsertTopics([
+      {
+        id: 'nga-fallback-1',
+        title: 'Fallback one',
+        sentiment: 'neutral',
+        sentimentScore: 0,
+        heatScore: 10,
+        category: 'other',
+        source: 'nga',
+        trend: [10],
+        summary: '',
+        url: 'https://example.com/1',
+        publishedAt
+      },
+      {
+        id: 'nga-fallback-2',
+        title: 'Fallback two',
+        sentiment: 'positive',
+        sentimentScore: 0.5,
+        heatScore: 20,
+        category: 'event',
+        source: 'nga',
+        trend: [20],
+        summary: '',
+        url: 'https://example.com/2',
+        publishedAt
+      }
+    ]);
+
+    expect(mockTopics.map(topic => topic.id)).toEqual(['nga-fallback-1', 'nga-fallback-2']);
+  });
+});
+
 describe('Community route stale-first response', () => {
   beforeEach(() => {
     mockTopics = [];
     refreshCallCount = 0;
+    batchCreateShouldFail = false;
     vi.clearAllMocks();
   });
 

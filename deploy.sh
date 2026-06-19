@@ -16,7 +16,6 @@ if [ -z "$SERVER" ]; then
     exit 1
 fi
 REMOTE_DIR="/opt/personal-hot-monitor"
-SSH_CMD="ssh ${USER}@${SERVER}"
 
 echo "=========================================="
 echo "  ACG Pulse 部署到 ${USER}@${SERVER}"
@@ -25,7 +24,7 @@ echo "=========================================="
 # 1. 检查 SSH 连接
 echo ""
 echo "[1/6] 检查 SSH 连接..."
-if ! ssh -o ConnectTimeout=5 ${USER}@${SERVER} "echo OK" 2>/dev/null; then
+if ! ssh -o ConnectTimeout=5 "${USER}@${SERVER}" "echo OK" 2>/dev/null; then
     echo "  ❌ 无法连接到 ${SERVER}"
     echo "  请确认："
     echo "    - 服务器 IP 正确"
@@ -38,9 +37,9 @@ echo "  ✅ SSH 连接正常"
 # 2. 安装 Docker（如果未安装）
 echo ""
 echo "[2/6] 检查 Docker..."
-if ! ssh ${USER}@${SERVER} "command -v docker" &>/dev/null; then
+if ! ssh "${USER}@${SERVER}" "command -v docker" &>/dev/null; then
     echo "  📦 安装 Docker..."
-    ssh ${USER}@${SERVER} "curl -fsSL https://get.docker.com | sh && systemctl enable docker && systemctl start docker"
+    ssh "${USER}@${SERVER}" "curl -fsSL https://get.docker.com | sh && systemctl enable docker && systemctl start docker"
     echo "  ✅ Docker 安装完成"
 else
     echo "  ✅ Docker 已安装"
@@ -49,9 +48,9 @@ fi
 # 3. 安装 Docker Compose（如果未安装）
 echo ""
 echo "[3/6] 检查 Docker Compose..."
-if ! ssh ${USER}@${SERVER} "docker compose version" &>/dev/null; then
+if ! ssh "${USER}@${SERVER}" "docker compose version" &>/dev/null; then
     echo "  📦 安装 Docker Compose..."
-    ssh ${USER}@${SERVER} "apt install docker-compose-plugin -y"
+    ssh "${USER}@${SERVER}" "apt install docker-compose-plugin -y"
     echo "  ✅ Docker Compose 安装完成"
 else
     echo "  ✅ Docker Compose 已安装"
@@ -60,11 +59,11 @@ fi
 # 4. 配置防火墙
 echo ""
 echo "[4/6] 配置防火墙..."
-ssh ${USER}@${SERVER} "
+ssh "${USER}@${SERVER}" "
     if command -v ufw &>/dev/null; then
         ufw allow 22/tcp 2>/dev/null || true
-        ufw allow 3001/tcp 2>/dev/null || true
-        ufw allow 1200/tcp 2>/dev/null || true
+        ufw delete allow 3001/tcp 2>/dev/null || true
+        ufw delete allow 1200/tcp 2>/dev/null || true
         echo '  ✅ 防火墙规则已添加'
     else
         echo '  ⚠️  ufw 未安装，跳过防火墙配置'
@@ -74,16 +73,18 @@ ssh ${USER}@${SERVER} "
 # 5. 拉取代码并部署
 echo ""
 echo "[5/6] 部署应用..."
-ssh ${USER}@${SERVER} "
+# REMOTE_DIR is intentionally expanded locally into the remote command.
+# shellcheck disable=SC2029
+ssh "${USER}@${SERVER}" "
     # 克隆或拉取代码
     if [ -d '${REMOTE_DIR}' ]; then
         cd ${REMOTE_DIR}
         echo '  📥 拉取最新代码...'
-        git pull origin master
+        git pull --ff-only origin master
     else
         echo '  📥 克隆仓库...'
         cd /opt
-        git clone https://github.com/yingzhu77/personal-hot-monitor.git
+        git clone https://github.com/yingzhu77/ACG-Pulse.git personal-hot-monitor
         cd personal-hot-monitor
     fi
 
@@ -102,9 +103,12 @@ ssh ${USER}@${SERVER} "
         exit 1
     fi
 
-    # 构建并启动
-    echo '  🏗️  构建并启动服务...'
-    docker compose up -d --build
+    # 先完成镜像构建，再短暂停服创建独立备份并替换容器
+    bash scripts/check-config.sh .env
+    echo '  🏗️  构建镜像...'
+    docker compose build
+    bash scripts/pre-deploy-backup.sh
+    docker compose up -d
 "
 
 # 6. 验证部署
@@ -114,12 +118,14 @@ sleep 5
 
 # 检查容器状态
 echo "  📋 容器状态："
-ssh ${USER}@${SERVER} "docker compose -f ${REMOTE_DIR}/docker-compose.yml ps"
+# REMOTE_DIR is intentionally expanded locally into the remote command.
+# shellcheck disable=SC2029
+ssh "${USER}@${SERVER}" "docker compose -f ${REMOTE_DIR}/docker-compose.yml ps"
 
 # 检查服务健康
 echo ""
 echo "  🔍 检查服务健康..."
-HEALTH=$(ssh ${USER}@${SERVER} "curl -s http://localhost:3001/api/public/stats" 2>/dev/null)
+HEALTH=$(ssh "${USER}@${SERVER}" "curl -s http://localhost:3001/api/public/stats" 2>/dev/null)
 if echo "$HEALTH" | grep -q '"total"'; then
     echo "  ✅ 服务运行正常"
     echo "  📊 数据统计："

@@ -148,8 +148,8 @@ export function CommunityPanel() {
                 数据正在后台刷新...
               </div>
             )}
-            {filtered.map((topic, index) => (
-              <CommunityTopicCard key={topic.id} topic={topic} index={index} />
+            {filtered.map(topic => (
+              <CommunityTopicCard key={topic.id} topic={topic} />
             ))}
           </>
         )}

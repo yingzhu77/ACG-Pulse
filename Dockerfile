@@ -31,6 +31,9 @@ FROM node:20-alpine AS production
 
 WORKDIR /app
 
+# sqlite3 is required for consistent online backups and FTS maintenance.
+RUN apk add --no-cache sqlite
+
 # Install production dependencies only
 COPY server/package*.json ./server/
 RUN cd server && npm ci --omit=dev
@@ -42,7 +45,7 @@ COPY --from=builder /app/server/prisma ./server/prisma
 
 # Copy entrypoint
 COPY docker-entrypoint.sh ./
-RUN chmod +x docker-entrypoint.sh
+RUN sed -i 's/\r$//' docker-entrypoint.sh && chmod +x docker-entrypoint.sh
 
 # Create data directory
 RUN mkdir -p /app/server/data

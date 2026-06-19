@@ -41,8 +41,8 @@ echo ""
 echo "[3/5] 配置防火墙..."
 if command -v ufw &>/dev/null; then
     ufw allow 22/tcp 2>/dev/null || true
-    ufw allow ${APP_PORT}/tcp 2>/dev/null || true
-    ufw allow 1200/tcp 2>/dev/null || true
+    ufw delete allow ${APP_PORT}/tcp 2>/dev/null || true
+    ufw delete allow 1200/tcp 2>/dev/null || true
     echo "  ✅ 防火墙规则已添加"
 else
     echo "  ⚠️  ufw 未安装，跳过"
@@ -53,11 +53,11 @@ echo ""
 echo "[4/5] 获取代码..."
 if [ -d "${APP_DIR}" ]; then
     cd ${APP_DIR}
-    git pull origin master
+    git pull --ff-only origin master
     echo "  ✅ 代码已更新"
 else
     cd /opt
-    git clone https://github.com/yingzhu77/personal-hot-monitor.git
+    git clone https://github.com/yingzhu77/ACG-Pulse.git personal-hot-monitor
     cd personal-hot-monitor
     echo "  ✅ 仓库已克隆"
 fi
@@ -87,6 +87,8 @@ RSSHUB_BASE_URLS=http://rsshub:1200
 RSS_FETCH_TIMEOUT_MS=30000
 SOURCE_CHECK_TIMEOUT_MS=35000
 SOURCE_CHECK_CONCURRENCY=5
+CLIENT_URL=https://acg.yingzhu.xyz
+TRUST_PROXY_HOPS=1
 
 # Bilibili
 BILIBILI_DIRECT_API_FALLBACK=true
@@ -102,7 +104,7 @@ ENVEOF
     echo "    ADMIN_PASSWORD=你的密码"
     echo "    ADMIN_JWT_SECRET=随机字符串"
     echo ""
-    read -p "  配置完成后按回车继续..."
+    read -r -p "  配置完成后按回车继续..."
 fi
 
 # 6. 构建并启动
@@ -110,7 +112,10 @@ echo ""
 echo "=========================================="
 echo "  构建并启动服务"
 echo "=========================================="
-docker compose up -d --build
+bash scripts/check-config.sh .env
+docker compose build
+bash scripts/pre-deploy-backup.sh
+docker compose up -d
 
 # 7. 等待启动并验证
 echo ""

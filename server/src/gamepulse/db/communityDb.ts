@@ -62,58 +62,101 @@ export async function loadAllTopics(): Promise<CommunityTopic[]> {
 
 /** Upsert topics: insert new ones, update existing ones' trend/heat */
 export async function upsertTopics(topics: CommunityTopic[]): Promise<void> {
+  if (topics.length === 0) return;
   const now = new Date();
 
+  // Batch fetch existing topics (1 query instead of N)
+  const topicIds = topics.map(t => t.id);
+  const existingRows = await prisma.communityTopic.findMany({
+    where: { id: { in: topicIds } },
+    select: { id: true, trend: true, sentiment: true, sentimentScore: true }
+  });
+  const existingMap = new Map(existingRows.map(r => [r.id, r]));
+
+  const toCreate: CommunityTopic[] = [];
+  const toUpdate: { topic: CommunityTopic; existing: typeof existingRows[0] }[] = [];
+
   for (const topic of topics) {
-    try {
-      const existing = await prisma.communityTopic.findUnique({
-        where: { id: topic.id },
-        select: { trend: true }
-      });
-
-      if (existing) {
-        const oldTrend = safeParseTrend(existing.trend, topic.id);
-        const mergedTrend = [...oldTrend, ...topic.trend].slice(-24);
-
-        // Only overwrite sentiment if the new value is a real analysis (not the placeholder)
-        const updateData: Record<string, unknown> = {
-          heatScore: topic.heatScore,
-          trend: JSON.stringify(mergedTrend),
-          summary: topic.summary,
-          lastSeenAt: now
-        };
-        if (topic.sentiment !== 'neutral' || topic.sentimentScore !== 0) {
-          updateData.sentiment = topic.sentiment;
-          updateData.sentimentScore = topic.sentimentScore;
-        }
-
-        await prisma.communityTopic.update({
-          where: { id: topic.id },
-          data: updateData
-        });
-      } else {
-        await prisma.communityTopic.create({
-          data: {
-            id: topic.id,
-            title: topic.title,
-            sentiment: topic.sentiment,
-            sentimentScore: topic.sentimentScore,
-            heatScore: topic.heatScore,
-            category: topic.category,
-            source: topic.source,
-            trend: JSON.stringify(topic.trend),
-            summary: topic.summary,
-            url: topic.url,
-            publishedAt: new Date(topic.publishedAt),
-            fetchedAt: now,
-            lastSeenAt: now
-          }
-        });
-      }
-    } catch (err) {
-      console.error(`[CommunityDB] Failed to upsert topic ${topic.id}:`, err);
+    const existing = existingMap.get(topic.id);
+    if (existing) {
+      toUpdate.push({ topic, existing });
+    } else {
+      toCreate.push(topic);
     }
   }
+
+  // Batch insert new topics
+  if (toCreate.length > 0) {
+    try {
+      await prisma.communityTopic.createMany({
+        data: toCreate.map(topic => topicCreateData(topic, now))
+      });
+    } catch (err) {
+      console.warn('[CommunityDB] Batch create failed; retrying topics individually:', err);
+      for (const topic of toCreate) {
+        try {
+          await prisma.communityTopic.create({
+            data: topicCreateData(topic, now)
+          });
+        } catch (itemError) {
+          if (isUniqueConstraintError(itemError)) continue;
+          console.error(`[CommunityDB] Failed to create topic ${topic.id}:`, itemError);
+        }
+      }
+    }
+  }
+
+  // Update existing topics (individual updates needed for trend merge)
+  for (const { topic, existing } of toUpdate) {
+    try {
+      const oldTrend = safeParseTrend(existing.trend, topic.id);
+      const mergedTrend = [...oldTrend, ...topic.trend].slice(-24);
+
+      const updateData: Record<string, unknown> = {
+        heatScore: topic.heatScore,
+        trend: JSON.stringify(mergedTrend),
+        summary: topic.summary,
+        lastSeenAt: now
+      };
+      // Only overwrite sentiment if the new value is a real analysis (not the placeholder)
+      if (topic.sentiment !== 'neutral' || topic.sentimentScore !== 0) {
+        updateData.sentiment = topic.sentiment;
+        updateData.sentimentScore = topic.sentimentScore;
+      }
+
+      await prisma.communityTopic.update({
+        where: { id: topic.id },
+        data: updateData
+      });
+    } catch (err) {
+      console.error(`[CommunityDB] Failed to update topic ${topic.id}:`, err);
+    }
+  }
+}
+
+function topicCreateData(topic: CommunityTopic, now: Date) {
+  return {
+    id: topic.id,
+    title: topic.title,
+    sentiment: topic.sentiment,
+    sentimentScore: topic.sentimentScore,
+    heatScore: topic.heatScore,
+    category: topic.category,
+    source: topic.source,
+    trend: JSON.stringify(topic.trend),
+    summary: topic.summary,
+    url: topic.url,
+    publishedAt: new Date(topic.publishedAt),
+    fetchedAt: now,
+    lastSeenAt: now
+  };
+}
+
+function isUniqueConstraintError(error: unknown): boolean {
+  return typeof error === 'object'
+    && error !== null
+    && 'code' in error
+    && error.code === 'P2002';
 }
 
 /** Delete topics not seen in the last N hours */
