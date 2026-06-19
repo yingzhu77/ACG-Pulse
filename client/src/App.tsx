@@ -111,9 +111,13 @@ function App() {
 
   return (
     <main
-      className={cn('game-pulse-shell min-h-dvh', theme === 'dark' ? 'theme-dark' : 'theme-light')}
-      style={{ backgroundImage: `url(/game-pulse/bg-${theme}.png)` }}
+      className={cn('game-pulse-shell min-h-dvh', `theme-${theme}`)}
     >
+      <div
+        className="scene-background"
+        style={{ backgroundImage: `url(/game-pulse/bg-${theme}.png)` }}
+        aria-hidden="true"
+      />
       <div className="scene-scrim" />
       <div className={`game-pulse-layout${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
         <div className="left-column" ref={leftColumnRef}>

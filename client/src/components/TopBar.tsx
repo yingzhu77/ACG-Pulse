@@ -5,6 +5,26 @@ import type { Theme, ViewMode } from '../constants';
 import { formatDateTime } from '../utils/format';
 import { ReportExportButton } from './ReportExportButton';
 
+function TomatoIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M12 7c-4.7 0-8 2.7-8 6.5C4 17.7 7.4 21 12 21s8-3.3 8-7.5C20 9.7 16.7 7 12 7Z" />
+      <path d="M12 7c-1.7-2-3.7-2.6-5.5-1.8 1.7.7 2.7 1.8 3.2 3.2" />
+      <path d="M12 7c1.7-2 3.7-2.6 5.5-1.8-1.7.7-2.7 1.8-3.2 3.2" />
+      <path d="M12 7V3" />
+    </svg>
+  );
+}
+
 export interface TopBarProps {
   theme: Theme;
   setTheme: (theme: Theme) => void;
@@ -54,11 +74,12 @@ export function TopBar(props: TopBarProps) {
           <RefreshCw className={cn('h-4 w-4', props.loading && 'spin-active')} />
         </button>
         <ReportExportButton />
-        <div className="theme-switch" aria-label="主题切换">
+        <div className="theme-switch" role="group" aria-label="主题切换">
           <button
             className={props.theme === 'light' ? 'active' : ''}
             onClick={() => props.setTheme('light')}
             aria-label="日间"
+            aria-pressed={props.theme === 'light'}
             title="日间"
           >
             <Sun className="h-4 w-4" />
@@ -67,9 +88,19 @@ export function TopBar(props: TopBarProps) {
             className={props.theme === 'dark' ? 'active' : ''}
             onClick={() => props.setTheme('dark')}
             aria-label="夜间"
+            aria-pressed={props.theme === 'dark'}
             title="夜间"
           >
             <Moon className="h-4 w-4" />
+          </button>
+          <button
+            className={props.theme === 'tomato' ? 'active' : ''}
+            onClick={() => props.setTheme('tomato')}
+            aria-label="番茄主题"
+            aria-pressed={props.theme === 'tomato'}
+            title="番茄主题"
+          >
+            <TomatoIcon className="h-4 w-4" />
           </button>
         </div>
         <button className="icon-button" onClick={props.onOpenAdmin} aria-label="设置">

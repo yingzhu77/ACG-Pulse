@@ -74,8 +74,8 @@
 
 .logo-close-btn:hover {
   opacity: 1;
-  background: var(--bg-hover);
-  color: var(--text-primary);
+  background: var(--panel-hover);
+  color: var(--text-main);
 }
 
 .logo-brand-collapsed {
@@ -167,8 +167,8 @@
 }
 
 .auto-refresh-chip:has(input:checked) {
-  border-color: rgba(58, 117, 255, 0.36);
-  background: rgba(58, 117, 255, 0.1);
+  border-color: color-mix(in srgb, var(--blue) 42%, transparent);
+  background: color-mix(in srgb, var(--blue) 13%, transparent);
   color: var(--blue);
 }
 
@@ -201,7 +201,7 @@
 
 .theme-switch {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, 34px);
   gap: 4px;
   border: 1px solid var(--stroke);
   border-radius: 8px;
@@ -232,8 +232,8 @@
 }
 
 .icon-button.active-filter {
-  border-color: rgba(58, 117, 255, 0.44);
-  background: rgba(58, 117, 255, 0.14);
+  border-color: color-mix(in srgb, var(--blue) 48%, transparent);
+  background: color-mix(in srgb, var(--blue) 16%, transparent);
   color: var(--blue);
 }
 
@@ -244,6 +244,10 @@
 
 .theme-dark .feed-panel {
   background: rgba(8, 18, 36, 0.24);
+}
+
+.theme-tomato .feed-panel {
+  background: rgba(25, 7, 18, 0.58);
 }
 
 .feed-toolbar {
@@ -285,6 +289,11 @@
 .theme-dark .search-field,
 .theme-dark .feed-controls select {
   background: rgba(12, 26, 50, 0.2);
+}
+
+.theme-tomato .search-field,
+.theme-tomato .feed-controls select {
+  background: rgba(48, 14, 32, 0.52);
 }
 
 .search-field input,
@@ -348,6 +357,10 @@
   background: rgba(12, 26, 50, 0.18);
 }
 
+.theme-tomato .story-card {
+  background: rgba(49, 13, 32, 0.44);
+}
+
 .story-card:hover {
   border-color: var(--stroke-strong);
   background: var(--panel-hover);
@@ -355,6 +368,10 @@
 
 .theme-dark .story-card:hover {
   background: rgba(18, 38, 68, 0.38);
+}
+
+.theme-tomato .story-card:hover {
+  background: rgba(78, 21, 47, 0.68);
 }
 
 .story-card.importance-high { border-left-color: var(--pink); }

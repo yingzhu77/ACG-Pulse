@@ -19,10 +19,8 @@
   position: relative;
   isolation: isolate;
   background-color: #dbeaff;
-  background-position: center;
-  background-size: cover;
-  background-attachment: fixed;
   color: var(--text-main);
+  transition: background-color 220ms ease, color 180ms ease;
 }
 
 .game-pulse-shell.theme-dark {
@@ -37,6 +35,36 @@
   --text-soft: #9ba9c3;
   --muted: #72809b;
   background-color: #071427;
+}
+
+.game-pulse-shell.theme-tomato {
+  --panel-bg: rgba(28, 9, 20, 0.66);
+  --panel-strong: rgba(43, 13, 29, 0.84);
+  --panel-soft: rgba(58, 18, 38, 0.46);
+  --panel-hover: rgba(82, 25, 49, 0.74);
+  --stroke: rgba(255, 137, 163, 0.28);
+  --stroke-strong: rgba(255, 151, 174, 0.48);
+  --text-strong: #fff4f7;
+  --text-main: #f5dce4;
+  --text-soft: #caa5b1;
+  --muted: #987783;
+  --blue: #f45f78;
+  --pink: #ff7896;
+  --orange: #ffad66;
+  --green: #58d6a1;
+  --cyan: #65c9d8;
+  --violet: #b993e8;
+  background-color: #170910;
+}
+
+.scene-background {
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  pointer-events: none;
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
 }
 
 .scene-scrim {
@@ -55,10 +83,18 @@
     rgba(4, 9, 21, 0.14);
 }
 
+.theme-tomato .scene-scrim {
+  background:
+    linear-gradient(180deg, rgba(14, 4, 11, 0.28), rgba(18, 5, 13, 0.04) 42%, rgba(12, 3, 10, 0.30)),
+    linear-gradient(90deg, rgba(11, 3, 10, 0.48), transparent 28%, transparent 70%, rgba(12, 3, 10, 0.46)),
+    rgba(19, 5, 14, 0.10);
+}
+
 .game-pulse-layout {
   position: relative;
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr) 320px;
+  grid-template-rows: 56px auto;
   gap: 14px;
   width: min(1840px, 100%);
   margin: 0 auto;
@@ -83,6 +119,16 @@
   box-shadow: 0 18px 42px rgba(0, 0, 0, 0.17);
   backdrop-filter: blur(12px) saturate(128%);
   -webkit-backdrop-filter: blur(12px) saturate(128%);
+}
+
+.theme-tomato .glass-panel {
+  box-shadow: 0 18px 44px rgba(9, 1, 7, 0.34);
+  backdrop-filter: blur(14px) saturate(118%);
+  -webkit-backdrop-filter: blur(14px) saturate(118%);
+}
+
+.theme-tomato .sidebar-expand-btn {
+  box-shadow: 0 10px 28px rgba(64, 8, 30, 0.38);
 }
 
 .summary-column,

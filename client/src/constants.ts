@@ -28,7 +28,12 @@ export const sourceNames: Record<string, string> = {
 
 export const gameAccents = ['#ff5b8a', '#6d8cff', '#45c4ff', '#f6a03d', '#4ecf98', '#9e7cff', '#f1d15b'];
 
-export type Theme = 'light' | 'dark';
+export const THEMES = ['light', 'dark', 'tomato'] as const;
+export type Theme = (typeof THEMES)[number];
+
+export function isTheme(value: string | null): value is Theme {
+  return THEMES.some(theme => theme === value);
+}
 
 export const sourceIconUrls: Record<string, string> = {
   bilibili_video: 'https://www.bilibili.com/favicon.ico',
