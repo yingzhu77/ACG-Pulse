@@ -18,11 +18,12 @@ import hotSearchRouter from './gamepulse/routes/hotSearch.js';
 import { createAdminRouter } from './gamepulse/routes/admin.js';
 import communityRouter from './gamepulse/routes/community.js';
 import { startAnalysisQueueWorker } from './gamepulse/ai/analysisQueue.js';
-import { runGamePulseCheck, getCheckerStatus } from './gamepulse/jobs/checker.js';
+import { enforceFeedItemLimit, runGamePulseCheck, getCheckerStatus } from './gamepulse/jobs/checker.js';
 import { scheduledCommunityRefresh } from './gamepulse/services/communityService.js';
 import { requestLogger, errorHandler, notFoundHandler } from './gamepulse/routes/middleware.js';
 import { requireAdmin } from './gamepulse/auth.js';
 import { ensureFTS5, rebuildFTS5 } from './gamepulse/search.js';
+import { getPublicStats } from './gamepulse/services/statsService.js';
 
 dotenv.config();
 
@@ -225,13 +226,23 @@ export { io };
 
 const PORT = process.env.PORT || 3001;
 
-// Initialize FTS5 search index
-ensureFTS5().catch(err => {
-  console.error('[FTS5] Failed to initialize search index:', err);
-});
+async function startHttpServer(): Promise<void> {
+  try {
+    await ensureFTS5();
+    await enforceFeedItemLimit();
+  } catch (error) {
+    console.error('[GamePulse] Search index or capacity initialization failed:', error);
+  }
 
-httpServer.listen(PORT, () => {
-  console.log(`
+  try {
+    await getPublicStats();
+    console.log('[GamePulse] Stats cache warmed');
+  } catch (error) {
+    console.warn('[GamePulse] Stats cache warmup failed; requests will compute on demand:', error);
+  }
+
+  httpServer.listen(PORT, () => {
+    console.log(`
 Game Pulse service is running.
 Server: http://localhost:${PORT}
 Public API: /api/public
@@ -239,7 +250,10 @@ Admin API: /api/admin
 WebSocket: ready
 Scheduled check: every 30 minutes
   `);
-});
+  });
+}
+
+void startHttpServer();
 
 process.on('SIGINT', async () => {
   console.log('Shutting down...');

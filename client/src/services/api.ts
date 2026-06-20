@@ -1,3 +1,7 @@
+import type { OperationalMetrics } from '../../../shared/operations';
+
+export type { OperationalMetrics, OperationalStatus } from '../../../shared/operations';
+
 const API_BASE = '/api';
 const TOKEN_KEY = 'game_pulse_admin_token';
 
@@ -342,6 +346,7 @@ export const adminApi = {
     body: JSON.stringify({ password })
   }),
   getSources: () => request<Source[]>('/admin/sources', { headers: authHeaders() }),
+  getOperationalMetrics: () => request<OperationalMetrics>('/admin/ops/metrics', { headers: authHeaders() }),
   createSource: (source: Partial<Source>) => request<Source>('/admin/sources', {
     method: 'POST',
     headers: authHeaders(),

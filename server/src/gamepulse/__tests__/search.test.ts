@@ -36,6 +36,7 @@ function mockIsFTS5ReadySequence(tableExists: boolean, triggersAllExist = true, 
     mockPrisma.$queryRawUnsafe.mockResolvedValueOnce([{ name: 'FeedItem_ai' }]);
     mockPrisma.$queryRawUnsafe.mockResolvedValueOnce([{ name: 'FeedItem_ad' }]);
     mockPrisma.$queryRawUnsafe.mockResolvedValueOnce([{ name: 'FeedItem_au' }]);
+    mockPrisma.$queryRawUnsafe.mockResolvedValueOnce([]); // no legacy delete triggers
   } else {
     mockPrisma.$queryRawUnsafe.mockResolvedValueOnce([{ name: 'FeedItem_ai' }]);
     mockPrisma.$queryRawUnsafe.mockResolvedValueOnce([]); // FeedItem_ad missing
@@ -104,12 +105,33 @@ describe('FTS5 Search', () => {
         .mockResolvedValueOnce([{ name: 'FeedItemFTS' }])  // ftsExists → true
         .mockResolvedValueOnce([{ name: 'FeedItem_ai' }])   // triggerExists → exists
         .mockResolvedValueOnce([{ name: 'FeedItem_ad' }])   // triggerExists → exists
-        .mockResolvedValueOnce([{ name: 'FeedItem_au' }]);  // triggerExists → exists
+        .mockResolvedValueOnce([{ name: 'FeedItem_au' }])   // triggerExists → exists
+        .mockResolvedValueOnce([]);                          // no legacy delete triggers
 
       await ensureFTS5();
 
       // Should not create anything
       expect(mockPrisma.$executeRawUnsafe).not.toHaveBeenCalled();
+    });
+
+    it('should replace legacy FTS5 delete-command triggers', async () => {
+      mockPrisma.$queryRawUnsafe
+        .mockResolvedValueOnce([{ name: 'FeedItemFTS' }])
+        .mockResolvedValueOnce([{ name: 'FeedItem_ai' }])
+        .mockResolvedValueOnce([{ name: 'FeedItem_ad' }])
+        .mockResolvedValueOnce([{ name: 'FeedItem_au' }])
+        .mockResolvedValueOnce([{ name: 'FeedItem_ad' }, { name: 'FeedItem_au' }]);
+      mockPrisma.$executeRawUnsafe.mockResolvedValue(0);
+
+      await ensureFTS5();
+
+      expect(mockPrisma.$executeRawUnsafe).toHaveBeenCalledWith(
+        expect.stringContaining('DROP TRIGGER IF EXISTS FeedItem_ad')
+      );
+      const calls = mockPrisma.$executeRawUnsafe.mock.calls.map(call => call[0]);
+      const deleteTrigger = calls.find((sql: string) => sql.includes('CREATE TRIGGER FeedItem_ad'));
+      expect(deleteTrigger).toContain('DELETE FROM FeedItemFTS');
+      expect(deleteTrigger).not.toContain("VALUES('delete'");
     });
 
     it('should repair missing triggers when table exists', async () => {

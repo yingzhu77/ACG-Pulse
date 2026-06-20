@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { adminApi, tokenStore, UnauthorizedError, type AnalysisQueueOverview, type Source } from '../services/api';
+import { adminApi, tokenStore, UnauthorizedError, type AnalysisQueueOverview, type OperationalMetrics, type Source } from '../services/api';
 
 type ShowToast = (type: 'success' | 'error', message: string) => void;
 
@@ -9,6 +9,9 @@ export function useAdmin(showToast: ShowToast, loadPublicData: () => Promise<voi
   const [password, setPassword] = useState('');
   const [adminSources, setAdminSources] = useState<Source[]>([]);
   const [analysisQueue, setAnalysisQueue] = useState<AnalysisQueueOverview | null>(null);
+  const [operationalMetrics, setOperationalMetrics] = useState<OperationalMetrics | null>(null);
+  const [operationalMetricsLoading, setOperationalMetricsLoading] = useState(false);
+  const [operationalMetricsError, setOperationalMetricsError] = useState('');
   const [sourceDraft, setSourceDraft] = useState({
     name: '',
     game: '',
@@ -27,6 +30,8 @@ export function useAdmin(showToast: ShowToast, loadPublicData: () => Promise<voi
     setAdminToken(null);
     setAdminSources([]);
     setAnalysisQueue(null);
+    setOperationalMetrics(null);
+    setOperationalMetricsError('');
   }, []);
 
   const handleAdminError = useCallback((error: unknown, fallbackMessage: string) => {
@@ -61,12 +66,36 @@ export function useAdmin(showToast: ShowToast, loadPublicData: () => Promise<voi
     }
   }, [adminToken, handleAdminError]);
 
+  const loadOperationalMetrics = useCallback(async () => {
+    if (!adminToken && !tokenStore.get()) return;
+    setOperationalMetricsLoading(true);
+    setOperationalMetricsError('');
+    try {
+      setOperationalMetrics(await adminApi.getOperationalMetrics());
+    } catch (error) {
+      if (error instanceof UnauthorizedError) {
+        handleAdminError(error, '运行状态加载失败');
+      } else {
+        setOperationalMetricsError(error instanceof Error ? error.message : '运行状态加载失败');
+      }
+    } finally {
+      setOperationalMetricsLoading(false);
+    }
+  }, [adminToken, handleAdminError]);
+
   useEffect(() => {
     if (adminOpen) {
       void loadAdminSources();
       void loadAnalysisQueue();
+      void loadOperationalMetrics();
     }
-  }, [adminOpen, loadAdminSources, loadAnalysisQueue]);
+  }, [adminOpen, loadAdminSources, loadAnalysisQueue, loadOperationalMetrics]);
+
+  useEffect(() => {
+    if (!adminOpen || !adminToken) return;
+    const timer = window.setInterval(() => void loadOperationalMetrics(), 30_000);
+    return () => window.clearInterval(timer);
+  }, [adminOpen, adminToken, loadOperationalMetrics]);
 
   const handleAdminLogin = useCallback(async (event: React.FormEvent) => {
     event.preventDefault();
@@ -76,11 +105,11 @@ export function useAdmin(showToast: ShowToast, loadPublicData: () => Promise<voi
       setAdminToken(result.token);
       setPassword('');
       showToast('success', '后台已解锁');
-      await Promise.all([loadAdminSources(), loadAnalysisQueue()]);
+      await Promise.all([loadAdminSources(), loadAnalysisQueue(), loadOperationalMetrics()]);
     } catch (error) {
       showToast('error', error instanceof Error ? error.message : '登录失败');
     }
-  }, [password, showToast, loadAdminSources, loadAnalysisQueue]);
+  }, [password, showToast, loadAdminSources, loadAnalysisQueue, loadOperationalMetrics]);
 
   const handleSeedDefaults = useCallback(async () => {
     if (!adminToken) {
@@ -104,11 +133,11 @@ export function useAdmin(showToast: ShowToast, loadPublicData: () => Promise<voi
     try {
       const result = await adminApi.runCheck();
       showToast('success', `检查完成：新增 ${result.newItems}，失败 ${result.failedSources}`);
-      await Promise.all([loadAdminSources(), loadAnalysisQueue(), loadPublicData()]);
+      await Promise.all([loadAdminSources(), loadAnalysisQueue(), loadOperationalMetrics(), loadPublicData()]);
     } catch (error) {
       handleAdminError(error, '检查失败');
     }
-  }, [adminToken, handleAdminError, loadAdminSources, loadAnalysisQueue, loadPublicData, showToast]);
+  }, [adminToken, handleAdminError, loadAdminSources, loadAnalysisQueue, loadOperationalMetrics, loadPublicData, showToast]);
 
   const handleReanalyzeAll = useCallback(async () => {
     if (!adminToken) {
@@ -207,6 +236,10 @@ export function useAdmin(showToast: ShowToast, loadPublicData: () => Promise<voi
     setPassword,
     adminSources,
     analysisQueue,
+    operationalMetrics,
+    operationalMetricsLoading,
+    operationalMetricsError,
+    loadOperationalMetrics,
     sourceDraft,
     setSourceDraft,
     followUrl,

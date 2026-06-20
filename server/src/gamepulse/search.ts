@@ -39,6 +39,17 @@ async function getMissingTriggers(): Promise<string[]> {
   return results.filter(r => !r.exists).map(r => r.name);
 }
 
+async function getLegacyDeleteTriggers(): Promise<string[]> {
+  const rows = await prisma.$queryRawUnsafe<Array<{ name: string }>>(`
+    SELECT name
+    FROM sqlite_master
+    WHERE type = 'trigger'
+      AND name IN ('FeedItem_ad', 'FeedItem_au')
+      AND sql LIKE '%VALUES(''delete''%'
+  `);
+  return (rows || []).map(row => row.name);
+}
+
 /**
  * Create FTS5 virtual table and sync triggers
  * Uses feedItemId as the link back to FeedItem (UUID primary key)
@@ -51,8 +62,11 @@ async function getMissingTriggers(): Promise<string[]> {
 export async function ensureFTS5(): Promise<void> {
   const tableExists = await ftsExists();
   const missingTriggers = await getMissingTriggers();
+  const legacyTriggers = tableExists && missingTriggers.length === 0
+    ? await getLegacyDeleteTriggers()
+    : [];
 
-  if (tableExists && missingTriggers.length === 0) {
+  if (tableExists && missingTriggers.length === 0 && legacyTriggers.length === 0) {
     return; // All good
   }
 
@@ -113,8 +127,9 @@ export async function ensureFTS5(): Promise<void> {
     await rebuildFTS5();
   } else {
     // Table existed but triggers were missing — data may be out of sync
+    const repairedTriggers = [...new Set([...missingTriggers, ...legacyTriggers])];
     console.warn(
-      `[FTS5] Repaired missing triggers: ${missingTriggers.join(', ')}. Rebuilding index to ensure consistency.`
+      `[FTS5] Repaired sync triggers: ${repairedTriggers.join(', ')}. Rebuilding index to ensure consistency.`
     );
     await rebuildFTS5();
   }
@@ -192,6 +207,11 @@ export async function isFTS5Ready(): Promise<boolean> {
   const missingTriggers = await getMissingTriggers();
   if (missingTriggers.length > 0) {
     console.warn(`[FTS5] Index exists but missing triggers: ${missingTriggers.join(', ')}`);
+    return false;
+  }
+  const legacyTriggers = await getLegacyDeleteTriggers();
+  if (legacyTriggers.length > 0) {
+    console.warn(`[FTS5] Index has outdated triggers: ${legacyTriggers.join(', ')}`);
     return false;
   }
   const count = await prisma.$queryRawUnsafe<Array<{ cnt: number }>>(

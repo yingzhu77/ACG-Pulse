@@ -13,6 +13,7 @@ import {
 import { runGamePulseCheck } from '../jobs/checker.js';
 import { rebuildFTS5, isFTS5Ready } from '../search.js';
 import type { PrismaWhereClause } from '../types.js';
+import { getOperationalMetrics } from '../observability/operationsService.js';
 import {
   CreateSourceSchema,
   UpdateSourceSchema,
@@ -79,6 +80,16 @@ export function createAdminRouter(io: Server): Router {
     } catch (error) {
       console.error('Fetch sources failed:', error);
       res.status(500).json({ error: 'Failed to fetch sources' });
+    }
+  });
+
+  router.get('/ops/metrics', async (_req, res) => {
+    try {
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(await getOperationalMetrics());
+    } catch (error) {
+      console.error('Fetch operational metrics failed:', error);
+      res.status(500).json({ error: 'Failed to fetch operational metrics' });
     }
   });
 

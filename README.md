@@ -119,7 +119,26 @@ ADMIN_JWT_SECRET=随机字符串
 
 # 情报上限
 MAX_FEED_ITEMS=2000
+
+# 运维监控与统计缓存（以下均为默认值）
+STATS_CACHE_TTL_MS=30000
+API_METRICS_WINDOW_MS=900000
+API_METRICS_SAMPLE_LIMIT=2000
+API_SLOW_REQUEST_MS=500
+API_CRITICAL_REQUEST_MS=1500
 ```
+
+## 运行状态与容量监控
+
+管理员后台提供“运行状态”面板，展示情报容量、SQLite/WAL 大小、社区与分析队列积压，以及最近 15 分钟 API 的 P95、错误率和慢接口。
+
+- 详细指标接口：`GET /api/admin/ops/metrics`（需要管理员令牌）
+- 延迟样本仅保存在进程内，最多 2,000 条，服务重启后清零
+- 情报默认保留 2,000 条，源健康日志默认保留 30 天
+- `/api/public/stats` 使用 30 秒进程缓存，并在采集完成后主动失效
+- 慢请求默认阈值为 500ms，严重请求阈值为 1500ms
+
+SQLite 相对路径按 `server/prisma/` 解析；生产环境建议继续使用绝对路径 `/app/server/data/prod.db`。
 
 ## B站数据源配置
 

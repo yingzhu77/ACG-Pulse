@@ -211,7 +211,7 @@ function App() {
       </div>
 
       {/* Mobile Filter FAB */}
-      {isMobile && view === 'feed' && !mobileDrawerOpen && (
+      {isMobile && view === 'feed' && !mobileDrawerOpen && !admin.adminOpen && (
         <button
           className="mobile-filter-fab"
           onClick={openMobileDrawer}
@@ -286,6 +286,10 @@ function App() {
         onRunCheck={admin.handleRunCheck}
         onReanalyzeAll={admin.handleReanalyzeAll}
         analysisQueue={admin.analysisQueue}
+        operationalMetrics={admin.operationalMetrics}
+        operationalMetricsLoading={admin.operationalMetricsLoading}
+        operationalMetricsError={admin.operationalMetricsError}
+        onRefreshOperationalMetrics={admin.loadOperationalMetrics}
         onRetryAnalysisTask={admin.handleRetryAnalysisTask}
         onRetryFailedAnalysisTasks={admin.handleRetryFailedAnalysisTasks}
         onToggleSource={admin.handleToggleSource}

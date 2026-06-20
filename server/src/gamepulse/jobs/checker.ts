@@ -4,6 +4,8 @@ import { enqueueAnalysisTask } from '../ai/analysisQueue.js';
 import { getAdapter } from '../adapters/registry.js';
 import { contentHash, normalizeUrl, truncate } from '../utils.js';
 import { fetchBilibiliAvatar } from '../adapters/bilibiliVideo.js';
+import { getHealthLogRetentionDays, getMaxFeedItems } from '../config.js';
+import { invalidatePublicStatsCache } from '../services/statsService.js';
 
 let checkRunning = false;
 let checkStartedAt: Date | null = null;
@@ -18,18 +20,6 @@ export interface CheckResult {
 interface SourceCheckResult {
   newItems: number;
   failed: boolean;
-}
-
-// Maximum feed items to keep (configurable via env)
-function getMaxFeedItems(): number {
-  const parsed = Number(process.env.MAX_FEED_ITEMS);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 2000;
-}
-
-// Health log retention period in days (configurable via env)
-function getHealthLogRetentionDays(): number {
-  const parsed = Number(process.env.HEALTH_LOG_RETENTION_DAYS);
-  return Number.isFinite(parsed) && parsed >= 1 ? parsed : 30;
 }
 
 // Clean up expired health logs
@@ -53,7 +43,7 @@ async function cleanupExpiredHealthLogs(): Promise<number> {
 }
 
 // Clean up old feed items when limit is exceeded
-async function cleanupOldItems(): Promise<number> {
+export async function enforceFeedItemLimit(): Promise<number> {
   const maxItems = getMaxFeedItems();
   const currentCount = await prisma.feedItem.count({ where: { hidden: false } });
 
@@ -72,17 +62,8 @@ async function cleanupOldItems(): Promise<number> {
 
   if (oldItems.length === 0) return 0;
 
-  // Delete associated analyses first
-  await prisma.analysis.deleteMany({
-    where: { feedItemId: { in: oldItems.map(i => i.id) } }
-  });
-
-  // Delete associated notifications
-  await prisma.notification.deleteMany({
-    where: { feedItemId: { in: oldItems.map(i => i.id) } }
-  });
-
-  // Delete the items
+  // Related analyses, tasks, and notifications use ON DELETE CASCADE.
+  // One write keeps cleanup atomic and avoids lock gaps between dependent deletes.
   const deleteResult = await prisma.feedItem.deleteMany({
     where: { id: { in: oldItems.map(i => i.id) } }
   });
@@ -118,8 +99,9 @@ async function doRunGamePulseCheck(io?: Server): Promise<CheckResult> {
   const results = await runWithConcurrency(sources, getSourceCheckConcurrency(), source => checkSource(source, io));
 
   // Cleanup old items and expired health logs after check
-  await cleanupOldItems();
+  await enforceFeedItemLimit();
   await cleanupExpiredHealthLogs();
+  invalidatePublicStatsCache();
 
   return {
     checkedSources: sources.length,

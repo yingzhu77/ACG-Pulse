@@ -94,6 +94,7 @@ model FeedItem {
 
   @@unique([sourceId, contentHash])
   @@index([game, hidden, publishedAt])
+  @@index([hidden, createdAt])
   @@index([itemKind])
 }
 

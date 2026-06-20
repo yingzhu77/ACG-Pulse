@@ -1,15 +1,20 @@
 import type { Request, Response, NextFunction, ErrorRequestHandler } from 'express';
+import { getApiMetricsConfig } from '../config.js';
+import { normalizeApiRoute, recordApiRequest } from '../observability/apiMetrics.js';
 
 /**
  * 请求日志中间件
  */
-export function requestLogger(req: Request, _res: Response, next: NextFunction): void {
-  const timestamp = new Date().toISOString();
-  const method = req.method;
-  const url = req.originalUrl;
-  const ip = req.ip || req.socket.remoteAddress || 'unknown';
-
-  console.log(`[${timestamp}] ${method} ${url} - ${ip}`);
+export function requestLogger(req: Request, res: Response, next: NextFunction): void {
+  const startedAt = process.hrtime.bigint();
+  res.once('finish', () => {
+    const durationMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000;
+    const route = normalizeApiRoute(req.originalUrl);
+    recordApiRequest({ timestamp: Date.now(), route, durationMs, statusCode: res.statusCode });
+    const message = `[${new Date().toISOString()}] ${req.method} ${req.originalUrl} ${res.statusCode} ${durationMs.toFixed(1)}ms - ${req.ip || req.socket.remoteAddress || 'unknown'}`;
+    if (durationMs >= getApiMetricsConfig().slowRequestMs) console.warn(`[SlowRequest] ${message}`);
+    else console.log(message);
+  });
   next();
 }
 

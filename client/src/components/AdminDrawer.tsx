@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { Lock, LogOut, Play, Plus, RefreshCw, RotateCcw, X } from 'lucide-react';
-import type { AnalysisQueueOverview, Source } from '../services/api';
+import type { AnalysisQueueOverview, OperationalMetrics, Source } from '../services/api';
+import { AdminOpsPanel } from './AdminOpsPanel';
 
 export interface SourceDraft {
   name: string;
@@ -28,6 +29,10 @@ export interface AdminDrawerProps {
   onRunCheck: () => void;
   onReanalyzeAll: () => void;
   analysisQueue: AnalysisQueueOverview | null;
+  operationalMetrics: OperationalMetrics | null;
+  operationalMetricsLoading: boolean;
+  operationalMetricsError: string;
+  onRefreshOperationalMetrics: () => void;
   onRetryAnalysisTask: (id: string) => void;
   onRetryFailedAnalysisTasks: () => void;
   onToggleSource: (id: string) => void;
@@ -97,6 +102,13 @@ export function AdminDrawer(props: AdminDrawerProps) {
                     退出
                   </button>
                 </div>
+
+                <AdminOpsPanel
+                  metrics={props.operationalMetrics}
+                  loading={props.operationalMetricsLoading}
+                  error={props.operationalMetricsError}
+                  onRefresh={props.onRefreshOperationalMetrics}
+                />
 
                 <div className="drawer-card">
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
