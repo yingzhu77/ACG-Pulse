@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { Lock, LogOut, Play, Plus, RefreshCw, RotateCcw, X } from 'lucide-react';
+import { CheckCircle2, Lock, LogOut, Play, Plus, RefreshCw, RotateCcw, X } from 'lucide-react';
 import type { AnalysisQueueOverview, OperationalMetrics, Source } from '../services/api';
 import { AdminOpsPanel } from './AdminOpsPanel';
 
@@ -47,6 +47,10 @@ export interface AdminDrawerProps {
 }
 
 export function AdminDrawer(props: AdminDrawerProps) {
+  const failedTaskCount = props.analysisQueue
+    ? props.analysisQueue.counts.failed || 0
+    : undefined;
+
   return (
     <AnimatePresence>
       {props.open && (
@@ -111,17 +115,25 @@ export function AdminDrawer(props: AdminDrawerProps) {
                 />
 
                 <div className="drawer-card">
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
+                  <div className="queue-heading">
                     <h3>AI 分析队列</h3>
-                    <button
-                      onClick={props.onRetryFailedAnalysisTasks}
-                      className="action-button"
-                      disabled={!props.analysisQueue?.counts.failed}
-                      type="button"
-                    >
-                      <RotateCcw className="h-4 w-4" />
-                      重试失败
-                    </button>
+                    {failedTaskCount === undefined ? (
+                      <span className="queue-heading-status">读取队列...</span>
+                    ) : failedTaskCount > 0 ? (
+                      <button
+                        onClick={props.onRetryFailedAnalysisTasks}
+                        className="action-button queue-retry-button"
+                        type="button"
+                      >
+                        <RotateCcw className="h-4 w-4" />
+                        重试失败任务
+                      </button>
+                    ) : (
+                      <span className="queue-heading-status healthy" role="status" aria-live="polite">
+                        <CheckCircle2 className="h-4 w-4" />
+                        无失败任务
+                      </span>
+                    )}
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginTop: 10 }}>
                     {['pending', 'running', 'completed', 'failed'].map(status => (

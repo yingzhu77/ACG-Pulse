@@ -568,6 +568,48 @@
   font-size: 15px;
 }
 
+.queue-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.queue-heading h3 {
+  margin: 0;
+}
+
+.queue-retry-button {
+  width: auto;
+  margin-top: 0;
+  white-space: nowrap;
+}
+
+.queue-heading-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.queue-heading-status.healthy {
+  color: var(--green);
+}
+
+@media (max-width: 480px) {
+  .queue-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .queue-retry-button {
+    width: 100%;
+  }
+}
+
 .queue-stat {
   min-width: 0;
   border: 1px solid var(--stroke);
