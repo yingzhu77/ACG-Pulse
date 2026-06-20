@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { prisma } from '../../db.js';
 import { aggregateFeedItemsToStories, toPublicFeedItem } from '../storyAggregation.js';
 import { normalizeImportance } from '../storyAggregation.js';
-import { computeStoryFacets } from '../storyFacets.js';
+import { getStoryFacets } from '../storyFacets.js';
 import type { PrismaWhereClause } from '../types.js';
 import {
   toArray,
@@ -165,7 +165,8 @@ router.get('/stories', async (req, res) => {
       official,
       q,
       followGroup,
-      sourceUid
+      sourceUid,
+      includeFacets
     } = validateOrThrow(PublicStoriesQuerySchema, req.query, 'stories query');
 
     const pageNum = page;
@@ -177,7 +178,7 @@ router.get('/stories', async (req, res) => {
     const group = followGroup ? String(followGroup) : '';
 
     // 检查缓存（仅第 1 页且无搜索词时缓存，搜索结果不缓存）
-    const cacheKey = getStoriesCacheKey({ page, limit, game, sourceId, itemKind, category, importance, visibility, official, followGroup, sourceUid });
+    const cacheKey = getStoriesCacheKey({ page, limit, game, sourceId, itemKind, category, importance, visibility, official, followGroup, sourceUid, includeFacets });
     if (pageNum === 1 && !q) {
       const cached = getCachedStories(cacheKey);
       if (cached) {
@@ -244,34 +245,37 @@ router.get('/stories', async (req, res) => {
     }
     applyLowValueNoticeFilter(where, visibility);
 
-    const items = await prisma.feedItem.findMany({
-      where,
-      orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }],
-      take: q && ftsIds ? Math.min(ftsIds.length, FTS_RECALL_LIMIT) : candidateLimit,
-      include: {
-        source: {
-          select: {
-            id: true,
-            name: true,
-            type: true,
-            game: true,
-            isOfficial: true,
-            followed: true,
-            healthStatus: true
-          }
-        },
-        analysis: true
-      }
-    });
+    const [items, facets] = await Promise.all([
+      prisma.feedItem.findMany({
+        where,
+        orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }],
+        take: q && ftsIds ? Math.min(ftsIds.length, FTS_RECALL_LIMIT) : candidateLimit,
+        include: {
+          source: {
+            select: {
+              id: true,
+              name: true,
+              type: true,
+              game: true,
+              isOfficial: true,
+              followed: true,
+              healthStatus: true
+            }
+          },
+          analysis: true
+        }
+      }),
+      includeFacets
+        ? getStoryFacets(prisma, {
+            followGroup: group,
+            sourceUid: sourceUid ? String(sourceUid) : undefined,
+            visibility: visibility ? String(visibility) : undefined
+          })
+        : Promise.resolve({ byGame: {}, byCategory: {}, byFollowCategory: {}, byImportance: {} })
+    ]);
 
     // Aggregate stories for display
     const allStories = aggregateFeedItemsToStories(items);
-
-    const facets = await computeStoryFacets(prisma, {
-      followGroup: group,
-      sourceUid: sourceUid ? String(sourceUid) : undefined,
-      visibility: visibility ? String(visibility) : undefined
-    });
 
     // Apply importance filter for display
     const importanceSet = importanceArr.length > 0

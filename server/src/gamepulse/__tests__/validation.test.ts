@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { CreateSourceSchema, UpdateSourceSchema } from '../validation.js';
+import { CreateSourceSchema, PublicStoriesQuerySchema, UpdateSourceSchema } from '../validation.js';
 
 describe('source validation', () => {
   test('parses boolean-like source fields on create', () => {
@@ -25,5 +25,12 @@ describe('source validation', () => {
     });
 
     expect(parsed).toEqual({ name: 'Renamed Source' });
+  });
+});
+
+describe('stories query validation', () => {
+  test('includes facets by default and accepts an explicit opt-out', () => {
+    expect(PublicStoriesQuerySchema.parse({}).includeFacets).toBe(true);
+    expect(PublicStoriesQuerySchema.parse({ includeFacets: 'false' }).includeFacets).toBe(false);
   });
 });

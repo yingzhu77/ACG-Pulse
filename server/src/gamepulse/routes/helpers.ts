@@ -68,7 +68,7 @@ export function publicVisibilityWhere(): PrismaWhereClause {
 /**
  * 低价值通知排除短语列表
  */
-const lowValueNoticePhrases = [
+export const LOW_VALUE_NOTICE_PHRASES = [
   '封禁名单',
   '封号名单',
   '处罚名单',
@@ -87,7 +87,7 @@ const lowValueNoticePhrases = [
  * 获取低价值通知排除条件
  */
 export function lowValueNoticeExclusionWhere(): PrismaWhereClause {
-  const phraseConditions = lowValueNoticePhrases.flatMap(phrase => [
+  const phraseConditions = LOW_VALUE_NOTICE_PHRASES.flatMap(phrase => [
     { title: { contains: phrase } },
     { content: { contains: phrase } }
   ]);

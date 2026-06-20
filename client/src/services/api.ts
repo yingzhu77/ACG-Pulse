@@ -192,6 +192,7 @@ export type ItemFilters = {
   q?: string;
   followGroup?: string;
   sourceUid?: string;
+  includeFacets?: boolean;
 };
 
 async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {

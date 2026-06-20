@@ -1,7 +1,6 @@
-import type { Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import type { prisma as prismaClient } from '../db.js';
-import { appendAnd, lowValueNoticeExclusionWhere } from './routes/helpers.js';
-import type { PrismaWhereClause } from './types.js';
+import { LOW_VALUE_NOTICE_PHRASES } from './routes/helpers.js';
 import type { PublicStory } from './storyAggregation.js';
 
 export interface StoryFacets {
@@ -17,128 +16,117 @@ interface StoryFacetFilters {
   visibility?: string;
 }
 
-type PrismaClientLike = Pick<typeof prismaClient, 'feedItem' | 'analysis'>;
+type PrismaClientLike = Pick<typeof prismaClient, '$queryRaw'>;
 
 const FOLLOW_CATEGORIES_SET = new Set(['music', 'trailer', 'movie_trailer', 'creator_video']);
 const GAME_CATEGORIES_SET = new Set(['announcement', 'event', 'version', 'character', 'pv', 'game_music', 'community', 'other']);
 const ANALYZED_STATUSES = ['completed', 'failed'];
+const FACET_CACHE_TTL_MS = 60_000;
+const FACET_CACHE_LIMIT = 20;
 
-export function buildStoryFacetFeedItemWhere(filters: StoryFacetFilters): PrismaWhereClause {
-  const where: PrismaWhereClause = { hidden: false };
-
-  if (filters.followGroup === 'follow') {
-    appendAnd(where, { source: { is: { followed: true } } });
-  } else if (filters.followGroup === 'game') {
-    appendAnd(where, { source: { is: { followed: false } } });
-  }
-
-  if (filters.sourceUid) {
-    appendAnd(where, { source: { is: { uid: filters.sourceUid } } });
-  }
-
-  if (filters.visibility !== 'muted' && filters.visibility !== 'all') {
-    appendAnd(where, lowValueNoticeExclusionWhere());
-  }
-
-  return where;
+interface StoryFacetGroupRow {
+  game: string;
+  category: string | null;
+  importance: string;
+  followed: bigint | number | boolean;
+  count: bigint | number;
 }
 
-export async function computeStoryFacets(
+const facetCache = new Map<string, { value: StoryFacets; expiresAt: number }>();
+const facetPromises = new Map<string, Promise<StoryFacets>>();
+
+function facetCacheKey(filters: StoryFacetFilters): string {
+  return `${filters.followGroup || ''}|${filters.sourceUid || ''}|${filters.visibility || ''}`;
+}
+
+function trimFacetCache(): void {
+  if (facetCache.size <= FACET_CACHE_LIMIT) return;
+  const oldestKey = facetCache.keys().next().value;
+  if (oldestKey) facetCache.delete(oldestKey);
+}
+
+export async function getStoryFacets(
   prisma: PrismaClientLike,
   filters: StoryFacetFilters
 ): Promise<StoryFacets> {
-  const baseFeedItemWhere = buildStoryFacetFeedItemWhere(filters);
-  const statusWhere = { analysis: { is: { status: { in: ANALYZED_STATUSES } } } };
+  const key = facetCacheKey(filters);
+  const cached = facetCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
+  if (cached) facetCache.delete(key);
 
-  const byGameWhere = withAnd(baseFeedItemWhere, [
-    statusWhere,
-    { source: { is: { followed: false } } }
-  ]);
-  const gameCategoryWhere = buildAnalysisFacetWhere(baseFeedItemWhere, false, filters.visibility);
-  const followCategoryWhere = buildAnalysisFacetWhere(baseFeedItemWhere, true, filters.visibility);
-  const importanceWhere = buildAnalysisFacetWhere(baseFeedItemWhere, undefined, filters.visibility);
+  const pending = facetPromises.get(key);
+  if (pending) return pending;
 
-  const [gameRows, gameCategoryRows, followCategoryRows, importanceRows] = await Promise.all([
-    prisma.feedItem.groupBy({
-      by: ['game'],
-      where: byGameWhere as Prisma.FeedItemWhereInput,
-      _count: { _all: true }
-    }),
-    prisma.analysis.groupBy({
-      by: ['category'],
-      where: gameCategoryWhere as Prisma.AnalysisWhereInput,
-      _count: { _all: true }
-    }),
-    prisma.analysis.groupBy({
-      by: ['category'],
-      where: followCategoryWhere as Prisma.AnalysisWhereInput,
-      _count: { _all: true }
-    }),
-    prisma.analysis.groupBy({
-      by: ['importance'],
-      where: importanceWhere as Prisma.AnalysisWhereInput,
-      _count: { _all: true }
+  const promise = queryStoryFacets(prisma, filters)
+    .then(value => {
+      facetCache.set(key, { value, expiresAt: Date.now() + FACET_CACHE_TTL_MS });
+      trimFacetCache();
+      return value;
     })
-  ]);
-
-  return {
-    byGame: Object.fromEntries(gameRows.map(row => [row.game, row._count._all])),
-    byCategory: categoryRowsToRecord(gameCategoryRows, GAME_CATEGORIES_SET),
-    byFollowCategory: categoryRowsToRecord(followCategoryRows, FOLLOW_CATEGORIES_SET),
-    byImportance: importanceRowsToRecord(importanceRows)
-  };
+    .finally(() => facetPromises.delete(key));
+  facetPromises.set(key, promise);
+  return promise;
 }
 
-function buildAnalysisFacetWhere(
-  feedItemWhere: PrismaWhereClause,
-  followed: boolean | undefined,
-  visibility?: string
-): PrismaWhereClause {
-  const where: PrismaWhereClause = {
-    status: { in: ANALYZED_STATUSES },
-    feedItem: {
-      is: followed === undefined
-        ? feedItemWhere
-        : withAnd(feedItemWhere, [{ source: { is: { followed } } }])
+export async function queryStoryFacets(
+  prisma: PrismaClientLike,
+  filters: StoryFacetFilters
+): Promise<StoryFacets> {
+  const conditions: Prisma.Sql[] = [
+    Prisma.sql`f.hidden = 0`,
+    Prisma.sql`a.status IN (${Prisma.join(ANALYZED_STATUSES)})`
+  ];
+
+  if (filters.followGroup === 'follow') conditions.push(Prisma.sql`s.followed = ${true}`);
+  if (filters.followGroup === 'game') conditions.push(Prisma.sql`s.followed = ${false}`);
+  if (filters.sourceUid) conditions.push(Prisma.sql`s.uid = ${filters.sourceUid}`);
+  if (filters.visibility !== 'muted' && filters.visibility !== 'all') {
+    conditions.push(Prisma.sql`a.category <> 'enforcement'`);
+    for (const phrase of LOW_VALUE_NOTICE_PHRASES) {
+      const pattern = `%${phrase}%`;
+      conditions.push(Prisma.sql`f.title NOT LIKE ${pattern} AND f.content NOT LIKE ${pattern}`);
     }
-  };
-
-  if (visibility !== 'muted' && visibility !== 'all') {
-    appendAnd(where, { category: { not: 'enforcement' } });
   }
 
-  return where;
-}
+  const rows = await prisma.$queryRaw<StoryFacetGroupRow[]>(Prisma.sql`
+    SELECT f.game, a.category, a.importance, s.followed, COUNT(*) AS count
+    FROM Analysis a
+    INNER JOIN FeedItem f ON f.id = a.feedItemId
+    INNER JOIN Source s ON s.id = f.sourceId
+    WHERE ${Prisma.join(conditions, ' AND ')}
+    GROUP BY f.game, a.category, a.importance, s.followed
+  `);
 
-function withAnd(where: PrismaWhereClause, conditions: PrismaWhereClause[]): PrismaWhereClause {
-  return {
-    ...where,
-    AND: [...(where.AND || []), ...conditions]
-  };
-}
+  const byGame: Record<string, number> = {};
+  const byCategory: Record<string, number> = {};
+  const byFollowCategory: Record<string, number> = {};
+  const byImportance: Record<string, number> = {};
 
-function categoryRowsToRecord(
-  rows: Array<{ category: string | null; _count: { _all: number } }>,
-  allowed: Set<string>
-): Record<string, number> {
-  const counts: Record<string, number> = {};
   for (const row of rows) {
+    const count = Number(row.count);
+    const followed = Boolean(Number(row.followed));
     const category = row.category || 'other';
-    if (!allowed.has(category)) continue;
-    counts[category] = (counts[category] || 0) + row._count._all;
+    const importance = row.importance === 'urgent' ? 'high' : row.importance || 'low';
+    if (!followed) {
+      byGame[row.game] = (byGame[row.game] || 0) + count;
+      if (GAME_CATEGORIES_SET.has(category)) byCategory[category] = (byCategory[category] || 0) + count;
+    } else if (FOLLOW_CATEGORIES_SET.has(category)) {
+      byFollowCategory[category] = (byFollowCategory[category] || 0) + count;
+    }
+    byImportance[importance] = (byImportance[importance] || 0) + count;
   }
-  return counts;
+
+  return {
+    byGame,
+    byCategory,
+    byFollowCategory,
+    byImportance
+  };
 }
 
-function importanceRowsToRecord(
-  rows: Array<{ importance: string; _count: { _all: number } }>
-): Record<string, number> {
-  const counts: Record<string, number> = {};
-  for (const row of rows) {
-    const importance = row.importance === 'urgent' ? 'high' : row.importance || 'low';
-    counts[importance] = (counts[importance] || 0) + row._count._all;
-  }
-  return counts;
+export function resetStoryFacetCache(): void {
+  facetCache.clear();
+  facetPromises.clear();
 }
 
 /**

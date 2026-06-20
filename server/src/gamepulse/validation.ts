@@ -200,7 +200,11 @@ export const PublicStoriesQuerySchema = z.object({
   official: z.string().optional(),
   q: z.string().optional(),
   followGroup: z.string().optional(),
-  sourceUid: z.string().optional()
+  sourceUid: z.string().optional(),
+  includeFacets: z.preprocess(
+    (v) => String(v ?? 'true') !== 'false',
+    z.boolean()
+  )
 });
 
 export type PublicStoriesQuery = z.infer<typeof PublicStoriesQuerySchema>;

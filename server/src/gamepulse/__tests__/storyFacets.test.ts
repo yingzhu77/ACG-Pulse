@@ -1,108 +1,72 @@
-import { describe, expect, test, vi } from 'vitest';
-import { buildStoryFacetFeedItemWhere, computeStoryFacets } from '../storyFacets.js';
+import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { getStoryFacets, queryStoryFacets, resetStoryFacetCache } from '../storyFacets.js';
 
 describe('story facets', () => {
-  test('builds facet feed item filters for follow source uid and low-value exclusion', () => {
-    const where = buildStoryFacetFeedItemWhere({
-      followGroup: 'follow',
-      sourceUid: '123456',
-      visibility: 'public'
-    });
-
-    expect(where.hidden).toBe(false);
-    expect(where.AND).toEqual(expect.arrayContaining([
-      { source: { is: { followed: true } } },
-      { source: { is: { uid: '123456' } } },
-      expect.objectContaining({ NOT: expect.any(Object) })
-    ]));
+  beforeEach(() => {
+    resetStoryFacetCache();
   });
 
-  test('does not exclude muted low-value notices when visibility includes muted content', () => {
-    const where = buildStoryFacetFeedItemWhere({
-      followGroup: 'game',
-      visibility: 'all'
-    });
-
-    expect(where.AND).toEqual([
-      { source: { is: { followed: false } } }
+  test('builds every facet from one grouped query and normalizes values', async () => {
+    const queryRaw = vi.fn().mockResolvedValue([
+      { game: '原神', category: 'announcement', importance: 'low', followed: 0n, count: 2n },
+      { game: '原神', category: null, importance: 'urgent', followed: 0n, count: 1n },
+      { game: '', category: 'music', importance: 'high', followed: 1n, count: 3n },
+      { game: '', category: 'announcement', importance: 'medium', followed: 1n, count: 8n }
     ]);
-  });
 
-  test('computes facets from grouped rows and normalizes public values', async () => {
-    const feedItemGroupBy = vi.fn().mockResolvedValue([
-      { game: '原神', _count: { _all: 2 } },
-      { game: '崩坏：星穹铁道', _count: { _all: 1 } }
-    ]);
-    const analysisGroupBy = vi.fn()
-      .mockResolvedValueOnce([
-        { category: 'announcement', _count: { _all: 2 } },
-        { category: null, _count: { _all: 1 } },
-        { category: 'music', _count: { _all: 9 } }
-      ])
-      .mockResolvedValueOnce([
-        { category: 'music', _count: { _all: 3 } },
-        { category: 'creator_video', _count: { _all: 1 } },
-        { category: 'announcement', _count: { _all: 8 } }
-      ])
-      .mockResolvedValueOnce([
-        { importance: 'low', _count: { _all: 4 } },
-        { importance: 'urgent', _count: { _all: 2 } },
-        { importance: 'high', _count: { _all: 1 } }
-      ]);
-
-    const facets = await computeStoryFacets({
-      feedItem: { groupBy: feedItemGroupBy },
-      analysis: { groupBy: analysisGroupBy }
-    } as never, {
-      followGroup: 'game',
-      visibility: 'public'
-    });
+    const facets = await queryStoryFacets({ $queryRaw: queryRaw } as never, {});
 
     expect(facets).toEqual({
-      byGame: { 原神: 2, '崩坏：星穹铁道': 1 },
+      byGame: { 原神: 3 },
       byCategory: { announcement: 2, other: 1 },
-      byFollowCategory: { music: 3, creator_video: 1 },
-      byImportance: { low: 4, high: 3 }
+      byFollowCategory: { music: 3 },
+      byImportance: { low: 2, high: 4, medium: 8 }
     });
-    expect(feedItemGroupBy).toHaveBeenCalledTimes(1);
-    expect(analysisGroupBy).toHaveBeenCalledTimes(3);
+    expect(queryRaw).toHaveBeenCalledTimes(1);
   });
 
-  test('applies source uid and followed filters to grouped queries', async () => {
-    const feedItemGroupBy = vi.fn().mockResolvedValue([]);
-    const analysisGroupBy = vi.fn().mockResolvedValue([]);
+  test('parameterizes followed source, uid, and low-value exclusions', async () => {
+    const queryRaw = vi.fn().mockResolvedValue([]);
 
-    await computeStoryFacets({
-      feedItem: { groupBy: feedItemGroupBy },
-      analysis: { groupBy: analysisGroupBy }
-    } as never, {
+    await queryStoryFacets({ $queryRaw: queryRaw } as never, {
       followGroup: 'follow',
       sourceUid: '8465957',
       visibility: 'public'
     });
 
-    expect(feedItemGroupBy).toHaveBeenCalledWith(expect.objectContaining({
-      where: expect.objectContaining({
-        AND: expect.arrayContaining([
-          { source: { is: { followed: true } } },
-          { source: { is: { uid: '8465957' } } },
-          { analysis: { is: { status: { in: ['completed', 'failed'] } } } },
-          { source: { is: { followed: false } } }
-        ])
-      })
+    const query = queryRaw.mock.calls[0][0];
+    expect(String(query.sql)).toContain('s.followed = ?');
+    expect(String(query.sql)).toContain('s.uid = ?');
+    expect(String(query.sql)).toContain("a.category <> 'enforcement'");
+    expect(query.values).toContain(true);
+    expect(query.values).toContain('8465957');
+    expect(query.values).toContain('%处罚公示%');
+  });
+
+  test('keeps low-value rows when muted visibility is requested', async () => {
+    const queryRaw = vi.fn().mockResolvedValue([]);
+
+    await queryStoryFacets({ $queryRaw: queryRaw } as never, { visibility: 'all' });
+
+    const query = queryRaw.mock.calls[0][0];
+    expect(String(query.sql)).not.toContain('enforcement');
+    expect(query.values).not.toContain('%处罚公示%');
+  });
+
+  test('deduplicates concurrent facet requests and caches the result', async () => {
+    let resolveRows: (rows: unknown[]) => void = () => undefined;
+    const queryRaw = vi.fn().mockReturnValue(new Promise(resolve => {
+      resolveRows = resolve;
     }));
-    expect(analysisGroupBy).toHaveBeenCalledWith(expect.objectContaining({
-      where: expect.objectContaining({
-        feedItem: {
-          is: expect.objectContaining({
-            AND: expect.arrayContaining([
-              { source: { is: { followed: true } } },
-              { source: { is: { uid: '8465957' } } },
-              { source: { is: { followed: false } } }
-            ])
-          })
-        }
-      })
-    }));
+    const client = { $queryRaw: queryRaw } as never;
+
+    const first = getStoryFacets(client, { followGroup: 'game' });
+    const second = getStoryFacets(client, { followGroup: 'game' });
+    resolveRows([]);
+
+    expect(await first).toEqual({ byGame: {}, byCategory: {}, byFollowCategory: {}, byImportance: {} });
+    expect(await second).toEqual(await first);
+    expect(await getStoryFacets(client, { followGroup: 'game' })).toEqual(await first);
+    expect(queryRaw).toHaveBeenCalledTimes(1);
   });
 });

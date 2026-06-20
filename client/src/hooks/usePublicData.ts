@@ -79,7 +79,12 @@ export function usePublicData(showToast: ShowToast) {
       if (filters.importance) apiFilters.importance = filters.importance;
       if (filters.q) apiFilters.q = filters.q;
 
-      const summaryFilters: Record<string, string | number | undefined> = { limit: 60, page: 1, followGroup: 'game' };
+      const summaryFilters: Record<string, string | number | boolean | undefined> = {
+        limit: 60,
+        page: 1,
+        followGroup: 'game',
+        includeFacets: false
+      };
       const summaryGames = sourceFilter.filter(s => !/^\d+$/.test(s));
       if (summaryGames.length > 0) {
         summaryFilters.game = summaryGames.length === 1 ? summaryGames[0] : summaryGames.join(',');
