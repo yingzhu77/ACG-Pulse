@@ -4,7 +4,9 @@
  */
 
 import { prisma } from '../../db.js';
+import type { Prisma } from '@prisma/client';
 import type { CommunityTopic } from '../adapters/community.js';
+import { normalizeCommunityTopicUrl } from '../communityUrls.js';
 
 const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
 const VALID_SENTIMENTS = new Set(['positive', 'negative', 'neutral']);
@@ -50,6 +52,54 @@ export async function loadTopics(filters?: {
   });
 
   return rows.map(rowToTopic);
+}
+
+export type CommunityTopicSort = 'heat' | 'latest';
+
+export interface CommunityTopicPageOptions {
+  sentiment?: string;
+  category?: string;
+  source?: string;
+  page: number;
+  limit: number;
+  sort: CommunityTopicSort;
+}
+
+export async function loadTopicPage(options: CommunityTopicPageOptions) {
+  const where: Prisma.CommunityTopicWhereInput = {};
+  if (options.sentiment) where.sentiment = options.sentiment;
+  if (options.category) where.category = options.category;
+  if (options.source) where.source = options.source;
+
+  const orderBy: Prisma.CommunityTopicOrderByWithRelationInput[] = options.sort === 'latest'
+    ? [{ publishedAt: 'desc' }, { id: 'desc' }]
+    : [{ heatScore: 'desc' }, { publishedAt: 'desc' }, { id: 'desc' }];
+
+  const [rows, total, sentimentGroups, heatAggregate] = await Promise.all([
+    prisma.communityTopic.findMany({
+      where,
+      orderBy,
+      skip: (options.page - 1) * options.limit,
+      take: options.limit
+    }),
+    prisma.communityTopic.count({ where }),
+    prisma.communityTopic.groupBy({ by: ['sentiment'], where, _count: { _all: true } }),
+    prisma.communityTopic.aggregate({ where, _avg: { heatScore: true } })
+  ]);
+
+  const sentimentCounts = { positive: 0, negative: 0, neutral: 0 };
+  for (const group of sentimentGroups) {
+    if (group.sentiment in sentimentCounts) {
+      sentimentCounts[group.sentiment as keyof typeof sentimentCounts] = group._count._all;
+    }
+  }
+
+  return {
+    topics: rows.map(rowToTopic),
+    total,
+    sentimentCounts,
+    avgHeat: Math.round(heatAggregate._avg.heatScore ?? 0)
+  };
 }
 
 /** Load all topics (for summary computation) */
@@ -116,6 +166,7 @@ export async function upsertTopics(topics: CommunityTopic[]): Promise<void> {
         heatScore: topic.heatScore,
         trend: JSON.stringify(mergedTrend),
         summary: topic.summary,
+        url: topic.url,
         lastSeenAt: now
       };
       // Only overwrite sentiment if the new value is a real analysis (not the placeholder)
@@ -227,7 +278,7 @@ function rowToTopic(row: {
     source: row.source,
     trend: safeParseTrend(row.trend, row.id),
     summary: row.summary,
-    url: row.url,
+    url: normalizeCommunityTopicUrl(row),
     publishedAt: row.publishedAt.toISOString()
   };
 }

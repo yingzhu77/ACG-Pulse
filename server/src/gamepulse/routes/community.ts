@@ -6,7 +6,7 @@
  */
 
 import { Router } from 'express';
-import { getStalenessInfo, loadTopics, loadAllTopics } from '../db/communityDb.js';
+import { getStalenessInfo, loadTopicPage, loadAllTopics } from '../db/communityDb.js';
 import { refreshCommunityData } from '../services/communityService.js';
 import { asyncHandler } from './asyncHandler.js';
 
@@ -14,6 +14,7 @@ const router = Router();
 
 const VALID_SENTIMENTS = new Set(['positive', 'negative', 'neutral']);
 const VALID_SOURCES = new Set(['bilibili', 'nga', 'xiaoheihe']);
+const VALID_SORTS = new Set(['heat', 'latest']);
 
 router.get('/topics', asyncHandler(async (req, res) => {
   // Check staleness without blocking — always return DB snapshot immediately
@@ -28,7 +29,7 @@ router.get('/topics', asyncHandler(async (req, res) => {
     });
   }
 
-  const { sentiment, category, source, page = '1', limit = '100' } = req.query;
+  const { sentiment, category, source, sort = 'heat', page = '1', limit = '30' } = req.query;
 
   const filters = {
     sentiment: sentiment && sentiment !== 'all' && VALID_SENTIMENTS.has(String(sentiment)) ? String(sentiment) : undefined,
@@ -36,36 +37,27 @@ router.get('/topics', asyncHandler(async (req, res) => {
     source: source && source !== 'all' && VALID_SOURCES.has(String(source)) ? String(source) : undefined
   };
 
-  // Load all matching topics (sorted by heatScore desc)
-  const allFiltered = await loadTopics(filters);
+  // Validate sorting before passing the query to the database layer.
+  const sortValue = VALID_SORTS.has(String(sort)) ? String(sort) as 'heat' | 'latest' : 'heat';
 
   // Pagination
   const pageNum = Math.max(1, parseInt(String(page), 10) || 1);
-  const limitNum = Math.min(200, Math.max(1, parseInt(String(limit), 10) || 100));
-  const total = allFiltered.length;
-  const start = (pageNum - 1) * limitNum;
-  const paged = allFiltered.slice(start, start + limitNum);
+  const limitNum = Math.min(100, Math.max(1, parseInt(String(limit), 10) || 30));
+  const result = await loadTopicPage({ ...filters, page: pageNum, limit: limitNum, sort: sortValue });
 
-  // Summary stats — computed from the same dataset the client sees
-  const sentimentCounts = { positive: 0, negative: 0, neutral: 0 };
-  let totalHeat = 0;
-  for (const t of allFiltered) {
-    sentimentCounts[t.sentiment]++;
-    totalHeat += t.heatScore;
-  }
-
+  // Summary stats use the complete filtered result set, not only the current page.
   res.json({
-    data: paged,
+    data: result.topics,
     pagination: {
       page: pageNum,
       limit: limitNum,
-      total,
-      totalPages: Math.ceil(total / limitNum)
+      total: result.total,
+      totalPages: Math.ceil(result.total / limitNum)
     },
     summary: {
-      sentimentCounts,
-      avgHeat: allFiltered.length > 0 ? Math.round(totalHeat / allFiltered.length) : 0,
-      totalTopics: allFiltered.length
+      sentimentCounts: result.sentimentCounts,
+      avgHeat: result.avgHeat,
+      totalTopics: result.total
     },
     lastUpdated: lastFetchTime > 0 ? new Date(lastFetchTime).toISOString() : null,
     isRefreshing,

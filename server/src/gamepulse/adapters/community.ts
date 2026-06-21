@@ -6,6 +6,7 @@
 
 import axios from 'axios';
 import crypto from 'crypto';
+import { buildXiaoheiheTopicUrl } from '../communityUrls.js';
 
 const USER_AGENTS = [
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -810,7 +811,7 @@ export async function aggregateCommunityTopics(options?: {
           source: 'xiaoheihe',
           trend: [50],
           summary: item.description?.slice(0, 120) || item.title,
-          url: `https://xiaoheihe.cn/bbs/app/share/detail/${item.linkid}`,
+          url: buildXiaoheiheTopicUrl(item.linkid),
           publishedAt: new Date(ts * 1000).toISOString()
         });
       }
@@ -829,7 +830,7 @@ export async function aggregateCommunityTopics(options?: {
         source: 'xiaoheihe',
         trend: [50],
         summary: item.description?.slice(0, 120) || item.title,
-        url: `https://xiaoheihe.cn/bbs/app/share/detail/${item.linkid}`,
+        url: buildXiaoheiheTopicUrl(item.linkid),
         publishedAt: new Date(ts * 1000).toISOString()
       });
     }
