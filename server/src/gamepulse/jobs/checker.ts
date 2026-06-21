@@ -124,13 +124,12 @@ async function checkSource(
     let sourceNewCount = 0;
 
     for (const raw of rawItems) {
-      const hash = contentHash([raw.externalId, normalizeUrl(raw.url), raw.title, raw.publishedAt?.toISOString()]);
-      const existing = await prisma.feedItem.findUnique({
+      const normalizedUrl = normalizeUrl(raw.url);
+      const hash = contentHash([raw.externalId, normalizedUrl, raw.title, raw.publishedAt?.toISOString()]);
+      const existing = await prisma.feedItem.findFirst({
         where: {
-          sourceId_contentHash: {
-            sourceId: source.id,
-            contentHash: hash
-          }
+          sourceId: source.id,
+          OR: [{ contentHash: hash }, { url: normalizedUrl }]
         }
       });
       if (existing) continue;
@@ -143,7 +142,7 @@ async function checkSource(
           game: source.game,
           title: truncate(raw.title, 500) || 'Untitled',
           content: truncate(raw.content, 5000) || raw.title,
-          url: normalizeUrl(raw.url),
+          url: normalizedUrl,
           authorName: truncate(raw.authorName || source.name, 120),
           authorUrl: truncate(raw.authorUrl, 500),
           coverUrl: truncate(raw.coverUrl, 1000),

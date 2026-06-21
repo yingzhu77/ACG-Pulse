@@ -5,7 +5,7 @@ let mockSources: Array<{
   priority: number; healthStatus: string; uid: string | null; avatar: string | null;
   lastSuccessAt: Date | null; lastCheckedAt: Date | null; lastError: string | null;
 }> = [];
-let mockFeedItems: Array<{ id: string; sourceId: string; contentHash: string }> = [];
+let mockFeedItems: Array<{ id: string; sourceId: string; contentHash: string; url?: string }> = [];
 let createdItems: Array<{ sourceId: string; contentHash: string; title: string }> = [];
 
 vi.mock('../../db.js', () => ({
@@ -25,6 +25,14 @@ vi.mock('../../db.js', () => ({
       deleteMany: vi.fn(async () => ({ count: 0 }))
     },
     feedItem: {
+      findFirst: vi.fn(async ({ where }: { where: Record<string, unknown> }) => {
+        const sourceId = where.sourceId as string;
+        const conditions = (where.OR || []) as Array<{ contentHash?: string; url?: string }>;
+        return mockFeedItems.find(item => item.sourceId === sourceId && conditions.some(condition =>
+          (condition.contentHash && item.contentHash === condition.contentHash)
+          || (condition.url && item.url === condition.url)
+        )) || null;
+      }),
       findUnique: vi.fn(async ({ where }: { where: Record<string, unknown> }) => {
         const key = where.sourceId_contentHash as { sourceId: string; contentHash: string } | undefined;
         if (key) {
@@ -36,7 +44,8 @@ vi.mock('../../db.js', () => ({
         const item = {
           id: `item-${mockFeedItems.length + 1}`,
           sourceId: data.sourceId as string,
-          contentHash: data.contentHash as string
+          contentHash: data.contentHash as string,
+          url: data.url as string
         };
         mockFeedItems.push(item);
         createdItems.push({
@@ -110,6 +119,35 @@ describe('checker content dedup', () => {
     expect(result.newItems).toBe(1);
     expect(createdItems.length).toBe(1);
     expect(createdItems[0].title).toBe('新标题');
+  });
+
+  test('skips the same source URL when externalId formats differ', async () => {
+    const publishedAt = new Date('2026-06-21T10:29:46Z');
+    const adapter = await import('../adapters/registry.js');
+    vi.mocked(adapter.getAdapter).mockReturnValue({
+      fetch: vi.fn(async () => [
+        {
+          externalId: 'https://www.bilibili.com/video/BV1JEjt6QEuN',
+          url: 'https://bilibili.com/video/BV1JEjt6QEuN',
+          title: '魔法少女奈叶 PV2',
+          content: 'first',
+          publishedAt
+        },
+        {
+          externalId: 'BV1JEjt6QEuN',
+          url: 'https://bilibili.com/video/BV1JEjt6QEuN',
+          title: '魔法少女奈叶 PV2',
+          content: 'second',
+          publishedAt
+        }
+      ])
+    } as never);
+
+    const { runGamePulseCheck } = await import('../jobs/checker.js');
+    const result = await runGamePulseCheck();
+
+    expect(result.newItems).toBe(1);
+    expect(createdItems).toHaveLength(1);
   });
 
   test('creates all items when no duplicates exist', async () => {

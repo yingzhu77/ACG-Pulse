@@ -353,4 +353,31 @@ describe('aggregateFeedItemsToStories', () => {
     const stories = aggregateFeedItemsToStories(items);
     expect(stories.length).toBe(1);
   });
+
+  test('same URL merges even when AI categories conflict', () => {
+    const url = 'https://bilibili.com/video/BV1JEjt6QEuN';
+    const items = [
+      makeItem({
+        id: 'item_trailer',
+        externalId: 'BV1JEjt6QEuN',
+        title: '魔法少女奈叶 EXCEEDS 正式 PV2',
+        url,
+        itemKind: 'creator_video',
+        analysis: makeAnalysis({ category: 'trailer', importance: 'medium' })
+      }),
+      makeItem({
+        id: 'item_creator',
+        externalId: 'https://www.bilibili.com/video/BV1JEjt6QEuN',
+        title: '魔法少女奈叶 EXCEEDS 正式 PV2',
+        url,
+        itemKind: 'creator_video',
+        analysis: makeAnalysis({ category: 'creator_video', importance: 'low' })
+      })
+    ];
+
+    const stories = aggregateFeedItemsToStories(items);
+
+    expect(stories).toHaveLength(1);
+    expect(stories[0].itemCount).toBe(2);
+  });
 });

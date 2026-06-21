@@ -393,13 +393,13 @@ function canMergeIntoStory(
   const anchor = draft.items[0];
   if (anchor.game !== item.game) return false;
   if (hoursBetween(getSortTime(anchor), getSortTime(item)) > mergeWindowHours(anchor, item)) return false;
+  // Exact identity is stronger than AI category output, which can vary between fetches.
+  if (shareUrlOrExternalId(draft, item)) return true;
   if (!areCategoriesCompatible(anchor, item)) return false;
 
   // 条件1：标准化标题完全相同（最高置信度）
   if (draft.normalizedTitle && draft.normalizedTitle === normalizedTitle) return true;
-  // 条件2：URL 或外部 ID 相同（高置信度）
-  if (shareUrlOrExternalId(draft, item)) return true;
-  // 条件3：强关键词重叠 >= 3（收紧条件，之前是 2）
+  // 条件2：强关键词重叠 >= 3（收紧条件，之前是 2）
   if (strongKeywordOverlap(draft.keywords, keywords, anchor.game) >= 3) return true;
 
   return false;
