@@ -39,8 +39,10 @@ echo ""
 echo "[3/4] 配置防火墙..."
 if command -v ufw &>/dev/null; then
     ufw allow 22/tcp
-    ufw allow 3001/tcp
-    ufw allow 1200/tcp
+    ufw allow 80/tcp
+    ufw allow 443/tcp
+    ufw delete allow 3001/tcp 2>/dev/null || true
+    ufw delete allow 1200/tcp 2>/dev/null || true
     ufw enable
     echo "  ✅ 防火墙配置完成"
 else
@@ -52,10 +54,10 @@ echo ""
 echo "[4/4] 克隆仓库..."
 if [ -d "/opt/personal-hot-monitor" ]; then
     cd /opt/personal-hot-monitor
-    git pull origin master
+    git pull --ff-only origin master
 else
     cd /opt
-    git clone https://github.com/yingzhu77/personal-hot-monitor.git
+    git clone https://github.com/yingzhu77/ACG-Pulse.git personal-hot-monitor
     cd personal-hot-monitor
 fi
 
@@ -84,5 +86,5 @@ echo ""
 echo "  下一步："
 echo "    1. 编辑 .env 配置环境变量"
 echo "    2. 运行 docker compose up -d --build"
-echo "    3. 访问 http://服务器IP:3001"
+echo "    3. 通过 Caddy 访问 https://acg.yingzhu.xyz"
 echo ""

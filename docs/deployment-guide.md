@@ -12,14 +12,16 @@
 SSH 到服务器后执行：
 
 ```bash
-curl -sL https://raw.githubusercontent.com/yingzhu77/personal-hot-monitor/master/auto-deploy.sh | bash
+curl -sL https://raw.githubusercontent.com/yingzhu77/ACG-Pulse/master/server-deploy.sh | bash
 ```
 
 部署完成后：
-1. 访问 `http://服务器IP:3001`
-2. 登录管理后台（密码：acg2026）
+1. 访问 `https://acg.yingzhu.xyz`
+2. 使用服务器 `.env` 中自行设置的 `ADMIN_PASSWORD` 登录管理后台
 3. 在「B站 Cookie 配置」中填入 Cookie
 4. 重启服务
+
+> 不要在文档、命令历史或 Git 中记录真实管理员密码和 Cookie。
 
 ## 手动部署
 
@@ -46,17 +48,19 @@ apt install docker-compose-plugin -y
 ### 3. 配置防火墙
 
 ```bash
-ufw allow 3001/tcp  # ACG Pulse
-ufw allow 1200/tcp  # RSSHub（可选）
 ufw allow 22/tcp    # SSH
+ufw allow 80/tcp    # Caddy HTTP
+ufw allow 443/tcp   # Caddy HTTPS
 ufw enable
 ```
+
+应用端口 `3001` 仅绑定 `127.0.0.1`，RSSHub 端口只在 Docker 网络中暴露，不应直接开放公网端口。
 
 ### 4. 上传代码
 
 ```bash
 cd /opt
-git clone https://github.com/yingzhu77/personal-hot-monitor.git
+git clone https://github.com/yingzhu77/ACG-Pulse.git personal-hot-monitor
 cd personal-hot-monitor
 ```
 
@@ -105,10 +109,55 @@ curl http://localhost:3001/api/public/stats
 
 ## 更新部署
 
+以下命令用于现有服务器。它会保留 `.env` 和 Docker 数据卷，先构建镜像，再停止旧 app 创建一致性数据库备份，最后替换容器并等待健康检查：
+
 ```bash
+set -euo pipefail
 cd /opt/personal-hot-monitor
-git pull origin master
-docker compose up -d --build
+
+# 修正生产来源与反向代理配置；不会改动密码、Cookie 或 AI Key
+cp .env ".env.predeploy.$(date +%Y%m%d_%H%M%S)"
+if grep -q '^CLIENT_URL=' .env; then
+  sed -i 's#^CLIENT_URL=.*#CLIENT_URL=https://acg.yingzhu.xyz#' .env
+else
+  printf '\nCLIENT_URL=https://acg.yingzhu.xyz\n' >> .env
+fi
+if grep -q '^TRUST_PROXY_HOPS=' .env; then
+  sed -i 's#^TRUST_PROXY_HOPS=.*#TRUST_PROXY_HOPS=1#' .env
+else
+  printf 'TRUST_PROXY_HOPS=1\n' >> .env
+fi
+
+git fetch origin master
+git checkout master
+git pull --ff-only origin master
+bash scripts/check-config.sh .env
+docker compose config --quiet
+docker compose build
+bash scripts/pre-deploy-backup.sh
+docker compose up -d --remove-orphans
+
+for i in $(seq 1 30); do
+  if curl -fsS http://127.0.0.1:3001/api/health >/tmp/acg-health.json; then
+    cat /tmp/acg-health.json
+    break
+  fi
+  if [ "$i" -eq 30 ]; then
+    docker compose logs app --tail 120
+    exit 1
+  fi
+  sleep 2
+done
+
+docker compose ps
+git rev-parse --short HEAD
+curl -fsS https://acg.yingzhu.xyz/api/health
+```
+
+部署后响应头中的 `Access-Control-Allow-Origin` 应为 `https://acg.yingzhu.xyz`，不应继续是 localhost：
+
+```bash
+curl -sSI https://acg.yingzhu.xyz/api/health | grep -i access-control-allow-origin
 ```
 
 ## 数据备份

@@ -44,7 +44,7 @@ AI 驱动的游戏/ACG 资讯聚合面板，自动采集多源内容，智能分
 ### 方式一：Docker 部署（推荐）
 
 ```bash
-git clone https://github.com/yingzhu77/personal-hot-monitor.git
+git clone https://github.com/yingzhu77/ACG-Pulse.git personal-hot-monitor
 cd personal-hot-monitor
 
 # 复制环境变量模板并编辑
@@ -69,7 +69,7 @@ export ADMIN_JWT_SECRET=$(openssl rand -hex 32)
 export MIMO_API_KEY=你的key
 
 # 执行部署
-git clone https://github.com/yingzhu77/personal-hot-monitor.git
+git clone https://github.com/yingzhu77/ACG-Pulse.git personal-hot-monitor
 cd personal-hot-monitor
 bash auto-deploy.sh
 ```
@@ -178,7 +178,7 @@ B站 Cookie 有效期约 **6 个月**。过期症状：
 或 SSH 到服务器后：
 
 ```bash
-curl -sL https://raw.githubusercontent.com/yingzhu77/personal-hot-monitor/master/server-deploy.sh | bash
+curl -sL https://raw.githubusercontent.com/yingzhu77/ACG-Pulse/master/server-deploy.sh | bash
 ```
 
 ## 目录结构

@@ -111,7 +111,7 @@ app.use(express.static(clientDistPath));
 ```bash
 # 1. 克隆仓库
 cd /opt
-sudo git clone https://github.com/yingzhu77/personal-hot-monitor.git
+sudo git clone https://github.com/yingzhu77/ACG-Pulse.git personal-hot-monitor
 cd personal-hot-monitor
 
 # 2. 创建 .env
@@ -169,6 +169,26 @@ sudo docker compose up -d --build
 修改 `ADMIN_PASSWORD` 或 `ADMIN_JWT_SECRET` 后：
 - **Docker**：`sudo docker compose up -d --force-recreate app`
 - **本地开发**：重启后端进程（`npm run dev` 会自动重载）
+
+### 生产 CORS 仍指向 localhost
+
+**现象**：`curl -sSI https://acg.yingzhu.xyz/api/health` 返回 `Access-Control-Allow-Origin: http://localhost:3001`。
+
+**原因**：服务器根目录 `.env` 中仍保留旧的 `CLIENT_URL`，Docker Compose 会优先使用该值，而不是 compose 文件中的生产默认值。
+
+**修复**：
+
+```bash
+cd /opt/personal-hot-monitor
+sed -i 's#^CLIENT_URL=.*#CLIENT_URL=https://acg.yingzhu.xyz#' .env
+grep -q '^TRUST_PROXY_HOPS=' .env \
+  && sed -i 's#^TRUST_PROXY_HOPS=.*#TRUST_PROXY_HOPS=1#' .env \
+  || printf 'TRUST_PROXY_HOPS=1\n' >> .env
+bash scripts/check-config.sh .env
+docker compose up -d --force-recreate app
+```
+
+不要通过删除 `.env` 解决；其中还保存管理员密码、Cookie 和 AI Key。
 
 ## 配置预检
 
