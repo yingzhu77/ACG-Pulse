@@ -5,7 +5,22 @@ let mockSources: Array<{
   priority: number; healthStatus: string; uid: string | null; avatar: string | null;
   lastSuccessAt: Date | null; lastCheckedAt: Date | null; lastError: string | null;
 }> = [];
-let mockFeedItems: Array<{ id: string; sourceId: string; contentHash: string; url?: string }> = [];
+interface MockFeedItem {
+  id: string;
+  sourceId: string;
+  identityKey?: string | null;
+  contentHash: string;
+  externalId?: string | null;
+  title?: string;
+  content?: string;
+  url?: string;
+  authorName?: string | null;
+  authorUrl?: string | null;
+  coverUrl?: string | null;
+  publishedAt?: Date | null;
+}
+
+let mockFeedItems: MockFeedItem[] = [];
 let createdItems: Array<{ sourceId: string; contentHash: string; title: string }> = [];
 
 vi.mock('../../db.js', () => ({
@@ -27,9 +42,10 @@ vi.mock('../../db.js', () => ({
     feedItem: {
       findFirst: vi.fn(async ({ where }: { where: Record<string, unknown> }) => {
         const sourceId = where.sourceId as string;
-        const conditions = (where.OR || []) as Array<{ contentHash?: string; url?: string }>;
+        const conditions = (where.OR || []) as Array<{ identityKey?: string; contentHash?: string; url?: string }>;
         return mockFeedItems.find(item => item.sourceId === sourceId && conditions.some(condition =>
-          (condition.contentHash && item.contentHash === condition.contentHash)
+          (condition.identityKey && item.identityKey === condition.identityKey)
+          || (condition.contentHash && item.contentHash === condition.contentHash)
           || (condition.url && item.url === condition.url)
         )) || null;
       }),
@@ -44,8 +60,16 @@ vi.mock('../../db.js', () => ({
         const item = {
           id: `item-${mockFeedItems.length + 1}`,
           sourceId: data.sourceId as string,
+          identityKey: data.identityKey as string,
           contentHash: data.contentHash as string,
-          url: data.url as string
+          externalId: data.externalId as string,
+          title: data.title as string,
+          content: data.content as string,
+          url: data.url as string,
+          authorName: data.authorName as string | null,
+          authorUrl: data.authorUrl as string | null,
+          coverUrl: data.coverUrl as string | null,
+          publishedAt: data.publishedAt as Date | null
         };
         mockFeedItems.push(item);
         createdItems.push({
@@ -58,6 +82,12 @@ vi.mock('../../db.js', () => ({
           ...data,
           source: mockSources.find(s => s.id === data.sourceId)
         };
+      }),
+      update: vi.fn(async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
+        const item = mockFeedItems.find(candidate => candidate.id === where.id);
+        if (!item) throw new Error(`Missing mock feed item: ${where.id}`);
+        Object.assign(item, data);
+        return item;
       }),
       count: vi.fn(async () => mockFeedItems.length),
       deleteMany: vi.fn(async () => ({ count: 0 }))
@@ -88,6 +118,32 @@ vi.mock('../adapters/bilibiliVideo.js', () => ({
 }));
 
 describe('checker content dedup', () => {
+  function existingItem(input: {
+    id: string;
+    sourceId?: string;
+    externalId: string;
+    url: string;
+    title: string;
+    content: string;
+    publishedAt: Date;
+  }): MockFeedItem {
+    const identityKey = `external:${input.externalId.toLowerCase()}`;
+    return {
+      id: input.id,
+      sourceId: input.sourceId || 'src-1',
+      identityKey,
+      contentHash: [identityKey, input.title, input.content, input.publishedAt.toISOString()].join('|'),
+      externalId: input.externalId,
+      title: input.title,
+      content: input.content,
+      url: input.url,
+      authorName: null,
+      authorUrl: null,
+      coverUrl: null,
+      publishedAt: input.publishedAt
+    };
+  }
+
   beforeEach(() => {
     mockSources = [
       { id: 'src-1', name: '测试源', type: 'rss', game: '原神', enabled: true, priority: 50, healthStatus: 'unknown', uid: null, avatar: null, lastSuccessAt: null, lastCheckedAt: null, lastError: null }
@@ -100,9 +156,9 @@ describe('checker content dedup', () => {
   test('skips items with duplicate contentHash', async () => {
     const date1 = new Date('2026-06-15T00:00:00Z');
     const date2 = new Date('2026-06-16T00:00:00Z');
-    // Pre-existing item — contentHash must match what the mock contentHash() produces
-    const existingHash = ['ext-1', 'http://url', '标题', date1.toISOString()].join('|');
-    mockFeedItems.push({ id: 'existing-1', sourceId: 'src-1', contentHash: existingHash });
+    mockFeedItems.push(existingItem({
+      id: 'existing-1', externalId: 'ext-1', url: 'http://url', title: '标题', content: '内容', publishedAt: date1
+    }));
 
     const adapter = await import('../adapters/registry.js');
     vi.mocked(adapter.getAdapter).mockReturnValue({
@@ -172,8 +228,8 @@ describe('checker content dedup', () => {
     const date2 = new Date('2026-06-16T00:00:00Z');
     // Pre-populate with all matching items
     mockFeedItems.push(
-      { id: 'existing-1', sourceId: 'src-1', contentHash: ['ext-1', 'http://url1', '标题1', date1.toISOString()].join('|') },
-      { id: 'existing-2', sourceId: 'src-1', contentHash: ['ext-2', 'http://url2', '标题2', date2.toISOString()].join('|') }
+      existingItem({ id: 'existing-1', externalId: 'ext-1', url: 'http://url1', title: '标题1', content: '内容1', publishedAt: date1 }),
+      existingItem({ id: 'existing-2', externalId: 'ext-2', url: 'http://url2', title: '标题2', content: '内容2', publishedAt: date2 })
     );
 
     const adapter = await import('../adapters/registry.js');
@@ -199,7 +255,9 @@ describe('checker content dedup', () => {
 
     const date1 = new Date('2026-06-15T00:00:00Z');
     // Same contentHash exists for src-1 but not src-2
-    mockFeedItems.push({ id: 'existing-1', sourceId: 'src-1', contentHash: ['ext-1', 'http://url', '标题', date1.toISOString()].join('|') });
+    mockFeedItems.push(existingItem({
+      id: 'existing-1', externalId: 'ext-1', url: 'http://url', title: '标题', content: '内容', publishedAt: date1
+    }));
 
     const adapter = await import('../adapters/registry.js');
     vi.mocked(adapter.getAdapter).mockReturnValue({
@@ -226,7 +284,9 @@ describe('checker content dedup', () => {
     const date1 = new Date('2026-06-15T00:00:00Z');
     const date2 = new Date('2026-06-16T00:00:00Z');
     // src-1 has 1 existing item, src-2 has none
-    mockFeedItems.push({ id: 'existing-1', sourceId: 'src-1', contentHash: ['ext-1', 'http://url', '标题', date1.toISOString()].join('|') });
+    mockFeedItems.push(existingItem({
+      id: 'existing-1', externalId: 'ext-1', url: 'http://url', title: '标题', content: '内容', publishedAt: date1
+    }));
 
     const adapter = await import('../adapters/registry.js');
     const fetchMock = vi.fn(async (source: { id: string }) => {

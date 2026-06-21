@@ -6,6 +6,7 @@ import { contentHash, normalizeUrl, truncate } from '../utils.js';
 import { fetchBilibiliAvatar } from '../adapters/bilibiliVideo.js';
 import { getHealthLogRetentionDays, getMaxFeedItems } from '../config.js';
 import { invalidatePublicStatsCache } from '../services/statsService.js';
+import { buildFeedItemIdentityKey } from '../itemIdentity.js';
 
 let checkRunning = false;
 let checkStartedAt: Date | null = null;
@@ -98,7 +99,7 @@ async function doRunGamePulseCheck(io?: Server): Promise<CheckResult> {
 
   const results = await runWithConcurrency(sources, getSourceCheckConcurrency(), source => checkSource(source, io));
 
-  // Cleanup old items and expired health logs after check
+  // Cleanup old items after check. Identity uniqueness prevents new duplicates.
   await enforceFeedItemLimit();
   await cleanupExpiredHealthLogs();
   invalidatePublicStatsCache();
@@ -125,14 +126,54 @@ async function checkSource(
 
     for (const raw of rawItems) {
       const normalizedUrl = normalizeUrl(raw.url);
-      const hash = contentHash([raw.externalId, normalizedUrl, raw.title, raw.publishedAt?.toISOString()]);
+      const identityKey = buildFeedItemIdentityKey(raw);
+      const title = truncate(raw.title, 500) || 'Untitled';
+      const content = truncate(raw.content, 5000) || raw.title;
+      const authorName = truncate(raw.authorName || source.name, 120);
+      const authorUrl = truncate(raw.authorUrl, 500);
+      const coverUrl = truncate(raw.coverUrl, 1000);
+      const hash = contentHash([identityKey, title, content, raw.publishedAt?.toISOString()]);
       const existing = await prisma.feedItem.findFirst({
         where: {
           sourceId: source.id,
-          OR: [{ contentHash: hash }, { url: normalizedUrl }]
+          OR: [{ identityKey }, { contentHash: hash }, { url: normalizedUrl }]
         }
       });
-      if (existing) continue;
+      if (existing) {
+        const contentChanged = existing.title !== title || existing.content !== content;
+        const publishedAt = raw.publishedAt || existing.publishedAt;
+        const needsUpdate = existing.identityKey !== identityKey
+          || existing.contentHash !== hash
+          || existing.url !== normalizedUrl
+          || existing.externalId !== (raw.externalId || raw.url)
+          || existing.coverUrl !== coverUrl
+          || existing.authorName !== authorName
+          || existing.authorUrl !== authorUrl
+          || existing.publishedAt?.getTime() !== publishedAt?.getTime();
+
+        if (needsUpdate) {
+          await prisma.feedItem.update({
+            where: { id: existing.id },
+            data: {
+              identityKey,
+              externalId: raw.externalId || raw.url,
+              itemKind: raw.itemKind,
+              title,
+              content,
+              url: normalizedUrl,
+              authorName,
+              authorUrl,
+              coverUrl,
+              sourceType: source.type,
+              contentHash: hash,
+              publishedAt,
+              fetchedAt: new Date()
+            }
+          });
+          if (contentChanged) await enqueueAnalysisTask(existing.id, io);
+        }
+        continue;
+      }
 
       const item = await prisma.feedItem.create({
         data: {
@@ -140,13 +181,14 @@ async function checkSource(
           externalId: raw.externalId || raw.url,
           itemKind: raw.itemKind,
           game: source.game,
-          title: truncate(raw.title, 500) || 'Untitled',
-          content: truncate(raw.content, 5000) || raw.title,
+          title,
+          content,
           url: normalizedUrl,
-          authorName: truncate(raw.authorName || source.name, 120),
-          authorUrl: truncate(raw.authorUrl, 500),
-          coverUrl: truncate(raw.coverUrl, 1000),
+          authorName,
+          authorUrl,
+          coverUrl,
           sourceType: source.type,
+          identityKey,
           contentHash: hash,
           publishedAt: raw.publishedAt || null
         },

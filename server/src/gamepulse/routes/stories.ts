@@ -22,6 +22,7 @@ const router = Router();
 // Stories 聚合缓存：相同查询条件 60s 内直接返回缓存结果
 const storiesCache = new Map<string, { data: unknown; expires: number }>();
 const STORIES_CACHE_TTL = 60_000;
+const STORIES_CANDIDATE_LIMIT = 500;
 
 function getStoriesCacheKey(params: Record<string, unknown>): string {
   return Object.entries(params)
@@ -171,7 +172,6 @@ router.get('/stories', async (req, res) => {
 
     const pageNum = page;
     const limitNum = limit;
-    const candidateLimit = Math.min(500, Math.max(150, pageNum * limitNum * 3));
     const gameArr = toArray(game);
     const categoryArr = toArray(category);
     const importanceArr = toArray(importance);
@@ -249,7 +249,8 @@ router.get('/stories', async (req, res) => {
       prisma.feedItem.findMany({
         where,
         orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }],
-        take: q && ftsIds ? Math.min(ftsIds.length, FTS_RECALL_LIMIT) : candidateLimit,
+        // Every page must aggregate the same candidate window or totals and boundaries drift.
+        take: q && ftsIds ? Math.min(ftsIds.length, FTS_RECALL_LIMIT) : STORIES_CANDIDATE_LIMIT,
         include: {
           source: {
             select: {

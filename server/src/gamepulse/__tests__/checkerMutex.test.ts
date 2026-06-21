@@ -61,6 +61,10 @@ vi.mock('../ai/analysisQueue.js', () => ({
   enqueueAnalysisTask: vi.fn(async () => {})
 }));
 
+vi.mock('../services/feedItemDedup.js', () => ({
+  cleanupDuplicateFeedItems: vi.fn(async () => 0)
+}));
+
 vi.mock('../adapters/registry.js', () => ({
   getAdapter: vi.fn(() => ({
     fetch: vi.fn(async () => [])

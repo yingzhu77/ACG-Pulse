@@ -81,6 +81,7 @@ model FeedItem {
   authorUrl   String?
   coverUrl    String?
   sourceType  String
+  identityKey String?
   contentHash String
   hidden      Boolean        @default(false)
   publishedAt DateTime?
@@ -93,6 +94,7 @@ model FeedItem {
   notifications Notification[]
 
   @@unique([sourceId, contentHash])
+  @@unique([sourceId, identityKey])
   @@index([game, hidden, publishedAt])
   @@index([hidden, createdAt])
   @@index([itemKind])

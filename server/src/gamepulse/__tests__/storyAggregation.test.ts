@@ -380,4 +380,35 @@ describe('aggregateFeedItemsToStories', () => {
     expect(stories).toHaveLength(1);
     expect(stories[0].itemCount).toBe(2);
   });
+
+  test('same normalized title merges across sources when AI categories conflict', () => {
+    const title = '《原神》「月之八」版本活动汇总';
+    const items = [
+      makeItem({
+        id: 'miyoushe_event',
+        sourceId: 'miyoushe',
+        title,
+        game: '原神',
+        url: 'https://miyoushe.com/ys/article/76088177',
+        publishedAt: new Date('2026-06-18T12:55:11Z'),
+        analysis: makeAnalysis({ category: 'event', importance: 'medium' })
+      }),
+      makeItem({
+        id: 'bilibili_version',
+        sourceId: 'bilibili',
+        source: makeSource({ id: 'bilibili', name: '原神', isOfficial: true }),
+        title,
+        game: '原神',
+        url: 'https://bilibili.com/video/BV1w1jc6JEfL',
+        publishedAt: new Date('2026-06-18T12:55:00Z'),
+        analysis: makeAnalysis({ category: 'version', importance: 'high' })
+      })
+    ];
+
+    const stories = aggregateFeedItemsToStories(items);
+
+    expect(stories).toHaveLength(1);
+    expect(stories[0].itemCount).toBe(2);
+    expect(stories[0].sourceCount).toBe(2);
+  });
 });

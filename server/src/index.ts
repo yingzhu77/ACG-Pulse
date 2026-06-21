@@ -19,6 +19,7 @@ import { createAdminRouter } from './gamepulse/routes/admin.js';
 import communityRouter from './gamepulse/routes/community.js';
 import { startAnalysisQueueWorker } from './gamepulse/ai/analysisQueue.js';
 import { enforceFeedItemLimit, runGamePulseCheck, getCheckerStatus } from './gamepulse/jobs/checker.js';
+import { backfillFeedItemIdentities } from './gamepulse/services/feedItemDedup.js';
 import { scheduledCommunityRefresh } from './gamepulse/services/communityService.js';
 import { requestLogger, errorHandler, notFoundHandler } from './gamepulse/routes/middleware.js';
 import { requireAdmin } from './gamepulse/auth.js';
@@ -229,6 +230,7 @@ const PORT = process.env.PORT || 3001;
 async function startHttpServer(): Promise<void> {
   try {
     await ensureFTS5();
+    await backfillFeedItemIdentities();
     await enforceFeedItemLimit();
   } catch (error) {
     console.error('[GamePulse] Search index or capacity initialization failed:', error);

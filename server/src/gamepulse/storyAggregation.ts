@@ -395,11 +395,11 @@ function canMergeIntoStory(
   if (hoursBetween(getSortTime(anchor), getSortTime(item)) > mergeWindowHours(anchor, item)) return false;
   // Exact identity is stronger than AI category output, which can vary between fetches.
   if (shareUrlOrExternalId(draft, item)) return true;
+  // An exact normalized title inside the merge window is also stronger than AI category drift.
+  if (draft.normalizedTitle && draft.normalizedTitle === normalizedTitle) return true;
   if (!areCategoriesCompatible(anchor, item)) return false;
 
-  // 条件1：标准化标题完全相同（最高置信度）
-  if (draft.normalizedTitle && draft.normalizedTitle === normalizedTitle) return true;
-  // 条件2：强关键词重叠 >= 3（收紧条件，之前是 2）
+  // 模糊匹配仍要求分类兼容，并至少有 3 个强关键词重叠。
   if (strongKeywordOverlap(draft.keywords, keywords, anchor.game) >= 3) return true;
 
   return false;

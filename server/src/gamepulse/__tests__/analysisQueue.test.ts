@@ -56,6 +56,7 @@ const feedItem = {
   authorUrl: null,
   coverUrl: null,
   sourceType: 'rss',
+  identityKey: null,
   contentHash: 'hash',
   hidden: false,
   publishedAt: null,
