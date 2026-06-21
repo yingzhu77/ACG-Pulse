@@ -1217,6 +1217,13 @@
     align-self: start;
   }
 
+  .logo-brand-links {
+    position: absolute;
+    right: 12px;
+    bottom: 8px;
+    margin: 0;
+  }
+
   .left-sidebar {
     display: grid;
     grid-template-columns: repeat(3, 1fr);

@@ -55,6 +55,40 @@
   letter-spacing: 0.5px;
 }
 
+.logo-brand-links {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.logo-brand-links a {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--text-soft);
+  opacity: 0.46;
+  transition: opacity 160ms ease, color 160ms ease, background-color 160ms ease,
+    border-color 160ms ease;
+}
+
+.logo-brand-links a:hover {
+  color: var(--text-main);
+  background: var(--panel-soft);
+  border-color: var(--stroke);
+  opacity: 1;
+}
+
+.logo-brand-links a:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+  opacity: 1;
+}
+
 .logo-close-btn {
   position: absolute;
   top: 8px;
@@ -630,32 +664,6 @@
   color: var(--text-soft);
   font-size: 13px;
   font-weight: 600;
-}
-
-.feed-footer {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 12px;
-  padding: 12px 4px 4px;
-  margin-top: 8px;
-  border-top: 1px solid var(--stroke);
-}
-
-.feed-footer-link {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--text-soft);
-  font-size: 12px;
-  text-decoration: none;
-  opacity: 0.6;
-  transition: opacity 0.2s;
-}
-
-.feed-footer-link:hover {
-  opacity: 1;
-  color: var(--text);
 }
 
 /* Export button */
