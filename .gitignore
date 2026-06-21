@@ -66,6 +66,7 @@ Thumbs.db
 # Temporary screenshots
 *.png
 !client/public/**/*.png
+!docs/images/*.png
 
 # Internal docs (dev tooling, not for deployment)
 AGENTS.md

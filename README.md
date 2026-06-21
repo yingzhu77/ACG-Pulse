@@ -1,227 +1,182 @@
-# ACG Pulse
+<div align="center">
+  <img src="client/public/logo.png" width="112" alt="ACG Pulse logo" />
 
-AI 驱动的游戏/ACG 资讯聚合面板，自动采集多源内容，智能分类定级，实时推送情报。
+  # ACG Pulse
 
-> 本项目改编自 [yupi-hot-monitor](https://github.com/liyupi/yupi-hot-monitor)，在原版热点监控基础上重构为游戏/ACG 垂直场景，新增 AI 分类、故事聚合、热搜监控、多 Provider 支持等功能。
+  **AI 驱动的游戏与 ACG 情报聚合面板**
 
-**在线体验：** [https://acg.yingzhu.xyz](https://acg.yingzhu.xyz)
+  从多源采集、故事聚合到社区风向与数据洞察，把分散资讯整理成可持续追踪的情报流。
 
-## 功能特性
+  [在线体验](https://acg.yingzhu.xyz) · [快速部署](#快速开始) · [部署文档](docs/deployment-guide.md) · [问题反馈](https://github.com/yingzhu77/ACG-Pulse/issues)
 
-- **多源数据采集** — B站、米游社、RSS、官网等 24+ 数据源
-- **AI 智能分类** — 支持 OpenRouter / DeepSeek / Xiaomi MiMo 三种 AI Provider
-- **故事聚合** — 多源内容自动合并为故事卡片
-- **社区热点风向** — B站热门视频评论 + AI 情绪分析 + 话题分类
-- **热搜监控** — B站热搜、微博热搜、豆瓣热榜
-- **实时推送** — WebSocket 实时更新
-- **移动端适配** — 抽屉式筛选面板 + FAB
-- **收藏功能** — localStorage 本地收藏
-- **Docker 部署** — 一键容器化部署
+  [![CI](https://github.com/yingzhu77/ACG-Pulse/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/yingzhu77/ACG-Pulse/actions/workflows/ci.yml)
+  ![React 19](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)
+  ![Node.js 20](https://img.shields.io/badge/Node.js-20-5FA04E?logo=nodedotjs&logoColor=white)
+  ![Docker Compose](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
+</div>
+
+![ACG Pulse 情报总览](docs/images/acg-pulse-overview.png)
+
+## 为什么做 ACG Pulse
+
+游戏资讯散落在官网、社区、视频平台和 RSS 中。ACG Pulse 将这些来源统一采集，用 AI 完成分类、摘要和重要性判断，再按故事与话题组织，减少重复浏览和信息遗漏。
+
+- **面向读者**：集中查看重要更新、热门话题和实时通知。
+- **面向研究者**：比较来源占比、情绪变化和热度趋势。
+- **面向维护者**：通过后台查看数据源健康、容量、API 延迟与分析队列。
+
+## 核心能力
+
+| 能力 | 说明 |
+| --- | --- |
+| 多源采集 | 聚合 B站、米游社、NGA、小黑盒、官网、RSSHub 等 24+ 数据源 |
+| AI 分析 | 支持 OpenRouter、DeepSeek、Xiaomi MiMo，完成分类、摘要和重要性判断 |
+| 故事聚合 | 将多来源重复内容合并为一个故事，同时保留原始出处 |
+| 社区风向 | 提供情感、分类、来源筛选，以及热度与时间排序 |
+| 数据洞察 | 展示情报分布、来源占比、热门话题和近期趋势 |
+| 运维监控 | 监控容量、SQLite/WAL、API P95、错误率、数据源和分析队列 |
+
+## 界面预览
+
+| 社区风向 | 数据洞察 |
+| --- | --- |
+| ![社区风向](docs/images/acg-pulse-community.png) | ![数据洞察](docs/images/acg-pulse-insights.png) |
+
+<div align="center">
+  <img src="docs/images/acg-pulse-mobile.png" width="320" alt="ACG Pulse 移动端界面" />
+  <p><sub>移动端响应式布局与快捷筛选入口</sub></p>
+</div>
+
+## 工作流程
+
+```mermaid
+flowchart LR
+  A[官网 / B站 / NGA / 小黑盒 / RSS] --> B[采集与标准化]
+  B --> C[去重与故事聚合]
+  C --> D[AI 分类 / 摘要 / 重要性]
+  D --> E[情报总览]
+  D --> F[社区风向]
+  D --> G[数据洞察]
+  E --> H[WebSocket 实时更新]
+```
 
 ## 技术栈
 
 | 层级 | 技术 |
-|------|------|
-| 前端 | React 19 + Vite 7 + Tailwind CSS 4 + Framer Motion |
-| 后端 | Express 5 + Prisma/SQLite + Socket.io |
-| AI | OpenRouter / DeepSeek / Xiaomi MiMo |
-| RSS | RSSHub (Docker) |
+| --- | --- |
+| 前端 | React 19、Vite 7、Tailwind CSS 4、Framer Motion、Lucide |
+| 后端 | Node.js、Express 5、Prisma、SQLite、Socket.IO |
+| AI | OpenRouter、DeepSeek、Xiaomi MiMo |
+| 采集 | RSSHub、Axios、Cheerio、Playwright Chromium |
 | 部署 | Docker Compose |
-
-## 项目协作
-
-- [Agent 协作手册](docs/AGENT_WORKFLOW.md)：任务输入格式、开发流程、验证命令、提交规范。
-- [优化路线图](docs/ROADMAP.md)：当前阶段、第二阶段和第三阶段待办。
-- [后续小窗口任务提示词](docs/NEXT_WINDOW_PROMPTS.md)：按优先级拆分给其他窗口执行的具体任务。
-- [踩坑记录](docs/LESSONS.md)：已验证的问题模式、根因和复用规则。
-- [架构决策](docs/DECISIONS.md)：关键技术选择和后续变更入口。
 
 ## 快速开始
 
-> **编码约定**：项目源码和文档均使用 UTF-8。Windows PowerShell 读取中文文件时建议显式使用
-> `Get-Content -Encoding UTF8 <file>`，避免控制台默认编码造成中文显示乱码。
+### Docker Compose（推荐）
 
-### 方式一：Docker 部署（推荐）
+要求：Git、Docker 与 Docker Compose。
 
 ```bash
-git clone https://github.com/yingzhu77/ACG-Pulse.git personal-hot-monitor
-cd personal-hot-monitor
+git clone https://github.com/yingzhu77/ACG-Pulse.git
+cd ACG-Pulse
 
-# 复制环境变量模板并编辑
 cp .env.production.example .env
-nano .env  # 填写 ADMIN_PASSWORD、ADMIN_JWT_SECRET、AI Provider Key
+```
 
-# 预检配置（可选，但推荐）
-bash scripts/check-config.sh
+编辑 `.env`，至少设置：
 
-# 启动
+```dotenv
+AI_PROVIDER=mimo
+MIMO_API_KEY=your_api_key
+ADMIN_PASSWORD=your_strong_password
+ADMIN_JWT_SECRET=your_random_secret_at_least_32_chars
+CLIENT_URL=http://localhost:3001
+TRUST_PROXY_HOPS=0
+```
+
+检查配置并启动：
+
+```bash
+bash scripts/check-config.sh .env
 docker compose up -d --build
 ```
 
-访问 `http://localhost:3001`
+访问 [http://localhost:3001](http://localhost:3001)。B站数据源建议在后台设置 Cookie，以降低匿名请求被限流的概率。
 
-### 方式二：一键部署脚本
+### 本地开发
 
-```bash
-# 设置环境变量（必须）
-export ADMIN_PASSWORD=你的强密码
-export ADMIN_JWT_SECRET=$(openssl rand -hex 32)
-export MIMO_API_KEY=你的key
-
-# 执行部署
-git clone https://github.com/yingzhu77/ACG-Pulse.git personal-hot-monitor
-cd personal-hot-monitor
-bash auto-deploy.sh
-```
-
-### 方式三：本地开发
+先启动 RSSHub：
 
 ```bash
-# 前置条件：Node.js 18+、npm、Docker（运行 RSSHub）
-
-# 启动 RSSHub（需 Docker）
-docker run -d --name rsshub -p 1200:1200 diygod/rsshub:latest
-
-# 后端
-cd server && cp .env.example .env && npm install && npm run dev
-
-# 前端
-cd client && npm install && npm run dev
+docker compose up -d rsshub
 ```
 
-访问 `http://localhost:5173`
-
-> **首次部署注意**：服务启动时会校验 `ADMIN_PASSWORD` 和 `ADMIN_JWT_SECRET`，若未设置或使用默认值将拒绝启动。
-
-### 运维脚本
+分别启动后端和前端：
 
 ```bash
-# 预检 .env 配置（避免启动后才报错）
-bash scripts/check-config.sh
-
-# 安全重置管理员密码（自动备份、不打印敏感值）
-bash scripts/reset-admin-password.sh
+cd server
+npm install
+PORT=3002 ADMIN_PASSWORD=local-dev ADMIN_JWT_SECRET=local-dev-secret-at-least-32-characters npm run dev
 ```
-
-更多部署踩坑和运维命令见 [docs/deployment-troubleshooting.md](docs/deployment-troubleshooting.md)。
-
-## 环境变量
 
 ```bash
-# AI Provider（三选一）
-AI_PROVIDER=mimo
-MIMO_API_KEY=你的key
-MIMO_BASE_URL=https://token-plan-cn.xiaomimimo.com/v1
-
-# 管理员
-ADMIN_PASSWORD=你的密码
-ADMIN_JWT_SECRET=随机字符串
-
-# 情报上限
-MAX_FEED_ITEMS=2000
-
-# 运维监控与统计缓存（以下均为默认值）
-STATS_CACHE_TTL_MS=30000
-API_METRICS_WINDOW_MS=900000
-API_METRICS_SAMPLE_LIMIT=2000
-API_SLOW_REQUEST_MS=500
-API_CRITICAL_REQUEST_MS=1500
+cd client
+npm install
+npm run dev
 ```
 
-## 运行状态与容量监控
+访问 [http://localhost:5173](http://localhost:5173)。
 
-管理员后台提供“运行状态”面板，展示情报容量、SQLite/WAL 大小、社区与分析队列积压，以及最近 15 分钟 API 的 P95、错误率和慢接口。
+## 常用配置
 
-- 详细指标接口：`GET /api/admin/ops/metrics`（需要管理员令牌）
-- 延迟样本仅保存在进程内，最多 2,000 条，服务重启后清零
-- 情报默认保留 2,000 条，源健康日志默认保留 30 天
-- `/api/public/stats` 使用 30 秒进程缓存，并在采集完成后主动失效
-- 慢请求默认阈值为 500ms，严重请求阈值为 1500ms
+| 变量 | 是否必填 | 用途 |
+| --- | --- | --- |
+| `AI_PROVIDER` | 是 | `openrouter`、`deepseek` 或 `mimo` |
+| Provider API Key | 是 | 与所选 Provider 对应的密钥 |
+| `ADMIN_PASSWORD` | 是 | 管理后台登录密码 |
+| `ADMIN_JWT_SECRET` | 是 | 管理令牌签名密钥，至少 32 字符 |
+| `CLIENT_URL` | 是 | 允许访问 API 的前端 Origin |
+| `BILIBILI_COOKIE` | 否 | 提升 B站采集稳定性 |
+| `MAX_FEED_ITEMS` | 否 | 情报保留上限，默认 2000 |
 
-SQLite 相对路径按 `server/prisma/` 解析；生产环境建议继续使用绝对路径 `/app/server/data/prod.db`。
+完整配置参见 [.env.production.example](.env.production.example)。不要提交真实密码、API Key 或 Cookie。
 
-## B站数据源配置
-
-B站视频源需要 Cookie 才能稳定采集。不配置时匿名请求会被限流。
-
-### 获取 B站 Cookie
-
-1. 浏览器登录 https://www.bilibili.com
-2. F12 → **Application** → **Cookies** → `https://www.bilibili.com`
-3. 复制 `SESSDATA`、`bili_jct`、`buvid3`、`buvid4` 四个值
-
-### 配置 Cookie
-
-在 `.env` 中设置一行（所有源共用）：
+## 验证
 
 ```bash
-BILIBILI_COOKIE="buvid4=你的值; buvid3=你的值; SESSDATA=你的值; bili_jct=你的值"
+cd server && npm test && npm run build
+cd ../client && npm run lint && npm run build
 ```
 
-`docker-compose.yml` 已配置将此变量传入 app 和 RSSHub 容器。
+CI 会在推送和 Pull Request 时运行项目验证。
 
-### Cookie 过期
+## 文档导航
 
-B站 Cookie 有效期约 **6 个月**。过期症状：
-- B站源显示"采集失败"或"degraded"
-- 日志中出现 `-352 风控校验失败`
+| 文档 | 用途 |
+| --- | --- |
+| [部署指南](docs/deployment-guide.md) | 生产部署、反向代理与更新流程 |
+| [部署排障](docs/deployment-troubleshooting.md) | 构建、容器、配置与数据迁移问题 |
+| [Agent 协作手册](docs/AGENT_WORKFLOW.md) | 任务输入、开发流程、验证与提交规范 |
+| [路线图](docs/ROADMAP.md) | 当前阶段和后续方向 |
+| [踩坑记录](docs/LESSONS.md) | 已验证的问题模式、根因和处理规则 |
+| [架构决策](docs/DECISIONS.md) | 长期技术选择及变更入口 |
 
-更新 Cookie 后执行 `docker compose restart app` 生效。
+## 项目结构
 
-## 一键部署到服务器
-
-```bash
-# 本地执行
-./deploy.sh 你的服务器IP root
+```text
+client/                 React 前端
+server/                 Express API、采集、AI 与数据库
+shared/                 前后端共享类型
+rsshub/                 RSSHub 浏览器运行环境
+scripts/                配置检查、备份与维护脚本
+docs/                   部署、协作、决策与项目记录
 ```
 
-或 SSH 到服务器后：
+## 参与贡献
 
-```bash
-curl -sL https://raw.githubusercontent.com/yingzhu77/ACG-Pulse/master/server-deploy.sh | bash
-```
+欢迎通过 Issue 报告问题或提出建议。提交代码前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)，安全问题请按 [SECURITY.md](SECURITY.md) 私下报告，不要直接创建公开 Issue。
 
-## 目录结构
+## 致谢
 
-```
-server/src/gamepulse/
-  adapters/        数据源适配器
-  ai/              AI 分析模块
-  jobs/            定时任务
-  routes/          API 路由
-  storyAggregation.ts  故事聚合
-
-client/src/
-  components/      UI 组件
-  hooks/           自定义 Hooks
-  services/        API 客户端
-```
-
-## 项目状态
-
-### 已完成功能
-
-| 功能 | 状态 |
-|------|------|
-| 多源数据采集（24+ 数据源） | ✅ |
-| AI 智能分类（OpenRouter/DeepSeek/MiMo） | ✅ |
-| 故事聚合（多源合并） | ✅ |
-| 热搜监控（B站/微博/豆瓣） | ✅ |
-| 实时推送（WebSocket） | ✅ |
-| 移动端适配 | ✅ |
-| 收藏功能 | ✅ |
-| Docker 一键部署 | ✅ |
-| 管理后台 | ✅ |
-| B站 Cookie 配置 | ✅ |
-
-### 后续优化方向
-
-- 性能优化：大数据量下的渲染性能（P0 缓存/代码分割已完成，P1 待继续）
-- 更多数据源：知乎、小红书等
-- ✅ 搜索功能：SQLite FTS5 全文搜索已实现
-- ✅ 导出功能：Markdown 日报/周报已实现（PDF 待评估）
-- 多语言支持：英文界面
-- 更细粒度的分类规则
-- 自定义数据源订阅
-- 社区风向分析聚合接口
-- 数据库升级预案（SQLite → PostgreSQL）
+- 项目早期基于 [liyupi/yupi-hot-monitor](https://github.com/liyupi/yupi-hot-monitor) 改造，感谢原作者提供的基础思路与实现
+- [DIYgod/RSSHub](https://github.com/DIYgod/RSSHub)：RSS 路由与内容聚合基础设施
