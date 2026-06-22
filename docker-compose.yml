@@ -33,7 +33,7 @@ services:
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
       - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
       - DEEPSEEK_BASE_URL=${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
-      - DEEPSEEK_MODEL=${DEEPSEEK_MODEL:-deepseek-chat}
+      - DEEPSEEK_MODEL=${DEEPSEEK_MODEL:-deepseek-v4-flash}
       - MIMO_API_KEY=${MIMO_API_KEY:-}
       # Admin - MUST be set before deployment
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:?请设置 ADMIN_PASSWORD 环境变量}

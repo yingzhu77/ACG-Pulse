@@ -60,7 +60,7 @@ describe('AI JSON parsing', () => {
     expect(result.provider).toBe('mimo');
   });
 
-  test('uses the compatible DeepSeek chat endpoint and default model', async () => {
+  test('uses the current DeepSeek Flash model by default', async () => {
     process.env.AI_PROVIDER = 'deepseek';
     process.env.DEEPSEEK_API_KEY = 'test-deepseek-key';
     delete process.env.DEEPSEEK_BASE_URL;
@@ -78,10 +78,10 @@ describe('AI JSON parsing', () => {
     const result = await analyzeWithProvider(baseInput);
 
     expect(result.provider).toBe('deepseek');
-    expect(result.model).toBe('deepseek-chat');
+    expect(result.model).toBe('deepseek-v4-flash');
     expect(mockPost).toHaveBeenCalledWith(
       'https://api.deepseek.com/chat/completions',
-      expect.objectContaining({ model: 'deepseek-chat' }),
+      expect.objectContaining({ model: 'deepseek-v4-flash' }),
       expect.any(Object)
     );
   });

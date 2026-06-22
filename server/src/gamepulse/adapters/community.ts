@@ -383,7 +383,7 @@ function resolveAiConfig(): AiProviderConfig | null {
     return { apiKey: process.env.MIMO_API_KEY, baseUrl: process.env.MIMO_BASE_URL || 'https://token-plan-cn.xiaomimimo.com/v1', model: process.env.MIMO_MODEL || 'mimo-v2.5' };
   }
   if (preferred === 'deepseek' && process.env.DEEPSEEK_API_KEY) {
-    return { apiKey: process.env.DEEPSEEK_API_KEY, baseUrl: process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com', model: process.env.DEEPSEEK_MODEL || 'deepseek-chat' };
+    return { apiKey: process.env.DEEPSEEK_API_KEY, baseUrl: process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com', model: process.env.DEEPSEEK_MODEL || 'deepseek-v4-flash' };
   }
   if (process.env.OPENROUTER_API_KEY) {
     return { apiKey: process.env.OPENROUTER_API_KEY, baseUrl: process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1', model: process.env.OPENROUTER_MODEL || 'deepseek/deepseek-v3.2' };
