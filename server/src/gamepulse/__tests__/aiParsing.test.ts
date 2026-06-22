@@ -60,6 +60,32 @@ describe('AI JSON parsing', () => {
     expect(result.provider).toBe('mimo');
   });
 
+  test('uses the compatible DeepSeek chat endpoint and default model', async () => {
+    process.env.AI_PROVIDER = 'deepseek';
+    process.env.DEEPSEEK_API_KEY = 'test-deepseek-key';
+    delete process.env.DEEPSEEK_BASE_URL;
+    delete process.env.DEEPSEEK_MODEL;
+    mockProviderResponse(JSON.stringify({
+      category: 'announcement',
+      importance: 'high',
+      visibility: 'public',
+      confidence: 90,
+      summary: '测试摘要',
+      reason: '测试原因',
+      dedupKeywords: []
+    }));
+
+    const result = await analyzeWithProvider(baseInput);
+
+    expect(result.provider).toBe('deepseek');
+    expect(result.model).toBe('deepseek-chat');
+    expect(mockPost).toHaveBeenCalledWith(
+      'https://api.deepseek.com/chat/completions',
+      expect.objectContaining({ model: 'deepseek-chat' }),
+      expect.any(Object)
+    );
+  });
+
   test('parses JSON wrapped in markdown code block', async () => {
     mockProviderResponse('```json\n{"category":"event","importance":"medium","visibility":"public","confidence":80,"summary":"测试摘要","reason":"测试原因","dedupKeywords":[]}\n```');
 
