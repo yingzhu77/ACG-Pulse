@@ -34,7 +34,10 @@ fi
 
 echo "Synchronizing database schema..."
 npx prisma generate
-npx prisma db push --skip-generate
+# Schema changes such as adding a unique identity index require Prisma's
+# explicit acknowledgement. The canonical DB has already been backed up above,
+# and rebuildable FTS tables were removed before synchronization.
+npx prisma db push --skip-generate --accept-data-loss
 
 # Start the server
 echo "Starting Game Pulse server..."

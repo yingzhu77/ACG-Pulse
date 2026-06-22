@@ -204,6 +204,22 @@ bash scripts/check-config.sh server/.env  # 检查本地开发 .env
 - `ADMIN_JWT_SECRET` 是否已设置、长度 >= 32 字符
 - AI Provider key 是否已配置
 
+### 更新时 Git 被旧热修阻塞
+
+**现象**：`git pull --ff-only` 提示 `docker-compose.yml` 有本地修改，或 `rsshub/` 中未跟踪文件会被覆盖。
+
+**原因**：早期曾直接在生产服务器修正 RSSHub healthcheck 和自定义镜像，这些修改后来已经进入 Git，但服务器仍保留本地副本。
+
+**处理**：先把 diff 和目录移动到仓库外留档，再恢复 tracked 文件并拉取。完整命令见 `deployment-guide.md` 的“收拢旧热修并拉取代码”。不要使用 `git reset --hard`，也不要删除 `.env`、数据库备份或 Docker volume。
+
+### 新增唯一索引时 Prisma 拒绝启动
+
+**现象**：容器日志提示 `Use the --accept-data-loss flag`，服务停在 `prisma db push`。
+
+**原因**：Prisma 对新增唯一约束要求显式确认。项目入口脚本会先创建 SQLite 热备、校验备份、移除可重建 FTS，再以 `--accept-data-loss` 同步 schema。
+
+**处理**：更新到包含该入口修复的最新镜像后重新创建 app。不要跳过备份直接在生产数据库手工执行 schema 修改。
+
 ## 常用运维命令
 
 ```bash

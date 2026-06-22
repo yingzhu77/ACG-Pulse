@@ -109,49 +109,99 @@ curl http://localhost:3001/api/public/stats
 
 ## 更新部署
 
-以下命令用于现有服务器。它会保留 `.env` 和 Docker 数据卷，先构建镜像，再停止旧 app 创建一致性数据库备份，最后替换容器并等待健康检查：
+现有服务器使用分阶段更新。不要把拉取、构建、备份和替换容器粘成一条长命令；低内存服务器应在 tmux 中只构建 `app`，本次无需重建 RSSHub。
+
+### 1. 收拢旧热修并拉取代码
+
+如果 `git status` 显示旧部署遗留的 `M docker-compose.yml` 或 `?? rsshub/`，先备份到仓库外再拉取。不要删除 `.env`、`backups/` 或 Docker volume。
 
 ```bash
-set -euo pipefail
 cd /opt/personal-hot-monitor
+STAMP="$(date +%Y%m%d_%H%M%S)"
+mkdir -p "/opt/acg-deploy-local-backups/$STAMP"
 
-# 修正生产来源与反向代理配置；不会改动密码、Cookie 或 AI Key
-cp .env ".env.predeploy.$(date +%Y%m%d_%H%M%S)"
-if grep -q '^CLIENT_URL=' .env; then
-  sed -i 's#^CLIENT_URL=.*#CLIENT_URL=https://acg.yingzhu.xyz#' .env
-else
-  printf '\nCLIENT_URL=https://acg.yingzhu.xyz\n' >> .env
-fi
-if grep -q '^TRUST_PROXY_HOPS=' .env; then
-  sed -i 's#^TRUST_PROXY_HOPS=.*#TRUST_PROXY_HOPS=1#' .env
-else
-  printf 'TRUST_PROXY_HOPS=1\n' >> .env
+git diff -- docker-compose.yml > "/opt/acg-deploy-local-backups/$STAMP/docker-compose.patch"
+git restore docker-compose.yml
+if [ -d rsshub ] && ! git ls-files --error-unmatch rsshub/Dockerfile >/dev/null 2>&1; then
+  mv rsshub "/opt/acg-deploy-local-backups/$STAMP/rsshub"
 fi
 
 git fetch origin master
 git checkout master
 git pull --ff-only origin master
+git status -sb
+git rev-parse --short HEAD
+```
+
+目标提交应不低于部署说明中记录的最新 `master`，且工作区不再有 tracked 修改。
+
+### 2. 配置预检
+
+```bash
+cd /opt/personal-hot-monitor
+cp .env ".env.predeploy.$(date +%Y%m%d_%H%M%S)"
+
+grep -q '^CLIENT_URL=' .env \
+  && sed -i 's#^CLIENT_URL=.*#CLIENT_URL=https://acg.yingzhu.xyz#' .env \
+  || printf '\nCLIENT_URL=https://acg.yingzhu.xyz\n' >> .env
+grep -q '^TRUST_PROXY_HOPS=' .env \
+  && sed -i 's#^TRUST_PROXY_HOPS=.*#TRUST_PROXY_HOPS=1#' .env \
+  || printf 'TRUST_PROXY_HOPS=1\n' >> .env
+
+chmod 600 .env
 bash scripts/check-config.sh .env
 docker compose config --quiet
-docker compose build
+```
+
+### 3. 在 tmux 中构建 app
+
+```bash
+tmux new-session -d -s acg-deploy
+tmux send-keys -t acg-deploy \
+  'cd /opt/personal-hot-monitor; docker compose build app 2>&1 | tee /tmp/app-build.log; rc=${PIPESTATUS[0]}; echo "APP_BUILD_RC=$rc" | tee /tmp/app-build.rc' \
+  C-m
+
+tail -f /tmp/app-build.log
+```
+
+看到构建结束后按 `Ctrl+C` 只会退出日志查看，再确认：
+
+```bash
+cat /tmp/app-build.rc
+```
+
+必须显示 `APP_BUILD_RC=0` 才能继续。
+
+### 4. 备份并替换 app
+
+```bash
+cd /opt/personal-hot-monitor
 bash scripts/pre-deploy-backup.sh
-docker compose up -d --remove-orphans
+docker compose up -d --no-deps app
 
 for i in $(seq 1 30); do
-  if curl -fsS http://127.0.0.1:3001/api/health >/tmp/acg-health.json; then
-    cat /tmp/acg-health.json
-    break
-  fi
-  if [ "$i" -eq 30 ]; then
-    docker compose logs app --tail 120
-    exit 1
-  fi
+  STATUS="$(docker inspect -f '{{.State.Health.Status}}' game-pulse 2>/dev/null || echo missing)"
+  echo "app health: $STATUS"
+  [ "$STATUS" = "healthy" ] && break
   sleep 2
 done
 
 docker compose ps
+docker compose logs app --tail 120
+```
+
+升级到稳定情报身份版本时，日志应包含 `Identity backfill completed`；若历史数据已经回填完成，后续重启不会重复输出该行。
+
+### 5. 验收
+
+```bash
+cd /opt/personal-hot-monitor
 git rev-parse --short HEAD
-curl -fsS https://acg.yingzhu.xyz/api/health
+curl -fsS http://127.0.0.1:3001/api/health && echo
+curl -fsS 'http://127.0.0.1:3001/api/public/stories?limit=1&page=1&includeFacets=false' >/dev/null
+curl -fsS https://acg.yingzhu.xyz/api/health && echo
+curl -sSI https://acg.yingzhu.xyz/api/health | grep -iE 'HTTP/|access-control-allow-origin'
+docker compose ps
 ```
 
 部署后响应头中的 `Access-Control-Allow-Origin` 应为 `https://acg.yingzhu.xyz`，不应继续是 localhost：

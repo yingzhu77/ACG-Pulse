@@ -11,6 +11,7 @@
 - 数据库以 `(sourceId, identityKey)` 建立唯一约束。同一来源同一身份只更新内容，不再创建新快照；只有标题或正文变化时才重新进入 AI 分析队列。
 - AI `category` 只描述内容，不参与 FeedItem 身份判定。Story 聚合顺序固定为：确定性 URL/外部 ID、时间窗内完全相同标题、分类兼容的模糊关键词。
 - 服务升级时执行一次历史 identity 回填和同源去重；完成后依靠唯一约束阻止复发，不在每轮采集做全表清理。
+- 生产入口按“SQLite 热备并校验 → 移除可重建 FTS → `prisma db push --accept-data-loss` → 启动 identity 回填”的固定顺序迁移；不得绕过备份手工修改生产 schema。
 - Stories 所有页使用相同的 500 条候选窗口，保证同一查询的 total、totalPages 与页边界稳定。
 
 **演进边界**：新增平台时先扩展 `itemIdentity.ts` 和身份测试。若既有 identity 算法需要变更，必须显式设计版本化回填，不能静默改变已写入键的语义。

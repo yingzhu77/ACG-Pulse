@@ -9,12 +9,12 @@
 - 将公开 stories/items 查询参数接入 Zod 校验，统一非法输入的 400 响应。
 - 配置 Vitest 只运行 `src/**/*.test.ts`，避免 `dist` 构建产物里的测试被重复执行。
 
-## 第二阶段：稳定性、性能与可观测性（待办）
+## 第二阶段：稳定性、性能与可观测性（已完成）
 
 - 优化 `/api/public/stories` 查询：
   - ✅ 已将 facet 统计改为数据库聚合，避免每次全量拉取 feedItem 到内存统计。
-  - 降低内存聚合的候选数据规模，必要时为故事聚合结果增加缓存层。
-  - 对搜索参数 `q` 评估 SQLite FTS 或迁移到更合适的全文搜索方案。
+  - ✅ Stories 使用固定候选窗口与短时缓存，分页 total 和页边界保持稳定。
+  - ✅ 搜索参数 `q` 已接入 SQLite FTS5，并保留降级查询。
 - 将 AI 分析队列持久化：
   - ✅ 增加任务状态：`pending / running / completed / failed`。
   - ✅ 记录 `retryCount`、最近错误、耗时和 provider/model。
@@ -28,8 +28,9 @@
   - AI JSON 解析与 fallback 测试（未实现）。
   - ✅ source 创建/更新/布尔值解析测试（`validation.test.ts`）。
   - ✅ stories filter/facet 组合测试。
-  - checker 去重测试（未实现；清理和失败源状态已在 `checkerMutex.test.ts` 覆盖）。
+  - ✅ checker 稳定身份与去重测试，覆盖 external ID 格式漂移、同源更新和跨源隔离。
   - ✅ FTS5 触发器生命周期测试（mock + 真实 SQLite 集成）。
+  - ✅ FeedItem 稳定 `identityKey`、数据库唯一约束与历史回填测试。
 
 ## 第三阶段：产品能力扩展（待办）
 
