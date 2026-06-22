@@ -22,6 +22,8 @@
 - **报告时区**：默认推荐继续使用 `Asia/Shanghai`。如果未来要允许用户级时区，需要新增公开配置接口，不要只在前端硬编码。
 - **运维脚本**：`reset-admin-password.sh` 依赖 `openssl`，目标服务器是 Ubuntu 24.04 时可用；若迁移到极简镜像，需要补 fallback。
 - **情报身份规则**：新增平台适配器时必须同步扩展 `itemIdentity.ts` 和回归测试；AI 分类不能参与 FeedItem 身份判定。
+- **AI Provider 生命周期**：生产当前使用 `deepseek-v4-flash`；新窗口修改模型名前必须核对官方文档与 `/models`，并保留 `DEEPSEEK_MODEL` 可配置覆盖。
+- **队列状态语义**：失败分析对应的 FeedItem 通常已经进入公开流；重试负责补齐或修正 Analysis，不得通过重复采集补偿失败任务。
 
 ## 新任务队列
 

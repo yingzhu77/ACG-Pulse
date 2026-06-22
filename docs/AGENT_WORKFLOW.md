@@ -39,6 +39,7 @@
 5. 输出结果时说明改了什么、验证了什么、剩余风险。
 6. 如果形成新经验，更新 `docs/LESSONS.md`。
 7. 如果改变架构方向，更新 `docs/DECISIONS.md`。
+8. 涉及外部 AI Provider 时，先验证官方模型列表、弃用时间和容器环境变量传递，再修改默认值。
 
 ## 验证命令
 
@@ -92,3 +93,4 @@ docker compose config
 
 - 自定义数据源管理（RSS/RSSHub/官网源）。
 - 数据库升级预案评估（SQLite → PostgreSQL）。
+- AI Provider 成本、失败率与模型弃用监控；当前生产基线为 DeepSeek V4 Flash。

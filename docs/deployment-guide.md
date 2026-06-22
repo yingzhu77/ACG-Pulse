@@ -261,6 +261,28 @@ curl http://localhost:3001/api/health
 - `sourceStats`：每个源的失败率统计
 - `totalChecks24h` / `totalFailures24h`：24 小时总检查/失败次数
 
+## 切换 AI Provider
+
+生产当前推荐配置：
+
+```env
+AI_PROVIDER=deepseek
+DEEPSEEK_API_KEY=<secret>
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+DEEPSEEK_MODEL=deepseek-v4-flash
+```
+
+切换前先用隐藏输入读取 Key，并调用 `GET https://api.deepseek.com/models` 验证 Key 和目标模型；不要把真实 Key 直接写进可回溯的命令行。修改前备份 `.env`，修改后依次执行：
+
+```bash
+bash scripts/check-config.sh .env
+docker compose config --quiet
+docker compose up -d --no-deps --force-recreate app
+docker compose ps
+```
+
+无需重新抓取历史情报。Provider 到期期间失败的 AnalysisTask 可在管理后台先重试一条，确认 provider/model 正确后再批量重试。FeedItem 在采集时已经入库；重试只补齐或修正 Analysis，成功后分类、重要性和可见性可能变化。
+
 ## 常见问题
 
 ### 内存不足

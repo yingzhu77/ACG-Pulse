@@ -2,6 +2,16 @@
 
 本文档记录对长期维护有影响的项目决策。新增决策按时间倒序追加。
 
+## 2026-06-22：AI 分析不阻塞情报入流，生产默认 DeepSeek V4 Flash
+
+**状态语义**：FeedItem 在采集成功后立即持久化并进入公开查询候选；公开查询允许 `analysis = null`，pending/failed Analysis 的默认可见性也是 `public`。AI 队列负责补齐分类、重要性、摘要、可见性与去重关键词，不是情报入库开关。
+
+**重试影响**：失败任务重试成功后会覆盖 Analysis 并广播 `item:analyzed`。条目可能继续留在原位置、移动到新的分类/重要性筛选结果，或因最终 `visibility` 为 muted/hidden 而退出默认公开流；重试不会重新创建 FeedItem。
+
+**Provider 决策**：生产默认使用 DeepSeek OpenAI 兼容接口 `https://api.deepseek.com/chat/completions`，模型为 `deepseek-v4-flash`。`DEEPSEEK_BASE_URL` 和 `DEEPSEEK_MODEL` 必须由 Compose 显式传入容器，不能只写在 `.env`。`deepseek-chat` 仅为兼容别名，官方已公告将于 2026-07-24 23:59（北京时间）弃用。
+
+**切换规则**：更换 Provider 时先调用官方 `/models` 验证 Key 与模型，再备份并原子更新 `.env`，运行 `check-config.sh` 和 `docker compose config --quiet`，最后强制重建 app 容器。密钥不得出现在命令参数、日志或 Git 中。
+
 ## 2026-06-21：情报身份与 AI 分类彻底解耦
 
 **问题**：同一来源适配器可能先后返回 BV 号、完整 URL 等不同 `externalId`；同一稿件的 AI 分类也可能在 `trailer`、`creator_video`、`version` 等类别间漂移。旧逻辑把分类兼容性放在确定性身份判断之前，导致同稿重复入库、重复展示。Stories 分页还会随页码扩大候选集，使总数和页边界不稳定。

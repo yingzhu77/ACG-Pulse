@@ -86,8 +86,9 @@ cp .env.production.example .env
 编辑 `.env`，至少设置：
 
 ```dotenv
-AI_PROVIDER=mimo
-MIMO_API_KEY=your_api_key
+AI_PROVIDER=deepseek
+DEEPSEEK_API_KEY=your_api_key
+DEEPSEEK_MODEL=deepseek-v4-flash
 ADMIN_PASSWORD=your_strong_password
 ADMIN_JWT_SECRET=your_random_secret_at_least_32_chars
 CLIENT_URL=http://localhost:3001
