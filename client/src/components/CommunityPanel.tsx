@@ -140,6 +140,9 @@ export function CommunityPanel() {
         <SummaryMetric label="中性话题" value={sentimentCounts.neutral} note="neutral" tone="cyan" />
         <SummaryMetric label="平均热度" value={avgHeat} note="0-100" tone="orange" />
       </div>
+      <p className="community-sentiment-note">
+        情感倾向由关键词规则与 AI 辅助判断，可能误判反讽、梗图语境或少量样本，仅供趋势参考。
+      </p>
 
       <div className="community-filter-bar">
         <div className="community-sort-control" aria-label="话题排序方式">

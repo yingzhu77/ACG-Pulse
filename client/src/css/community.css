@@ -308,6 +308,13 @@
   min-height: 72px;
 }
 
+.community-sentiment-note {
+  margin: 8px 2px 0;
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  line-height: 1.5;
+}
+
 .community-filter-bar {
   display: flex;
   flex-wrap: wrap;
