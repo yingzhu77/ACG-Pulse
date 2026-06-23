@@ -1,86 +1,77 @@
-import { beforeEach, describe, expect, test, vi } from 'vitest';
-import { getStoryFacets, queryStoryFacets, resetStoryFacetCache } from '../storyFacets.js';
+import { describe, expect, test } from 'vitest';
+import { computeStoryFacetsFromStories, emptyStoryFacets } from '../storyFacets.js';
+import type { PublicStory } from '../storyAggregation.js';
+
+function makeStory(overrides: Partial<PublicStory> = {}): PublicStory {
+  return {
+    id: `story_${Math.random().toString(36).slice(2, 8)}`,
+    canonicalTitle: '测试故事',
+    game: '原神',
+    category: 'announcement',
+    importance: 'medium',
+    visibility: 'public',
+    summary: null,
+    reason: null,
+    coverUrl: null,
+    publishedAt: new Date('2026-06-01T10:00:00Z'),
+    fetchedAt: new Date('2026-06-01T10:05:00Z'),
+    createdAt: new Date('2026-06-01T10:05:00Z'),
+    sourceCount: 1,
+    itemCount: 1,
+    sources: [],
+    items: [],
+    ...overrides
+  };
+}
 
 describe('story facets', () => {
-  beforeEach(() => {
-    resetStoryFacetCache();
-  });
-
-  test('builds every facet from one grouped query and normalizes values', async () => {
-    const queryRaw = vi.fn().mockResolvedValue([
-      { game: '原神', category: 'announcement', importance: 'low', followed: 0n, count: 2n },
-      { game: '原神', category: null, importance: 'urgent', followed: 0n, count: 1n },
-      { game: '', category: 'music', importance: 'high', followed: 1n, count: 3n },
-      { game: '', category: 'announcement', importance: 'medium', followed: 1n, count: 8n }
-    ]);
-
-    const facets = await queryStoryFacets({ $queryRaw: queryRaw } as never, {});
-
-    expect(facets).toEqual({
-      byGame: { 原神: 3 },
-      byCategory: { announcement: 2, other: 1 },
-      byFollowCategory: { music: 3 },
-      byImportance: { low: 2, high: 4, medium: 8 }
+  test('returns empty facets for skipped calculations', () => {
+    expect(emptyStoryFacets()).toEqual({
+      byGame: {},
+      byCategory: {},
+      byFollowCategory: {},
+      byImportance: {}
     });
-    expect(queryRaw).toHaveBeenCalledTimes(1);
   });
 
-  test('parameterizes followed source, uid, and low-value exclusions', async () => {
-    const queryRaw = vi.fn().mockResolvedValue([]);
+  test('counts aggregated stories instead of raw feed items', () => {
+    const stories = [
+      makeStory({
+        game: '原神',
+        category: 'version',
+        importance: 'high',
+        sourceCount: 3,
+        itemCount: 3
+      }),
+      makeStory({
+        game: '原神',
+        category: 'event',
+        importance: 'medium',
+        sourceCount: 1,
+        itemCount: 1
+      })
+    ];
 
-    await queryStoryFacets({ $queryRaw: queryRaw } as never, {
-      followGroup: 'follow',
-      sourceUid: '8465957',
-      visibility: 'public'
+    expect(computeStoryFacetsFromStories(stories)).toEqual({
+      byGame: { 原神: 2 },
+      byCategory: { version: 1, event: 1 },
+      byFollowCategory: {},
+      byImportance: { high: 1, medium: 1 }
     });
-
-    const query = queryRaw.mock.calls[0][0];
-    expect(String(query.sql)).toContain('s.followed = ?');
-    expect(String(query.sql)).toContain('s.uid = ?');
-    expect(String(query.sql)).toContain("a.category <> 'enforcement'");
-    expect(query.values).toContain(true);
-    expect(query.values).toContain('8465957');
-    expect(query.values).toContain('%处罚公示%');
   });
 
-  test('parameterizes multiple followed source uids', async () => {
-    const queryRaw = vi.fn().mockResolvedValue([]);
+  test('separates followed content categories from game categories', () => {
+    const stories = [
+      makeStory({ game: '', category: 'music', importance: 'low' }),
+      makeStory({ game: '', category: 'creator_video', importance: 'medium' }),
+      makeStory({ game: '崩坏：星穹铁道', category: null, importance: 'high' })
+    ];
 
-    await queryStoryFacets({ $queryRaw: queryRaw } as never, {
-      followGroup: 'follow',
-      sourceUids: ['8465957', '401742377']
+    expect(computeStoryFacetsFromStories(stories)).toEqual({
+      byGame: { '崩坏：星穹铁道': 1 },
+      byCategory: { other: 1 },
+      byFollowCategory: { music: 1, creator_video: 1 },
+      byImportance: { low: 1, medium: 1, high: 1 }
     });
-
-    const query = queryRaw.mock.calls[0][0];
-    expect(String(query.sql)).toContain('s.uid IN (?,?)');
-    expect(query.values).toContain('8465957');
-    expect(query.values).toContain('401742377');
-  });
-
-  test('keeps low-value rows when muted visibility is requested', async () => {
-    const queryRaw = vi.fn().mockResolvedValue([]);
-
-    await queryStoryFacets({ $queryRaw: queryRaw } as never, { visibility: 'all' });
-
-    const query = queryRaw.mock.calls[0][0];
-    expect(String(query.sql)).not.toContain('enforcement');
-    expect(query.values).not.toContain('%处罚公示%');
-  });
-
-  test('deduplicates concurrent facet requests and caches the result', async () => {
-    let resolveRows: (rows: unknown[]) => void = () => undefined;
-    const queryRaw = vi.fn().mockReturnValue(new Promise(resolve => {
-      resolveRows = resolve;
-    }));
-    const client = { $queryRaw: queryRaw } as never;
-
-    const first = getStoryFacets(client, { followGroup: 'game' });
-    const second = getStoryFacets(client, { followGroup: 'game' });
-    resolveRows([]);
-
-    expect(await first).toEqual({ byGame: {}, byCategory: {}, byFollowCategory: {}, byImportance: {} });
-    expect(await second).toEqual(await first);
-    expect(await getStoryFacets(client, { followGroup: 'game' })).toEqual(await first);
-    expect(queryRaw).toHaveBeenCalledTimes(1);
   });
 });

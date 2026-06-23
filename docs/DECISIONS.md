@@ -2,6 +2,14 @@
 
 本文档记录对长期维护有影响的项目决策。新增决策按时间倒序追加。
 
+## 2026-06-23：主页面 facets 使用 Story 数语义，统计面板保留 FeedItem 数语义
+
+**决策**：`/api/public/stories` 返回的 facets 表示聚合后的 Story 数，而不是底层 FeedItem 条数。主页面筛选项面向 StoryCard 列表，用户看到的计数应尽量对应“点击筛选后能看到多少个故事”。同一故事即使来自多个来源、包含多条 FeedItem，也只在游戏、分类和重要性 facet 中计 1 次。
+
+**边界**：数据洞察、运维面板、来源统计和容量统计继续使用 FeedItem 数语义。这些视图关注采集规模、来源贡献、容量上限和运行健康，原始情报条数比聚合故事数更适合作为指标。
+
+**实现约束**：Story facets 从 `aggregateFeedItemsToStories()` 的结果计算，并受同一个候选窗口和筛选条件约束；`includeFacets=false` 仍返回空 facets，避免摘要流重复消耗计算。后续 UI 文案应区分“故事数”和“情报条数”，不要混用。
+
 ## 2026-06-23：DeepSeek 默认配置与多值查询契约统一
 
 **Provider 默认值**：生产长期默认使用 `AI_PROVIDER=deepseek` 与 `DEEPSEEK_MODEL=deepseek-v4-flash`。README、`.env.production.example`、`docker-compose.yml` 和部署指南必须保持一致；OpenRouter 与 Xiaomi MiMo 作为可选 Provider 保留显式覆盖入口。

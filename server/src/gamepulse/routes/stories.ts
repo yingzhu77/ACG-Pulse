@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { prisma } from '../../db.js';
 import { aggregateFeedItemsToStories, toPublicFeedItem } from '../storyAggregation.js';
 import { normalizeImportance } from '../storyAggregation.js';
-import { getStoryFacets } from '../storyFacets.js';
+import { computeStoryFacetsFromStories, emptyStoryFacets } from '../storyFacets.js';
 import type { PrismaWhereClause } from '../types.js';
 import {
   toArray,
@@ -211,7 +211,7 @@ router.get('/stories', async (req, res) => {
           res.json({
             data: [],
             pagination: { page: pageNum, limit: limitNum, total: 0, totalPages: 0 },
-            facets: { byGame: {}, byCategory: {}, byFollowCategory: {}, byImportance: {} }
+            facets: emptyStoryFacets()
           });
           return;
         }
@@ -248,35 +248,26 @@ router.get('/stories', async (req, res) => {
     }
     applyLowValueNoticeFilter(where, visibility);
 
-    const [items, facets] = await Promise.all([
-      prisma.feedItem.findMany({
-        where,
-        orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }],
-        // Every page must aggregate the same candidate window or totals and boundaries drift.
-        take: q && ftsIds ? Math.min(ftsIds.length, FTS_RECALL_LIMIT) : STORIES_CANDIDATE_LIMIT,
-        include: {
-          source: {
-            select: {
-              id: true,
-              name: true,
-              type: true,
-              game: true,
-              isOfficial: true,
-              followed: true,
-              healthStatus: true
-            }
-          },
-          analysis: true
-        }
-      }),
-      includeFacets
-        ? getStoryFacets(prisma, {
-            followGroup: group,
-            sourceUids: sourceUidArr,
-            visibility: visibility ? String(visibility) : undefined
-          })
-        : Promise.resolve({ byGame: {}, byCategory: {}, byFollowCategory: {}, byImportance: {} })
-    ]);
+    const items = await prisma.feedItem.findMany({
+      where,
+      orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }],
+      // Every page must aggregate the same candidate window or totals and boundaries drift.
+      take: q && ftsIds ? Math.min(ftsIds.length, FTS_RECALL_LIMIT) : STORIES_CANDIDATE_LIMIT,
+      include: {
+        source: {
+          select: {
+            id: true,
+            name: true,
+            type: true,
+            game: true,
+            isOfficial: true,
+            followed: true,
+            healthStatus: true
+          }
+        },
+        analysis: true
+      }
+    });
 
     // Aggregate stories for display
     const allStories = aggregateFeedItemsToStories(items);
@@ -288,6 +279,7 @@ router.get('/stories', async (req, res) => {
     const stories = importanceSet
       ? allStories.filter(s => importanceSet.has(s.importance))
       : allStories;
+    const facets = includeFacets ? computeStoryFacetsFromStories(stories) : emptyStoryFacets();
 
     const data = stories.slice((pageNum - 1) * limitNum, pageNum * limitNum);
 
