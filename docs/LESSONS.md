@@ -713,6 +713,30 @@ END
 
 ---
 
+### 5.26 配置项必须从文档到容器闭环
+
+**问题**：`.env.production.example` 或 README 声明了某些可配置项，但 `docker-compose.yml` 未显式传入容器，导致生产容器仍然使用代码默认值，运维以为配置已生效。
+
+**根因**：Docker Compose 的 `.env` 主要用于变量插值，不等于把所有 key 自动注入容器。只要服务使用显式 `environment` 列表，就必须把运行时代码读取的 key 全部列在 Compose 中。
+
+**规则**：
+- 新增或调整运行时环境变量时，同步检查 5 处：代码读取点、`.env.production.example`、`docker-compose.yml`、README 常用配置、部署指南。
+- 生产默认值只能有一个事实来源；如果长期默认改为某个 Provider，README、示例 env、Compose 默认值和决策文档必须一致。
+- `docker compose config --quiet` 只能证明 Compose 可展开，不能证明变量已进入业务进程；关键配置还要看 Compose 的 `environment` 列表。
+
+---
+
+### 5.27 Query 参数序列化不能对所有逗号字符串一刀切
+
+**问题**：前端通用 `withParams()` 如果把所有包含逗号的字符串都拆成重复 query key，会误伤搜索词、标题片段等普通字符串字段。例如 `q=原神,直播` 可能变成两个 `q`，而后端 schema 只接受 string。
+
+**规则**：
+- 只有明确支持多值语义的字段才能拆分或重复传参，例如 `game`、`category`、`importance`、`sourceUid`。
+- 普通字符串字段必须原样传递，尤其是 `q`、标题、URL、备注等用户输入。
+- 前后端都要表达同一个契约：前端类型允许数组时，后端 validation 也应允许 `string | string[]`，并有回归测试覆盖多值过滤。
+
+---
+
 ## 六、Prompt 模板（可复用）
 
 ### Bug 修复
@@ -848,3 +872,4 @@ END
 | 2026-06-21 | 补充稳定情报身份、分类解耦与聚合分页经验（5.23） |
 | 2026-06-22 | 补充 Prisma 唯一索引、FTS5 与可恢复迁移顺序（5.24） |
 | 2026-06-22 | 补充 AI 入流/分析状态边界与 Provider 切换规则（5.25） |
+| 2026-06-23 | 补充配置闭环与 query 参数多值契约经验（5.26、5.27） |

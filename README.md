@@ -132,13 +132,15 @@ npm run dev
 
 | 变量 | 是否必填 | 用途 |
 | --- | --- | --- |
-| `AI_PROVIDER` | 是 | `openrouter`、`deepseek` 或 `mimo` |
-| Provider API Key | 是 | 与所选 Provider 对应的密钥 |
+| `AI_PROVIDER` | 是 | `openrouter`、`deepseek` 或 `mimo`；生产默认 `deepseek` |
+| Provider API Key | 是 | 与所选 Provider 对应的密钥；默认使用 `DEEPSEEK_API_KEY` |
+| `DEEPSEEK_MODEL` | 否 | DeepSeek 模型名，默认 `deepseek-v4-flash` |
 | `ADMIN_PASSWORD` | 是 | 管理后台登录密码 |
 | `ADMIN_JWT_SECRET` | 是 | 管理令牌签名密钥，至少 32 字符 |
 | `CLIENT_URL` | 是 | 允许访问 API 的前端 Origin |
 | `BILIBILI_COOKIE` | 否 | 提升 B站采集稳定性 |
 | `MAX_FEED_ITEMS` | 否 | 情报保留上限，默认 2000 |
+| `REPORT_TIMEZONE` | 否 | 日报/周报日期边界时区，默认 `Asia/Shanghai` |
 
 完整配置参见 [.env.production.example](.env.production.example)。不要提交真实密码、API Key 或 Cookie。
 

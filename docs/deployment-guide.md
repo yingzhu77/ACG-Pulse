@@ -77,18 +77,22 @@ nano .env
 ADMIN_PASSWORD=你的密码
 ADMIN_JWT_SECRET=随机字符串
 # AI Provider 三选一：
-# 方案 A - OpenRouter：
-AI_PROVIDER=openrouter
-OPENROUTER_API_KEY=你的key
-# 方案 B - DeepSeek：
-# AI_PROVIDER=deepseek
-# DEEPSEEK_API_KEY=你的key
+# 方案 A - DeepSeek（生产默认）：
+AI_PROVIDER=deepseek
+DEEPSEEK_API_KEY=你的key
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+DEEPSEEK_MODEL=deepseek-v4-flash
+# 方案 B - OpenRouter：
+# AI_PROVIDER=openrouter
+# OPENROUTER_API_KEY=你的key
+# OPENROUTER_MODEL=deepseek/deepseek-v3.2
 # 方案 C - Xiaomi MiMo Token Plan：
 # AI_PROVIDER=mimo
 # MIMO_API_KEY=tp-xxxxx
 # MIMO_BASE_URL=https://token-plan-cn.xiaomimimo.com/v1  # 中国集群（默认）
 # MIMO_MODEL=mimo-v2.5
 MAX_FEED_ITEMS=2000
+REPORT_TIMEZONE=Asia/Shanghai
 ```
 
 ### 6. 启动服务

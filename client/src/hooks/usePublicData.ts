@@ -61,14 +61,12 @@ export function usePublicData(showToast: ShowToast) {
   const loadPublicData = useCallback(async () => {
     setLoading(true);
     try {
-      const apiFilters: Record<string, string | number | undefined> = { limit: 20, page };
+      const apiFilters: Record<string, string | string[] | number | undefined> = { limit: 20, page };
       if (sourceFilter.length > 0) {
         const uids = sourceFilter.filter(s => /^\d+$/.test(s));
         const games = sourceFilter.filter(s => !/^\d+$/.test(s));
         if (uids.length > 0 && games.length === 0) {
-          if (uids.length === 1) {
-            apiFilters.sourceUid = uids[0];
-          }
+          apiFilters.sourceUid = uids;
           apiFilters.followGroup = 'follow';
         } else if (games.length > 0 && uids.length === 0) {
           apiFilters.game = games.length === 1 ? games[0] : games.join(',');

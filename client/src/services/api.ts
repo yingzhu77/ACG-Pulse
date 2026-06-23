@@ -182,16 +182,16 @@ export interface StoriesResponse {
 export type ItemFilters = {
   page?: number;
   limit?: number;
-  game?: string;
+  game?: string | string[];
   sourceId?: string;
   itemKind?: string;
-  category?: string;
-  importance?: string;
+  category?: string | string[];
+  importance?: string | string[];
   visibility?: string;
   official?: string;
   q?: string;
   followGroup?: string;
-  sourceUid?: string;
+  sourceUid?: string | string[];
   includeFacets?: boolean;
 };
 
@@ -220,16 +220,22 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
   return response.json();
 }
 
+const REPEATED_QUERY_KEYS = new Set(['game', 'category', 'importance', 'sourceUid']);
+
 function withParams(endpoint: string, params?: Record<string, unknown>): string {
   const search = new URLSearchParams();
   Object.entries(params || {}).forEach(([key, value]) => {
     if (value === undefined || value === '') return;
-    const str = String(value);
-    if (str.includes(',')) {
-      str.split(',').filter(Boolean).forEach(v => search.append(key, v));
-    } else {
-      search.set(key, str);
+    if (Array.isArray(value)) {
+      value.map(String).filter(Boolean).forEach(v => search.append(key, v));
+      return;
     }
+    const str = String(value);
+    if (REPEATED_QUERY_KEYS.has(key) && str.includes(',')) {
+      str.split(',').filter(Boolean).forEach(v => search.append(key, v));
+      return;
+    }
+    search.set(key, str);
   });
   const query = search.toString();
   return query ? `${endpoint}?${query}` : endpoint;

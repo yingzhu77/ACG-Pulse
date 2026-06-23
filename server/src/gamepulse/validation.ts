@@ -200,7 +200,7 @@ export const PublicStoriesQuerySchema = z.object({
   official: z.string().optional(),
   q: z.string().optional(),
   followGroup: z.string().optional(),
-  sourceUid: z.string().optional(),
+  sourceUid: z.union([z.string(), z.array(z.string())]).optional(),
   includeFacets: z.preprocess(
     (v) => String(v ?? 'true') !== 'false',
     z.boolean()

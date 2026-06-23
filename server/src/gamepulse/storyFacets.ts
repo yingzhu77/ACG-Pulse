@@ -13,6 +13,7 @@ export interface StoryFacets {
 interface StoryFacetFilters {
   followGroup?: string;
   sourceUid?: string;
+  sourceUids?: string[];
   visibility?: string;
 }
 
@@ -36,7 +37,10 @@ const facetCache = new Map<string, { value: StoryFacets; expiresAt: number }>();
 const facetPromises = new Map<string, Promise<StoryFacets>>();
 
 function facetCacheKey(filters: StoryFacetFilters): string {
-  return `${filters.followGroup || ''}|${filters.sourceUid || ''}|${filters.visibility || ''}`;
+  const sourceKey = (filters.sourceUids && filters.sourceUids.length > 0)
+    ? filters.sourceUids.join(',')
+    : filters.sourceUid || '';
+  return `${filters.followGroup || ''}|${sourceKey}|${filters.visibility || ''}`;
 }
 
 function trimFacetCache(): void {
@@ -79,7 +83,13 @@ export async function queryStoryFacets(
 
   if (filters.followGroup === 'follow') conditions.push(Prisma.sql`s.followed = ${true}`);
   if (filters.followGroup === 'game') conditions.push(Prisma.sql`s.followed = ${false}`);
-  if (filters.sourceUid) conditions.push(Prisma.sql`s.uid = ${filters.sourceUid}`);
+  const sourceUids = filters.sourceUids && filters.sourceUids.length > 0
+    ? filters.sourceUids
+    : filters.sourceUid
+      ? [filters.sourceUid]
+      : [];
+  if (sourceUids.length === 1) conditions.push(Prisma.sql`s.uid = ${sourceUids[0]}`);
+  if (sourceUids.length > 1) conditions.push(Prisma.sql`s.uid IN (${Prisma.join(sourceUids)})`);
   if (filters.visibility !== 'muted' && filters.visibility !== 'all') {
     conditions.push(Prisma.sql`a.category <> 'enforcement'`);
     for (const phrase of LOW_VALUE_NOTICE_PHRASES) {

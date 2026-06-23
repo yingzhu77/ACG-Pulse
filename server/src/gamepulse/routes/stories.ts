@@ -175,6 +175,7 @@ router.get('/stories', async (req, res) => {
     const gameArr = toArray(game);
     const categoryArr = toArray(category);
     const importanceArr = toArray(importance);
+    const sourceUidArr = toArray(sourceUid);
     const group = followGroup ? String(followGroup) : '';
 
     // 检查缓存（仅第 1 页且无搜索词时缓存，搜索结果不缓存）
@@ -233,8 +234,10 @@ router.get('/stories', async (req, res) => {
     }
 
     // sourceUid: filter by specific followed UP主
-    if (sourceUid) {
-      appendAnd(where, { source: { is: { uid: String(sourceUid) } } });
+    if (sourceUidArr.length === 1) {
+      appendAnd(where, { source: { is: { uid: sourceUidArr[0] } } });
+    } else if (sourceUidArr.length > 1) {
+      appendAnd(where, { source: { is: { uid: { in: sourceUidArr } } } });
     }
 
     // Category filter with group awareness
@@ -269,7 +272,7 @@ router.get('/stories', async (req, res) => {
       includeFacets
         ? getStoryFacets(prisma, {
             followGroup: group,
-            sourceUid: sourceUid ? String(sourceUid) : undefined,
+            sourceUids: sourceUidArr,
             visibility: visibility ? String(visibility) : undefined
           })
         : Promise.resolve({ byGame: {}, byCategory: {}, byFollowCategory: {}, byImportance: {} })

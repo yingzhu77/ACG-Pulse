@@ -43,6 +43,20 @@ describe('story facets', () => {
     expect(query.values).toContain('%处罚公示%');
   });
 
+  test('parameterizes multiple followed source uids', async () => {
+    const queryRaw = vi.fn().mockResolvedValue([]);
+
+    await queryStoryFacets({ $queryRaw: queryRaw } as never, {
+      followGroup: 'follow',
+      sourceUids: ['8465957', '401742377']
+    });
+
+    const query = queryRaw.mock.calls[0][0];
+    expect(String(query.sql)).toContain('s.uid IN (?,?)');
+    expect(query.values).toContain('8465957');
+    expect(query.values).toContain('401742377');
+  });
+
   test('keeps low-value rows when muted visibility is requested', async () => {
     const queryRaw = vi.fn().mockResolvedValue([]);
 

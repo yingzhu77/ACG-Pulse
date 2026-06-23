@@ -28,13 +28,17 @@ services:
       - BILIBILI_DIRECT_API_TIMEOUT_MS=30000
       - BILIBILI_REQUEST_INTERVAL_MS=6000
       - BILIBILI_COOKIE=${BILIBILI_COOKIE}
-      # AI Provider - fill in your keys
-      - AI_PROVIDER=${AI_PROVIDER:-openrouter}
+      # AI Provider - production default is DeepSeek
+      - AI_PROVIDER=${AI_PROVIDER:-deepseek}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - OPENROUTER_MODEL=${OPENROUTER_MODEL:-deepseek/deepseek-v3.2}
       - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
       - DEEPSEEK_BASE_URL=${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
       - DEEPSEEK_MODEL=${DEEPSEEK_MODEL:-deepseek-v4-flash}
       - MIMO_API_KEY=${MIMO_API_KEY:-}
+      - MIMO_BASE_URL=${MIMO_BASE_URL:-https://token-plan-cn.xiaomimimo.com/v1}
+      - MIMO_MODEL=${MIMO_MODEL:-mimo-v2.5}
+      - REPORT_TIMEZONE=${REPORT_TIMEZONE:-Asia/Shanghai}
       # Admin - MUST be set before deployment
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:?请设置 ADMIN_PASSWORD 环境变量}
       - ADMIN_JWT_SECRET=${ADMIN_JWT_SECRET:?请设置 ADMIN_JWT_SECRET 环境变量（至少32字符）}

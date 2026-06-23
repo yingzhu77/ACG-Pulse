@@ -2,6 +2,14 @@
 
 本文档记录对长期维护有影响的项目决策。新增决策按时间倒序追加。
 
+## 2026-06-23：DeepSeek 默认配置与多值查询契约统一
+
+**Provider 默认值**：生产长期默认使用 `AI_PROVIDER=deepseek` 与 `DEEPSEEK_MODEL=deepseek-v4-flash`。README、`.env.production.example`、`docker-compose.yml` 和部署指南必须保持一致；OpenRouter 与 Xiaomi MiMo 作为可选 Provider 保留显式覆盖入口。
+
+**环境变量传递**：所有运行时代码会读取的可配置项必须在 Compose 中显式传入容器，不能只写在 `.env.production.example`。当前需要显式传入的 Provider/报告配置包括 `DEEPSEEK_BASE_URL`、`DEEPSEEK_MODEL`、`OPENROUTER_MODEL`、`MIMO_BASE_URL`、`MIMO_MODEL` 与 `REPORT_TIMEZONE`。
+
+**公开查询契约**：前端请求参数只对明确支持多值语义的字段拆分或重复传参，例如 `game`、`category`、`importance`、`sourceUid`。普通字符串字段如 `q` 必须原样传递，避免用户搜索词中的逗号被误解析。关注源筛选支持多个 `sourceUid`，后端按 UID 集合过滤主列表与 facets。
+
 ## 2026-06-22：AI 分析不阻塞情报入流，生产默认 DeepSeek V4 Flash
 
 **状态语义**：FeedItem 在采集成功后立即持久化并进入公开查询候选；公开查询允许 `analysis = null`，pending/failed Analysis 的默认可见性也是 `public`。AI 队列负责补齐分类、重要性、摘要、可见性与去重关键词，不是情报入库开关。
