@@ -11,6 +11,14 @@ export function getHealthLogRetentionDays(): number {
   return Math.floor(positiveNumber(process.env.HEALTH_LOG_RETENTION_DAYS, 30));
 }
 
+export function getCompletedAnalysisTaskRetentionDays(): number {
+  return Math.floor(positiveNumber(process.env.ANALYSIS_TASK_COMPLETED_RETENTION_DAYS, 14));
+}
+
+export function getFailedAnalysisTaskRetentionDays(): number {
+  return Math.floor(positiveNumber(process.env.ANALYSIS_TASK_FAILED_RETENTION_DAYS, 30));
+}
+
 export function getStatsCacheTtlMs(): number {
   return positiveNumber(process.env.STATS_CACHE_TTL_MS, 30_000);
 }

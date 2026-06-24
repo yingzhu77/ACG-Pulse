@@ -54,6 +54,13 @@ export interface OperationalMetrics {
       failed: number;
       oldestOpenAt: string | null;
       status: OperationalStatus;
+      historyCleanup: {
+        lastRunAt: string | null;
+        completedDeleted: number;
+        failedDeleted: number;
+        completedRetentionDays: number;
+        failedRetentionDays: number;
+      };
     };
   };
   api: ApiMetricsSnapshot;

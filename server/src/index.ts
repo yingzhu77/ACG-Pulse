@@ -17,7 +17,7 @@ import gamePulsePublicRouter from './gamepulse/routes/public.js';
 import hotSearchRouter from './gamepulse/routes/hotSearch.js';
 import { createAdminRouter } from './gamepulse/routes/admin.js';
 import communityRouter from './gamepulse/routes/community.js';
-import { startAnalysisQueueWorker } from './gamepulse/ai/analysisQueue.js';
+import { cleanupAnalysisTaskHistory, startAnalysisQueueWorker } from './gamepulse/ai/analysisQueue.js';
 import { enforceFeedItemLimit, runGamePulseCheck, getCheckerStatus } from './gamepulse/jobs/checker.js';
 import { backfillFeedItemIdentities } from './gamepulse/services/feedItemDedup.js';
 import { scheduledCommunityRefresh } from './gamepulse/services/communityService.js';
@@ -220,6 +220,14 @@ cron.schedule('15,45 * * * *', async () => {
     await scheduledCommunityRefresh(io);
   } catch (error) {
     console.error('[Community] Scheduled refresh failed:', error);
+  }
+});
+
+cron.schedule('20 3 * * *', async () => {
+  try {
+    await cleanupAnalysisTaskHistory();
+  } catch (error) {
+    console.error('[AnalysisQueue] Scheduled history cleanup failed:', error);
   }
 });
 

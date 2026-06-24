@@ -2,13 +2,23 @@ import type { Server } from 'socket.io';
 import { prisma } from '../../db.js';
 import { sendFeedItemEmail } from '../../services/email.js';
 import { ensureAnalysis } from './analyzer.js';
+import {
+  getCompletedAnalysisTaskRetentionDays,
+  getFailedAnalysisTaskRetentionDays
+} from '../config.js';
 
 const DEFAULT_ANALYSIS_BATCH_DELAY_MS = 5000;
 const DEFAULT_MAX_RETRIES = 3;
+const TERMINAL_NEXT_RUN_AT = new Date('9999-12-31T00:00:00.000Z');
 
 let processing = false;
 let currentIo: Server | undefined;
 let retryTimer: NodeJS.Timeout | undefined;
+let cleanupSnapshot = {
+  lastRunAt: null as string | null,
+  completedDeleted: 0,
+  failedDeleted: 0
+};
 
 export async function enqueueAnalysisTask(feedItemId: string, io?: Server): Promise<void> {
   currentIo = io || currentIo;
@@ -92,7 +102,57 @@ export async function reanalyzeAll(limit: number, io?: Server): Promise<number> 
 
 export function startAnalysisQueueWorker(io: Server): void {
   currentIo = io;
-  void recoverStaleRunningTasks().then(() => processAnalysisQueue(io));
+  void (async () => {
+    try {
+      await cleanupAnalysisTaskHistory();
+    } catch (error) {
+      console.error('[AnalysisQueue] History cleanup failed:', error);
+    }
+    try {
+      await recoverStaleRunningTasks();
+      await processAnalysisQueue(io);
+    } catch (error) {
+      console.error('[AnalysisQueue] Worker startup failed:', error);
+    }
+  })();
+}
+
+export async function cleanupAnalysisTaskHistory(now = new Date()) {
+  const completedRetentionDays = getCompletedAnalysisTaskRetentionDays();
+  const failedRetentionDays = getFailedAnalysisTaskRetentionDays();
+  const completedCutoff = new Date(now.getTime() - completedRetentionDays * 24 * 60 * 60 * 1000);
+  const failedCutoff = new Date(now.getTime() - failedRetentionDays * 24 * 60 * 60 * 1000);
+
+  const completed = await prisma.analysisTask.deleteMany({
+    where: { status: 'completed', completedAt: { lt: completedCutoff } }
+  });
+  const failed = await prisma.analysisTask.deleteMany({
+    where: {
+      status: 'failed',
+      failedAt: { lt: failedCutoff },
+      nextRunAt: { gte: TERMINAL_NEXT_RUN_AT }
+    }
+  });
+
+  cleanupSnapshot = {
+    lastRunAt: now.toISOString(),
+    completedDeleted: completed.count,
+    failedDeleted: failed.count
+  };
+  if (completed.count > 0 || failed.count > 0) {
+    console.log(
+      `[AnalysisQueue] Cleaned ${completed.count} completed and ${failed.count} failed historical tasks`
+    );
+  }
+  return cleanupSnapshot;
+}
+
+export function getAnalysisTaskCleanupSnapshot() {
+  return {
+    ...cleanupSnapshot,
+    completedRetentionDays: getCompletedAnalysisTaskRetentionDays(),
+    failedRetentionDays: getFailedAnalysisTaskRetentionDays()
+  };
 }
 
 export async function processAnalysisQueue(io?: Server): Promise<void> {
@@ -286,7 +346,9 @@ async function markTaskFailed(taskId: string, message: string, started: number):
       lastError: message.slice(0, 500),
       durationMs: Date.now() - started,
       failedAt: new Date(),
-      nextRunAt: retryCount < maxRetries ? new Date(Date.now() + retryDelayMs(retryCount)) : new Date('9999-12-31T00:00:00.000Z')
+      nextRunAt: retryCount < maxRetries
+        ? new Date(Date.now() + retryDelayMs(retryCount))
+        : TERMINAL_NEXT_RUN_AT
     }
   });
 }

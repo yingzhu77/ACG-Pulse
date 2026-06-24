@@ -4,6 +4,7 @@ import { prisma } from '../../db.js';
 import { getMaxFeedItems } from '../config.js';
 import { getApiMetricsSnapshot } from './apiMetrics.js';
 import type { OperationalMetrics, OperationalStatus } from './types.js';
+import { getAnalysisTaskCleanupSnapshot } from '../ai/analysisQueue.js';
 
 const COMMUNITY_WARNING_COUNT = 1000;
 const COMMUNITY_CRITICAL_COUNT = 2500;
@@ -104,6 +105,7 @@ export async function getOperationalMetrics(): Promise<OperationalMetrics> {
   const pageCount = Number(pageCountRows[0]?.page_count || 0);
   const pageSize = Number(pageSizeRows[0]?.page_size || 0);
   const freePages = Number(freePageRows[0]?.freelist_count || 0);
+  const historyCleanup = getAnalysisTaskCleanupSnapshot();
 
   const capacityStatuses = [feedStatus, communityStatus, queueStatus];
   if (staleCommunity > 0 || failedQueue > 0) capacityStatuses.push('warning');
@@ -138,6 +140,7 @@ export async function getOperationalMetrics(): Promise<OperationalMetrics> {
         failed: failedQueue,
         oldestOpenAt: oldestOpenTask?.createdAt.toISOString() || null,
         status: failedQueue > 0 ? highestStatus([queueStatus, 'warning']) : queueStatus,
+        historyCleanup
       },
     },
     api,

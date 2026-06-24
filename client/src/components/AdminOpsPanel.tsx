@@ -83,6 +83,13 @@ export function AdminOpsPanel({ metrics, loading, error, onRefresh }: AdminOpsPa
             <div><dt>社区话题</dt><dd>{metrics.capacity.community.total}（过期 {metrics.capacity.community.stale}）</dd></div>
             <div><dt>隐藏情报</dt><dd>{metrics.capacity.feed.hidden}</dd></div>
             <div><dt>分析队列</dt><dd>{metrics.capacity.analysisQueue.open} 待处理 · {metrics.capacity.analysisQueue.failed} 失败</dd></div>
+            <div>
+              <dt>任务历史清理</dt>
+              <dd>
+                成功 {metrics.capacity.analysisQueue.historyCleanup.completedDeleted}
+                {' · '}失败 {metrics.capacity.analysisQueue.historyCleanup.failedDeleted}
+              </dd>
+            </div>
             <div><dt>WAL / 可复用</dt><dd>{formatBytes(metrics.storage.walBytes)} / {formatBytes(metrics.storage.reusableBytes)}</dd></div>
           </dl>
 

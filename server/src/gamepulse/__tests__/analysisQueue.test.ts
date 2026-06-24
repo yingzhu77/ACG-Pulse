@@ -93,13 +93,24 @@ function matchesWhere(task: MockTask, where: Record<string, unknown>): boolean {
   }
 
   if (where.nextRunAt && typeof where.nextRunAt === 'object') {
-    const dateFilter = where.nextRunAt as { lte?: Date };
+    const dateFilter = where.nextRunAt as { lte?: Date; gt?: Date; gte?: Date };
     if (dateFilter.lte && task.nextRunAt > dateFilter.lte) return false;
+    if (dateFilter.gt && task.nextRunAt <= dateFilter.gt) return false;
+    if (dateFilter.gte && task.nextRunAt < dateFilter.gte) return false;
   }
 
   if (where.retryCount && typeof where.retryCount === 'object') {
     const retryFilter = where.retryCount as { lt?: number };
     if (retryFilter.lt !== undefined && task.retryCount >= retryFilter.lt) return false;
+  }
+
+  for (const field of ['completedAt', 'failedAt'] as const) {
+    const filter = where[field];
+    if (filter && typeof filter === 'object') {
+      const dateFilter = filter as { lt?: Date };
+      const value = task[field];
+      if (dateFilter.lt && (!value || value >= dateFilter.lt)) return false;
+    }
   }
 
   // Handle OR conditions — task must match at least one branch
@@ -184,6 +195,13 @@ vi.mock('../../db.js', () => ({
         const matched = tasks.filter(task => matchesWhere(task, where));
         matched.forEach(task => applyTaskUpdate(task, data));
         return { count: matched.length };
+      }),
+      deleteMany: vi.fn(async ({ where }: { where: Record<string, unknown> }) => {
+        const before = tasks.length;
+        for (let index = tasks.length - 1; index >= 0; index--) {
+          if (matchesWhere(tasks[index], where)) tasks.splice(index, 1);
+        }
+        return { count: before - tasks.length };
       }),
       groupBy: vi.fn(async () => {
         const counts = new Map<string, number>();
@@ -556,5 +574,79 @@ describe('analysis queue', () => {
     expect(tasks.filter(t => t.status === 'pending').length).toBe(2);
     expect(tasks[0].lastError).toBeNull();
     expect(tasks[1].lastError).toBeNull();
+  });
+
+  test('cleanupAnalysisTaskHistory keeps recent tasks and applies status-specific retention', async () => {
+    process.env.ANALYSIS_TASK_COMPLETED_RETENTION_DAYS = '14';
+    process.env.ANALYSIS_TASK_FAILED_RETENTION_DAYS = '30';
+    const now = new Date('2026-06-24T00:00:00.000Z');
+    const baseTask = {
+      feedItemId: 'item-1',
+      retryCount: 0,
+      maxRetries: 3,
+      lastError: null,
+      provider: 'deepseek',
+      model: 'deepseek-v4-flash',
+      durationMs: 100,
+      nextRunAt: now,
+      startedAt: now,
+      createdAt: now,
+      updatedAt: now
+    };
+    tasks.push(
+      {
+        ...baseTask,
+        id: 'completed-old',
+        status: 'completed',
+        completedAt: new Date('2026-06-01T00:00:00.000Z'),
+        failedAt: null
+      },
+      {
+        ...baseTask,
+        id: 'completed-recent',
+        status: 'completed',
+        completedAt: new Date('2026-06-20T00:00:00.000Z'),
+        failedAt: null
+      },
+      {
+        ...baseTask,
+        id: 'failed-old',
+        status: 'failed',
+        nextRunAt: new Date('9999-12-31T00:00:00.000Z'),
+        completedAt: null,
+        failedAt: new Date('2026-05-01T00:00:00.000Z')
+      },
+      {
+        ...baseTask,
+        id: 'failed-recent',
+        status: 'failed',
+        completedAt: null,
+        failedAt: new Date('2026-06-10T00:00:00.000Z')
+      },
+      {
+        ...baseTask,
+        id: 'failed-retryable-old',
+        status: 'failed',
+        nextRunAt: new Date('2026-05-01T00:01:00.000Z'),
+        completedAt: null,
+        failedAt: new Date('2026-05-01T00:00:00.000Z')
+      }
+    );
+
+    const { cleanupAnalysisTaskHistory, getAnalysisTaskCleanupSnapshot } = await import('../ai/analysisQueue.js');
+    const result = await cleanupAnalysisTaskHistory(now);
+
+    expect(result).toMatchObject({ completedDeleted: 1, failedDeleted: 1 });
+    expect(tasks.map(task => task.id)).toEqual([
+      'completed-recent',
+      'failed-recent',
+      'failed-retryable-old'
+    ]);
+    expect(getAnalysisTaskCleanupSnapshot()).toMatchObject({
+      completedRetentionDays: 14,
+      failedRetentionDays: 30
+    });
+    delete process.env.ANALYSIS_TASK_COMPLETED_RETENTION_DAYS;
+    delete process.env.ANALYSIS_TASK_FAILED_RETENTION_DAYS;
   });
 });
