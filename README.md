@@ -32,7 +32,7 @@
 | 多源采集 | 聚合 B站、米游社、NGA、小黑盒、官网、RSSHub 等 24+ 数据源 |
 | AI 分析 | 支持 OpenRouter、DeepSeek、Xiaomi MiMo，完成分类、摘要和重要性判断 |
 | 故事聚合 | 将多来源重复内容合并为一个故事，同时保留原始出处 |
-| 社区风向 | 提供情感、分类、来源筛选，以及热度与时间排序 |
+| 社区风向 | 提供情感、分类、来源筛选、数据时效，以及来源内归一化热度排序 |
 | 数据洞察 | 展示情报分布、来源占比、热门话题和近期趋势 |
 | 运维监控 | 监控容量、SQLite/WAL、API P95、错误率、数据源和分析队列 |
 
@@ -140,6 +140,8 @@ npm run dev
 | `CLIENT_URL` | 是 | 允许访问 API 的前端 Origin |
 | `BILIBILI_COOKIE` | 否 | 提升 B站采集稳定性 |
 | `MAX_FEED_ITEMS` | 否 | 情报保留上限，默认 2000 |
+| `ANALYSIS_TASK_COMPLETED_RETENTION_DAYS` | 否 | 成功分析任务历史保留天数，默认 14 |
+| `ANALYSIS_TASK_FAILED_RETENTION_DAYS` | 否 | 终态失败分析任务历史保留天数，默认 30 |
 | `REPORT_TIMEZONE` | 否 | 日报/周报日期边界时区，默认 `Asia/Shanghai` |
 
 完整配置参见 [.env.production.example](.env.production.example)。不要提交真实密码、API Key 或 Cookie。

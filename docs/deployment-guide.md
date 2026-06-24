@@ -85,6 +85,7 @@ DEEPSEEK_MODEL=deepseek-v4-flash
 # 方案 B - OpenRouter：
 # AI_PROVIDER=openrouter
 # OPENROUTER_API_KEY=你的key
+# OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
 # OPENROUTER_MODEL=deepseek/deepseek-v3.2
 # 方案 C - Xiaomi MiMo Token Plan：
 # AI_PROVIDER=mimo
@@ -92,6 +93,8 @@ DEEPSEEK_MODEL=deepseek-v4-flash
 # MIMO_BASE_URL=https://token-plan-cn.xiaomimimo.com/v1  # 中国集群（默认）
 # MIMO_MODEL=mimo-v2.5
 MAX_FEED_ITEMS=2000
+ANALYSIS_TASK_COMPLETED_RETENTION_DAYS=14
+ANALYSIS_TASK_FAILED_RETENTION_DAYS=30
 REPORT_TIMEZONE=Asia/Shanghai
 ```
 
@@ -286,6 +289,10 @@ docker compose ps
 ```
 
 无需重新抓取历史情报。Provider 到期期间失败的 AnalysisTask 可在管理后台先重试一条，确认 provider/model 正确后再批量重试。FeedItem 在采集时已经入库；重试只补齐或修正 Analysis，成功后分类、重要性和可见性可能变化。
+
+社区情感结果带有判断状态、方法、置信度和规则版本。升级后旧记录会按新版本逐步重新判断；AI 未配置、超时或输出异常时显示为“未判断”，不会计入中性话题。社区热度采用各来源内部百分位映射，因此适合比较同一轮采集中的相对热度，不代表平台原始播放量或回复量可以直接横向比较。
+
+分析任务历史会在启动时及每天凌晨自动清理。成功任务默认保留 14 天，已耗尽重试机会的失败任务默认保留 30 天，最近一次清理数量可在管理后台运行状态中查看。
 
 ## 常见问题
 
