@@ -115,7 +115,8 @@ case "$AI_PROVIDER_VALUE" in
     echo "WARNING: AI_PROVIDER is not set. Analysis features will not work."
     ;;
   *)
-    echo "WARNING: Unknown AI_PROVIDER '${AI_PROVIDER_VALUE}'. Expected: openrouter, deepseek, or mimo."
+    echo "INVALID: Unknown AI_PROVIDER '${AI_PROVIDER_VALUE}'. Expected: openrouter, deepseek, or mimo."
+    ERRORS=$((ERRORS + 1))
     ;;
 esac
 

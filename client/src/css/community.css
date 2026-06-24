@@ -315,6 +315,16 @@
   line-height: 1.5;
 }
 
+.community-data-meta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 4px 2px 0;
+  color: var(--text-soft);
+  font-size: 0.68rem;
+  line-height: 1.5;
+}
+
 .community-filter-bar {
   display: flex;
   flex-wrap: wrap;
@@ -436,6 +446,17 @@
   border-color: rgba(43, 183, 232, 0.34);
   background: rgba(43, 183, 232, 0.12);
   color: var(--cyan);
+}
+
+.tag-sentiment-unknown,
+.tag[class*="tag-sentiment-"].is-uncertain {
+  border-color: var(--stroke);
+  background: var(--panel-soft);
+  color: var(--text-muted);
+}
+
+.tag[class*="tag-sentiment-"].is-uncertain {
+  opacity: 0.78;
 }
 
 /* Heat score ring */

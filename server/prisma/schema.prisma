@@ -151,8 +151,13 @@ model AnalysisTask {
 model CommunityTopic {
   id             String   @id // e.g. "bilibili-12345", "nga-67890"
   title          String
-  sentiment      String   // positive, negative, neutral
+  sentiment      String   // positive, negative, neutral, unknown
   sentimentScore Float    @default(0)
+  sentimentStatus String  @default("legacy") // completed, failed, unavailable, legacy
+  sentimentMethod String  @default("none") // ai, keyword, none
+  sentimentConfidence Float @default(0)
+  sentimentVersion String?
+  sentimentAnalyzedAt DateTime?
   heatScore      Float    @default(0)
   category       String
   source         String   // bilibili, nga, xiaoheihe

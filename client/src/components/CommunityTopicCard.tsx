@@ -16,7 +16,8 @@ interface CommunityTopicCardProps {
 export const CommunityTopicCard = memo(function CommunityTopicCard({ topic }: CommunityTopicCardProps) {
   const sentimentColor =
     topic.sentiment === 'positive' ? 'var(--green)' :
-    topic.sentiment === 'negative' ? 'var(--pink)' : 'var(--cyan)';
+    topic.sentiment === 'negative' ? 'var(--pink)' :
+    topic.sentiment === 'neutral' ? 'var(--cyan)' : 'var(--text-muted)';
 
   return (
     <motion.article
@@ -32,7 +33,11 @@ export const CommunityTopicCard = memo(function CommunityTopicCard({ topic }: Co
 
       <div className="story-body">
         <div className="story-meta-line">
-          <SentimentBadge sentiment={topic.sentiment} />
+          <SentimentBadge
+            sentiment={topic.sentiment}
+            status={topic.sentimentStatus}
+            confidence={topic.sentimentConfidence}
+          />
           <Tag>{TOPIC_CATEGORIES[topic.category] || topic.category}</Tag>
           <span className="source-pill">{COMMUNITY_SOURCES[topic.source] || topic.source}</span>
         </div>

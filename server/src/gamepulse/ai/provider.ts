@@ -1,5 +1,6 @@
 import axios from 'axios';
 import type { LLMAnalyzeInput, LLMProviderResult, NormalizedAnalysis } from '../types.js';
+import { providerHeaders, resolveProviderConfig } from './providerConfig.js';
 
 interface ChatCompletionResponse {
   choices?: Array<{
@@ -8,13 +9,6 @@ interface ChatCompletionResponse {
       reasoning_content?: string;
     };
   }>;
-}
-
-interface ProviderConfig {
-  provider: 'openrouter' | 'deepseek' | 'mimo';
-  apiKey: string;
-  baseUrl: string;
-  model: string;
 }
 
 export async function analyzeWithProvider(input: LLMAnalyzeInput): Promise<LLMProviderResult> {
@@ -61,18 +55,7 @@ export async function analyzeWithProvider(input: LLMAnalyzeInput): Promise<LLMPr
         },
         {
           timeout: config.provider === 'mimo' ? 90000 : 30000,
-          headers: {
-            ...(config.provider === 'mimo'
-              ? { 'api-key': config.apiKey }
-              : { Authorization: `Bearer ${config.apiKey}` }),
-            'Content-Type': 'application/json',
-            ...(config.provider === 'openrouter'
-              ? {
-                  'HTTP-Referer': process.env.CLIENT_URL || 'http://localhost:5173',
-                  'X-Title': 'Game Pulse'
-                }
-              : {})
-          }
+          headers: providerHeaders(config)
         }
       );
 
@@ -93,41 +76,6 @@ export async function analyzeWithProvider(input: LLMAnalyzeInput): Promise<LLMPr
   }
 
   throw lastError;
-}
-
-function resolveProviderConfig(): ProviderConfig | null {
-  const preferred = (process.env.AI_PROVIDER || 'openrouter').toLowerCase();
-
-  if (preferred === 'mimo') {
-    const apiKey = process.env.MIMO_API_KEY;
-    if (!apiKey) return null;
-    return {
-      provider: 'mimo',
-      apiKey,
-      baseUrl: process.env.MIMO_BASE_URL || 'https://token-plan-cn.xiaomimimo.com/v1',
-      model: process.env.MIMO_MODEL || 'mimo-v2.5'
-    };
-  }
-
-  if (preferred === 'deepseek') {
-    const apiKey = process.env.DEEPSEEK_API_KEY;
-    if (!apiKey) return null;
-    return {
-      provider: 'deepseek',
-      apiKey,
-      baseUrl: process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com',
-      model: process.env.DEEPSEEK_MODEL || 'deepseek-v4-flash'
-    };
-  }
-
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) return null;
-  return {
-    provider: 'openrouter',
-    apiKey,
-    baseUrl: 'https://openrouter.ai/api/v1',
-    model: process.env.OPENROUTER_MODEL || 'deepseek/deepseek-v3.2'
-  };
 }
 
 function buildSystemPrompt(): string {

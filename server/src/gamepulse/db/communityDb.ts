@@ -5,11 +5,11 @@
 
 import { prisma } from '../../db.js';
 import type { Prisma } from '@prisma/client';
-import type { CommunityTopic } from '../adapters/community.js';
+import type { CommunityTopic } from '../community/types.js';
 import { normalizeCommunityTopicUrl } from '../communityUrls.js';
 
 const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
-const VALID_SENTIMENTS = new Set(['positive', 'negative', 'neutral']);
+const VALID_SENTIMENTS = new Set(['positive', 'negative', 'neutral', 'unknown']);
 
 function safeParseTrend(raw: string, id: string): number[] {
   try {
@@ -22,36 +22,7 @@ function safeParseTrend(raw: string, id: string): number[] {
 }
 
 function safeSentiment(raw: string): CommunityTopic['sentiment'] {
-  return VALID_SENTIMENTS.has(raw) ? (raw as CommunityTopic['sentiment']) : 'neutral';
-}
-
-/** Check if DB has data fresher than TTL */
-export async function hasRecentData(): Promise<boolean> {
-  const latest = await prisma.communityTopic.findFirst({
-    orderBy: { fetchedAt: 'desc' },
-    select: { fetchedAt: true }
-  });
-  if (!latest) return false;
-  return Date.now() - latest.fetchedAt.getTime() < CACHE_TTL_MS;
-}
-
-/** Load topics from DB with optional filters */
-export async function loadTopics(filters?: {
-  sentiment?: string;
-  category?: string;
-  source?: string;
-}): Promise<CommunityTopic[]> {
-  const where: { sentiment?: string; category?: string; source?: string } = {};
-  if (filters?.sentiment && filters.sentiment !== 'all') where.sentiment = filters.sentiment;
-  if (filters?.category && filters.category !== 'all') where.category = filters.category;
-  if (filters?.source && filters.source !== 'all') where.source = filters.source;
-
-  const rows = await prisma.communityTopic.findMany({
-    where,
-    orderBy: { heatScore: 'desc' }
-  });
-
-  return rows.map(rowToTopic);
+  return VALID_SENTIMENTS.has(raw) ? (raw as CommunityTopic['sentiment']) : 'unknown';
 }
 
 export type CommunityTopicSort = 'heat' | 'latest';
@@ -67,7 +38,10 @@ export interface CommunityTopicPageOptions {
 
 export async function loadTopicPage(options: CommunityTopicPageOptions) {
   const where: Prisma.CommunityTopicWhereInput = {};
-  if (options.sentiment) where.sentiment = options.sentiment;
+  if (options.sentiment) {
+    where.sentiment = options.sentiment;
+    where.sentimentStatus = 'completed';
+  }
   if (options.category) where.category = options.category;
   if (options.source) where.source = options.source;
 
@@ -83,13 +57,19 @@ export async function loadTopicPage(options: CommunityTopicPageOptions) {
       take: options.limit
     }),
     prisma.communityTopic.count({ where }),
-    prisma.communityTopic.groupBy({ by: ['sentiment'], where, _count: { _all: true } }),
+    prisma.communityTopic.groupBy({
+      by: ['sentiment', 'sentimentStatus'],
+      where,
+      _count: { _all: true }
+    }),
     prisma.communityTopic.aggregate({ where, _avg: { heatScore: true } })
   ]);
 
-  const sentimentCounts = { positive: 0, negative: 0, neutral: 0 };
+  const sentimentCounts = { positive: 0, negative: 0, neutral: 0, unknown: 0 };
   for (const group of sentimentGroups) {
-    if (group.sentiment in sentimentCounts) {
+    if (group.sentimentStatus !== 'completed') {
+      sentimentCounts.unknown += group._count._all;
+    } else if (group.sentiment in sentimentCounts) {
       sentimentCounts[group.sentiment as keyof typeof sentimentCounts] = group._count._all;
     }
   }
@@ -119,7 +99,17 @@ export async function upsertTopics(topics: CommunityTopic[]): Promise<void> {
   const topicIds = topics.map(t => t.id);
   const existingRows = await prisma.communityTopic.findMany({
     where: { id: { in: topicIds } },
-    select: { id: true, trend: true, sentiment: true, sentimentScore: true }
+    select: {
+      id: true,
+      trend: true,
+      sentiment: true,
+      sentimentScore: true,
+      sentimentStatus: true,
+      sentimentMethod: true,
+      sentimentConfidence: true,
+      sentimentVersion: true,
+      sentimentAnalyzedAt: true
+    }
   });
   const existingMap = new Map(existingRows.map(r => [r.id, r]));
 
@@ -167,13 +157,18 @@ export async function upsertTopics(topics: CommunityTopic[]): Promise<void> {
         trend: JSON.stringify(mergedTrend),
         summary: topic.summary,
         url: topic.url,
+        fetchedAt: now,
         lastSeenAt: now
       };
-      // Only overwrite sentiment if the new value is a real analysis (not the placeholder)
-      if (topic.sentiment !== 'neutral' || topic.sentimentScore !== 0) {
-        updateData.sentiment = topic.sentiment;
-        updateData.sentimentScore = topic.sentimentScore;
-      }
+      updateData.sentiment = topic.sentiment;
+      updateData.sentimentScore = topic.sentimentScore;
+      updateData.sentimentStatus = topic.sentimentStatus;
+      updateData.sentimentMethod = topic.sentimentMethod;
+      updateData.sentimentConfidence = topic.sentimentConfidence;
+      updateData.sentimentVersion = topic.sentimentVersion;
+      updateData.sentimentAnalyzedAt = topic.sentimentAnalyzedAt
+        ? new Date(topic.sentimentAnalyzedAt)
+        : null;
 
       await prisma.communityTopic.update({
         where: { id: topic.id },
@@ -191,6 +186,11 @@ function topicCreateData(topic: CommunityTopic, now: Date) {
     title: topic.title,
     sentiment: topic.sentiment,
     sentimentScore: topic.sentimentScore,
+    sentimentStatus: topic.sentimentStatus,
+    sentimentMethod: topic.sentimentMethod,
+    sentimentConfidence: topic.sentimentConfidence,
+    sentimentVersion: topic.sentimentVersion,
+    sentimentAnalyzedAt: topic.sentimentAnalyzedAt ? new Date(topic.sentimentAnalyzedAt) : null,
     heatScore: topic.heatScore,
     category: topic.category,
     source: topic.source,
@@ -260,6 +260,11 @@ function rowToTopic(row: {
   title: string;
   sentiment: string;
   sentimentScore: number;
+  sentimentStatus: string;
+  sentimentMethod: string;
+  sentimentConfidence: number;
+  sentimentVersion: string | null;
+  sentimentAnalyzedAt: Date | null;
   heatScore: number;
   category: string;
   source: string;
@@ -268,11 +273,17 @@ function rowToTopic(row: {
   url: string;
   publishedAt: Date;
 }): CommunityTopic {
+  const sentimentStatus = safeSentimentStatus(row.sentimentStatus);
   return {
     id: row.id,
     title: row.title,
-    sentiment: safeSentiment(row.sentiment),
+    sentiment: sentimentStatus === 'completed' ? safeSentiment(row.sentiment) : 'unknown',
     sentimentScore: row.sentimentScore,
+    sentimentStatus,
+    sentimentMethod: safeSentimentMethod(row.sentimentMethod),
+    sentimentConfidence: Math.max(0, Math.min(1, row.sentimentConfidence)),
+    sentimentVersion: row.sentimentVersion,
+    sentimentAnalyzedAt: row.sentimentAnalyzedAt?.toISOString() || null,
     heatScore: row.heatScore,
     category: row.category,
     source: row.source,
@@ -281,4 +292,16 @@ function rowToTopic(row: {
     url: normalizeCommunityTopicUrl(row),
     publishedAt: row.publishedAt.toISOString()
   };
+}
+
+function safeSentimentStatus(raw: string): CommunityTopic['sentimentStatus'] {
+  return ['completed', 'failed', 'unavailable', 'legacy'].includes(raw)
+    ? raw as CommunityTopic['sentimentStatus']
+    : 'legacy';
+}
+
+function safeSentimentMethod(raw: string): CommunityTopic['sentimentMethod'] {
+  return ['ai', 'keyword', 'none'].includes(raw)
+    ? raw as CommunityTopic['sentimentMethod']
+    : 'none';
 }

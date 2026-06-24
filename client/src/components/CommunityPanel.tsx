@@ -6,6 +6,7 @@ import { cn } from '../lib/utils';
 import { CommunityTopicCard } from './CommunityTopicCard';
 import { SummaryMetric } from './SummaryMetric';
 import { onCommunityUpdate } from '../services/socket';
+import { formatDateTime } from '../utils/format';
 
 export function CommunityPanel() {
   const pageSize = 30;
@@ -20,8 +21,13 @@ export function CommunityPanel() {
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
-  const [summary, setSummary] = useState<{ sentimentCounts: { positive: number; negative: number; neutral: number }; avgHeat: number } | null>(null);
+  const [summary, setSummary] = useState<{
+    sentimentCounts: { positive: number; negative: number; neutral: number; unknown: number };
+    avgHeat: number;
+  } | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isStale, setIsStale] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [showScrollTop, setShowScrollTop] = useState(false);
   const panelTopRef = useRef<HTMLDivElement | null>(null);
   const requestControllerRef = useRef<AbortController | null>(null);
@@ -56,7 +62,7 @@ export function CommunityPanel() {
     if (categoryFilter) params.set('category', categoryFilter);
     if (sourceFilter) params.set('source', sourceFilter);
 
-    fetch(`/api/community/topics?${params}`, { signal: controller.signal })
+    fetch(`/api/community/topics?${params}`, { signal: controller.signal, cache: 'no-store' })
       .then(r => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
@@ -70,6 +76,8 @@ export function CommunityPanel() {
         setPage(data.pagination?.page || nextPage);
         setTotal(data.pagination?.total || 0);
         setTotalPages(data.pagination?.totalPages || 0);
+        setIsStale(Boolean(data.isStale));
+        setLastUpdated(data.lastUpdated || null);
         // If server reports background refresh in progress, keep polling
         if (data.isRefreshing) {
           setIsRefreshing(true);
@@ -84,6 +92,8 @@ export function CommunityPanel() {
           setSummary(null);
           setTotal(0);
           setTotalPages(0);
+          setIsStale(false);
+          setLastUpdated(null);
         }
         setError(err.message || '加载失败');
       })
@@ -112,7 +122,7 @@ export function CommunityPanel() {
     });
   }, [fetchData]);
 
-  const sentimentCounts = summary?.sentimentCounts || { positive: 0, negative: 0, neutral: 0 };
+  const sentimentCounts = summary?.sentimentCounts || { positive: 0, negative: 0, neutral: 0, unknown: 0 };
   const avgHeat = summary?.avgHeat || 0;
   const hasMore = page < totalPages;
 
@@ -142,6 +152,12 @@ export function CommunityPanel() {
       </div>
       <p className="community-sentiment-note">
         情感倾向由关键词规则与 AI 辅助判断，可能误判反讽、梗图语境或少量样本，仅供趋势参考。
+      </p>
+      <p className="community-data-meta" aria-live="polite">
+        <Clock3 className="h-3 w-3" />
+        {lastUpdated ? `数据更新于 ${formatDateTime(lastUpdated)}` : '等待首次数据更新'}
+        {isStale && ' · 当前展示缓存数据，后台正在更新'}
+        {sentimentCounts.unknown > 0 && ` · ${sentimentCounts.unknown} 条暂未判断`}
       </p>
 
       <div className="community-filter-bar">

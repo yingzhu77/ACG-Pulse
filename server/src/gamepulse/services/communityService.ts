@@ -4,7 +4,8 @@
  */
 
 import type { Server } from 'socket.io';
-import { aggregateCommunityTopics, type CommunityTopic } from '../adapters/community.js';
+import { aggregateCommunityTopics } from '../adapters/community.js';
+import type { CommunityTopic, ExistingCommunityTopic } from '../community/types.js';
 import { loadAllTopics, upsertTopics, cleanupStale } from '../db/communityDb.js';
 
 // Concurrency lock to prevent parallel fetches
@@ -21,10 +22,20 @@ export async function refreshCommunityData(): Promise<CommunityTopic[]> {
 async function doRefresh(): Promise<CommunityTopic[]> {
   // Get IDs of existing topics for incremental update
   const allTopics = await loadAllTopics();
-  const existingIds = new Set(allTopics.map(t => t.id));
+  const existingTopics = new Map<string, ExistingCommunityTopic>(
+    allTopics.map(topic => [topic.id, {
+      sentiment: topic.sentiment,
+      sentimentScore: topic.sentimentScore,
+      sentimentStatus: topic.sentimentStatus,
+      sentimentMethod: topic.sentimentMethod,
+      sentimentConfidence: topic.sentimentConfidence,
+      sentimentVersion: topic.sentimentVersion,
+      sentimentAnalyzedAt: topic.sentimentAnalyzedAt
+    }])
+  );
 
   // Fetch with incremental optimization (skip AI for existing topics)
-  const topics = await aggregateCommunityTopics({ existingIds });
+  const topics = await aggregateCommunityTopics({ existingTopics });
 
   // Upsert: new topics get inserted, existing ones get trend merged
   await upsertTopics(topics);

@@ -20,6 +20,11 @@ const topic = {
   title: 'Topic',
   sentiment: 'positive',
   sentimentScore: 0.8,
+  sentimentStatus: 'completed',
+  sentimentMethod: 'ai',
+  sentimentConfidence: 0.9,
+  sentimentVersion: '2026-06-24-v1',
+  sentimentAnalyzedAt: new Date('2026-06-21T08:05:00Z'),
   heatScore: 88,
   category: 'gameplay',
   source: 'xiaoheihe',
@@ -34,7 +39,11 @@ describe('community topic pagination', () => {
     vi.clearAllMocks();
     findMany.mockResolvedValue([topic]);
     count.mockResolvedValue(31);
-    groupBy.mockResolvedValue([{ sentiment: 'positive', _count: { _all: 31 } }]);
+    groupBy.mockResolvedValue([{
+      sentiment: 'positive',
+      sentimentStatus: 'completed',
+      _count: { _all: 31 }
+    }]);
     aggregate.mockResolvedValue({ _avg: { heatScore: 72.4 } });
   });
 
@@ -48,7 +57,11 @@ describe('community topic pagination', () => {
     });
 
     expect(findMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: { sentiment: 'positive', source: 'xiaoheihe' },
+      where: {
+        sentiment: 'positive',
+        sentimentStatus: 'completed',
+        source: 'xiaoheihe'
+      },
       orderBy: [{ publishedAt: 'desc' }, { id: 'desc' }],
       skip: 30,
       take: 30
@@ -69,5 +82,32 @@ describe('community topic pagination', () => {
       skip: 0,
       take: 30
     }));
+  });
+
+  it('keeps unknown sentiment separate from neutral counts', async () => {
+    groupBy.mockResolvedValueOnce([
+      { sentiment: 'neutral', sentimentStatus: 'completed', _count: { _all: 4 } },
+      { sentiment: 'positive', sentimentStatus: 'legacy', _count: { _all: 2 } }
+    ]);
+
+    const result = await loadTopicPage({ page: 1, limit: 30, sort: 'heat' });
+    expect(result.sentimentCounts.neutral).toBe(4);
+    expect(result.sentimentCounts.unknown).toBe(2);
+  });
+
+  it('maps legacy rows to unknown until they are reanalyzed', async () => {
+    findMany.mockResolvedValueOnce([{
+      ...topic,
+      sentiment: 'positive',
+      sentimentStatus: 'legacy',
+      sentimentMethod: 'none',
+      sentimentConfidence: 0,
+      sentimentVersion: null,
+      sentimentAnalyzedAt: null
+    }]);
+
+    const result = await loadTopicPage({ page: 1, limit: 30, sort: 'heat' });
+    expect(result.topics[0].sentiment).toBe('unknown');
+    expect(result.topics[0].sentimentStatus).toBe('legacy');
   });
 });
