@@ -7,6 +7,7 @@
 - `docs/ROADMAP.md`：阶段目标和待办，不记录临时过程。
 - `docs/LESSONS.md`：踩坑、根因、可复用规则。
 - `docs/DECISIONS.md`：影响架构或长期维护的决策。
+- `docs/API_CONTRACTS.md`：接口语义、共享 DTO 与变更检查清单。
 - `README.md`：面向使用者的入口，只放必要链接和快速说明。
 - `.claude/`：本地工具配置，不作为项目事实来源。
 
@@ -40,6 +41,7 @@
 6. 如果形成新经验，更新 `docs/LESSONS.md`。
 7. 如果改变架构方向，更新 `docs/DECISIONS.md`。
 8. 涉及外部 AI Provider 时，先验证官方模型列表、弃用时间和容器环境变量传递，再修改默认值。
+9. 涉及 API 字段、query 参数或响应结构时，同步检查 `shared/`、`docs/API_CONTRACTS.md`、前端调用和后端校验。
 
 ## 验证命令
 

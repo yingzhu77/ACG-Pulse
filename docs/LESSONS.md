@@ -774,6 +774,18 @@ END
 
 ---
 
+### 5.31 接口契约不能只留在前端 API 客户端
+
+**问题**：如果 DTO 只定义在 `client/src/services/api.ts`，后续窗口修改 route 或前端调用时容易把“当前调用方需要什么”误认为“接口长期承诺什么”。社区、运维、公共列表等类型分散后，新窗口还需要读多处代码才能确认字段语义。
+
+**规则**：
+- 前端消费的稳定 DTO 放进 `shared/`，API 客户端只负责请求封装和 endpoint 调用。
+- route 响应、运行时校验、共享 DTO 和 `docs/API_CONTRACTS.md` 必须同步更新。
+- 字段语义变化优先新增字段并文档化，不轻易重命名既有字段；例如热度指标拆分时保留 `heatScore` 兼容展示，再新增 `rawHeatScore` 或 `momentumHeatScore`。
+- Query 多值语义必须白名单化，不能把所有逗号字符串都拆分。
+
+---
+
 ## 六、Prompt 模板（可复用）
 
 ### Bug 修复

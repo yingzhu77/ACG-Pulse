@@ -161,6 +161,7 @@ CI 会在推送和 Pull Request 时运行项目验证。
 | --- | --- |
 | [部署指南](docs/deployment-guide.md) | 生产部署、反向代理与更新流程 |
 | [部署排障](docs/deployment-troubleshooting.md) | 构建、容器、配置与数据迁移问题 |
+| [API 契约](docs/API_CONTRACTS.md) | 接口语义、共享 DTO 与变更检查清单 |
 | [Agent 协作手册](docs/AGENT_WORKFLOW.md) | 任务输入、开发流程、验证与提交规范 |
 | [路线图](docs/ROADMAP.md) | 当前阶段和后续方向 |
 | [踩坑记录](docs/LESSONS.md) | 已验证的问题模式、根因和处理规则 |

@@ -18,7 +18,7 @@
 
 - **社区风向刷新**：stale-first 已解决冷启动阻塞，但后台刷新失败时需要在页面上继续保持“旧数据可读 + 明确更新时间”。
 - **FTS 召回上限**：10000 是阶段性方案，不是无限召回；当公开数据量明显超过该规模时，优先改成 FTS raw query join 或外部搜索。
-- **分析任务历史**：`AnalysisTask` 目前会保留完成记录；如果运行一段时间后后台任务列表和数据库增长明显，需要增加任务保留策略。
+- **分析任务历史**：成功任务默认保留 14 天，已耗尽重试机会的失败任务默认保留 30 天；后续观察清理数量、失败任务排障窗口和保留期是否需要按生产规模调整。
 - **报告时区**：默认推荐继续使用 `Asia/Shanghai`。如果未来要允许用户级时区，需要新增公开配置接口，不要只在前端硬编码。
 - **运维脚本**：`reset-admin-password.sh` 依赖 `openssl`，目标服务器是 Ubuntu 24.04 时可用；若迁移到极简镜像，需要补 fallback。
 - **情报身份规则**：新增平台适配器时必须同步扩展 `itemIdentity.ts` 和回归测试；AI 分类不能参与 FeedItem 身份判定。
@@ -36,6 +36,7 @@
 你在 D:\111222333\personal-hot-monitor 项目中工作。目标：<一句话目标>。
 
 请先阅读 README.md、docs/AGENT_WORKFLOW.md、docs/ROADMAP.md、docs/LESSONS.md、docs/DECISIONS.md，然后重点查看：
+- docs/API_CONTRACTS.md（涉及接口、query 或 DTO 时必读）
 - <相关文件 1>
 - <相关文件 2>
 

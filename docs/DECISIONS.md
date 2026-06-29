@@ -2,6 +2,14 @@
 
 本文档记录对长期维护有影响的项目决策。新增决策按时间倒序追加。
 
+## 2026-06-29：API 契约与共享 DTO 治理
+
+**决策**：前端消费的稳定接口 DTO 统一沉淀到 `shared/`，其中公共情报、故事、报表、管理队列和社区洞察使用 `shared/api.ts`，社区话题使用 `shared/community.ts`，运维面板使用 `shared/operations.ts`。`client/src/services/api.ts` 只保留请求封装、query 序列化和 endpoint 调用，不再作为 DTO 的事实来源。
+
+**接口文档**：新增 `docs/API_CONTRACTS.md` 作为轻量 API 契约总览，记录主要 endpoint、query 参数、响应 DTO 和业务语义。该文档不替代后端运行时校验；后端校验仍以 `server/src/gamepulse/validation.ts` 和各 route 为准。
+
+**变更要求**：任何接口字段、query 参数或响应结构变更都必须同步检查后端 route、运行时校验、`shared/` DTO、前端调用、测试和 API 契约文档。字段语义变化优先新增字段并保留旧字段兼容，不轻易重命名既有字段；热度指标后续拆分时应保留 `heatScore` 作为当前展示分，再新增 `rawHeatScore` 或趋势字段。
+
 ## 2026-06-24：社区情感状态、跨来源热度和任务历史治理
 
 **情感状态**：社区情感不再把 AI 未配置、请求失败或解析失败等同于 `neutral`。`CommunityTopic` 保留原有 `sentiment` / `sentimentScore`，新增状态、判断方法、置信度、规则版本和分析时间；失败结果使用 `unknown`，不进入正面、负面或中性统计。低置信度只在界面显示“判断不确定”并弱化标签，不展示小数分数。
