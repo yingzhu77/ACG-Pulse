@@ -28,7 +28,51 @@
 
 ## 新任务队列
 
-当前无新的小窗口任务。
+### P1-1：社区热度拆分为展示排名与趋势判断
+
+```text
+你在 D:\111222333\personal-hot-monitor 项目中工作。目标：把社区热度拆成“展示排名”和“趋势判断”两套语义。
+
+请先阅读：
+- README.md
+- docs/AGENT_WORKFLOW.md
+- docs/ROADMAP.md
+- docs/LESSONS.md
+- docs/DECISIONS.md
+- docs/API_CONTRACTS.md
+
+重点查看：
+- server/prisma/schema.prisma
+- server/src/gamepulse/community/heat.ts
+- server/src/gamepulse/adapters/community.ts
+- server/src/gamepulse/db/communityDb.ts
+- server/src/gamepulse/routes/community.ts
+- server/src/gamepulse/community/types.ts
+- shared/community.ts
+- shared/api.ts
+- client/src/components/CommunityTopicCard.tsx
+- client/src/components/InsightsPage.tsx
+- server/src/gamepulse/__tests__/communityHeat.test.ts
+- server/src/gamepulse/__tests__/communityPagination.test.ts
+- server/src/gamepulse/__tests__/communityStaleFirst.test.ts
+
+任务要求：
+1. 保留现有 `heatScore` 作为展示排名字段，语义不变：同来源、本轮候选集合内百分位 0-100。
+2. 新增 `rawHeatScore` 和 `rawHeatTrend`，用于趋势判断；不要直接把 raw 分数展示给用户。
+3. 来源适配器先计算 raw heat，归一化阶段只写 `heatScore`，不得覆盖 raw heat。
+4. DB upsert 时同时维护展示趋势和 raw 趋势；已有旧数据要有默认值/兼容路径。
+5. 更新 shared DTO、API 契约文档和决策/踩坑文档。
+6. 保持当前 UI 行为兼容，热度环和列表排序继续使用 `heatScore`。
+7. 增加或更新测试，覆盖 raw 分数保留、百分位排名、已有 topic 趋势合并和单样本来源。
+
+验收：
+- npm.cmd --prefix server test
+- npm.cmd --prefix server run build
+- npm.cmd --prefix client run lint
+- npm.cmd --prefix client run build
+- npx.cmd prisma validate（在 server 目录或传入临时 DATABASE_URL）
+- git diff --check
+```
 
 新增任务时使用这个格式：
 
