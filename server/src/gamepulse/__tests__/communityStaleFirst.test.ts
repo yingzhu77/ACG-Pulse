@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 // ---- In-memory mock DB ----
 let mockTopics: Array<{
   id: string; title: string; sentiment: string; sentimentScore: number;
-  heatScore: number; category: string; source: string; trend: string;
+  heatScore: number; rawHeatScore?: number; category: string; source: string; trend: string; rawHeatTrend?: string;
   summary: string; url: string; publishedAt: Date; fetchedAt: Date; lastSeenAt: Date;
 }> = [];
 
@@ -58,7 +58,7 @@ vi.mock('../services/communityService.js', () => ({
     mockTopics.push({
       id: 'bilibili-99999', title: 'Refreshed Topic', sentiment: 'positive',
       sentimentScore: 0.8, heatScore: 85, category: 'gameplay', source: 'bilibili',
-      trend: '[85]', summary: 'Test', url: 'https://example.com', publishedAt: new Date(),
+      rawHeatScore: 620, trend: '[85]', rawHeatTrend: '[620]', summary: 'Test', url: 'https://example.com', publishedAt: new Date(),
       fetchedAt: new Date(), lastSeenAt: new Date()
     });
     return [];
@@ -133,9 +133,11 @@ describe('Community topic persistence', () => {
         sentimentVersion: '2026-06-24-v1',
         sentimentAnalyzedAt: publishedAt,
         heatScore: 10,
+        rawHeatScore: 6,
         category: 'other',
         source: 'nga',
         trend: [10],
+        rawHeatTrend: [6],
         summary: '',
         url: 'https://example.com/1',
         publishedAt
@@ -151,9 +153,11 @@ describe('Community topic persistence', () => {
         sentimentVersion: '2026-06-24-v1',
         sentimentAnalyzedAt: publishedAt,
         heatScore: 20,
+        rawHeatScore: 12,
         category: 'event',
         source: 'nga',
         trend: [20],
+        rawHeatTrend: [12],
         summary: '',
         url: 'https://example.com/2',
         publishedAt
@@ -161,6 +165,53 @@ describe('Community topic persistence', () => {
     ]);
 
     expect(mockTopics.map(topic => topic.id)).toEqual(['nga-fallback-1', 'nga-fallback-2']);
+  });
+
+  test('merges display trend and raw heat trend for existing topics', async () => {
+    const publishedAt = new Date().toISOString();
+    mockTopics = [{
+      id: 'bilibili-existing',
+      title: 'Existing',
+      sentiment: 'positive',
+      sentimentScore: 0.4,
+      heatScore: 55,
+      rawHeatScore: 120,
+      category: 'event',
+      source: 'bilibili',
+      trend: '[40,55]',
+      rawHeatTrend: '[90,120]',
+      summary: 'old',
+      url: 'https://example.com/old',
+      publishedAt: new Date(publishedAt),
+      fetchedAt: new Date(),
+      lastSeenAt: new Date()
+    }];
+
+    await upsertTopics([{
+      id: 'bilibili-existing',
+      title: 'Existing',
+      sentiment: 'positive',
+      sentimentScore: 0.5,
+      sentimentStatus: 'completed',
+      sentimentMethod: 'ai',
+      sentimentConfidence: 0.8,
+      sentimentVersion: '2026-06-24-v1',
+      sentimentAnalyzedAt: publishedAt,
+      heatScore: 80,
+      rawHeatScore: 300,
+      category: 'event',
+      source: 'bilibili',
+      trend: [80],
+      rawHeatTrend: [300],
+      summary: 'new',
+      url: 'https://example.com/new',
+      publishedAt
+    }]);
+
+    expect(mockTopics[0].heatScore).toBe(80);
+    expect(mockTopics[0].rawHeatScore).toBe(300);
+    expect(mockTopics[0].trend).toBe('[40,55,80]');
+    expect(mockTopics[0].rawHeatTrend).toBe('[90,120,300]');
   });
 });
 

@@ -169,7 +169,7 @@ export async function aggregateCommunityTopics(options?: {
           ? comments.reduce((best, c) => (c.like || 0) > (best.like || 0) ? c : best, comments[0])
           : undefined;
 
-        const heatScore = calculateBilibiliHeat(
+        const rawHeatScore = calculateBilibiliHeat(
           { view: video.stat?.view, like: video.stat?.like, reply: video.stat?.reply },
           video.pubdate || 0
         );
@@ -187,10 +187,12 @@ export async function aggregateCommunityTopics(options?: {
           sentimentConfidence: sentiment.confidence,
           sentimentVersion: sentiment.version,
           sentimentAnalyzedAt: sentiment.analyzedAt,
-          heatScore,
+          heatScore: 0,
+          rawHeatScore,
           category: classifyTopic(`${title} ${video.desc || ''}`),
           source: 'bilibili',
-          trend: [heatScore],
+          trend: [],
+          rawHeatTrend: [rawHeatScore],
           summary: topComment?.content?.message?.slice(0, 120) || video.desc?.slice(0, 120) || title,
           url: `https://www.bilibili.com/video/${video.bvid}`,
           publishedAt: new Date(((video.pubdate || 0) > 0 ? video.pubdate! : Math.floor(Date.now() / 1000)) * 1000).toISOString()
@@ -203,7 +205,7 @@ export async function aggregateCommunityTopics(options?: {
       const title = video.title;
       if (isDuplicate(title, seenTitles)) continue;
 
-      const heatScore = calculateBilibiliHeat(
+      const rawHeatScore = calculateBilibiliHeat(
         { view: video.stat?.view, like: video.stat?.like, reply: video.stat?.reply },
         video.pubdate || 0
       );
@@ -213,10 +215,12 @@ export async function aggregateCommunityTopics(options?: {
         id: `bilibili-${video.aid}`,
         title,
         ...existing,
-        heatScore,
+        heatScore: 0,
+        rawHeatScore,
         category: classifyTopic(`${title} ${video.desc || ''}`),
         source: 'bilibili',
-        trend: [heatScore],
+        trend: [],
+        rawHeatTrend: [rawHeatScore],
         summary: video.desc?.slice(0, 120) || title,
         url: `https://www.bilibili.com/video/${video.bvid}`,
         publishedAt: new Date(((video.pubdate || 0) > 0 ? video.pubdate! : Math.floor(Date.now() / 1000)) * 1000).toISOString()
@@ -263,7 +267,7 @@ export async function aggregateCommunityTopics(options?: {
 
       for (let i = 0; i < newPosts.length; i++) {
         const post = newPosts[i];
-        const heatScore = calculateNgaHeat(post);
+        const rawHeatScore = calculateNgaHeat(post);
         const comments = ngaCommentResults[i];
         const sentiment = ngaSentiments[i];
 
@@ -277,10 +281,12 @@ export async function aggregateCommunityTopics(options?: {
           sentimentConfidence: sentiment.confidence,
           sentimentVersion: sentiment.version,
           sentimentAnalyzedAt: sentiment.analyzedAt,
-          heatScore,
+          heatScore: 0,
+          rawHeatScore,
           category: classifyTopic(post.subject),
           source: 'nga',
-          trend: [heatScore],
+          trend: [],
+          rawHeatTrend: [rawHeatScore],
           summary: comments.length > 0
             ? comments[0].content.slice(0, 100)
             : `${post.replies} 条回复 · ${post.author}`,
@@ -292,16 +298,18 @@ export async function aggregateCommunityTopics(options?: {
 
     // For existing posts, just update heat score
     for (const post of existingPosts) {
-      const heatScore = calculateNgaHeat(post);
+      const rawHeatScore = calculateNgaHeat(post);
       const existing = existingTopics!.get(`nga-${post.tid}`)!;
       topics.push({
         id: `nga-${post.tid}`,
         title: post.subject,
         ...existing,
-        heatScore,
+        heatScore: 0,
+        rawHeatScore,
         category: classifyTopic(post.subject),
         source: 'nga',
-        trend: [heatScore],
+        trend: [],
+        rawHeatTrend: [rawHeatScore],
         summary: `${post.replies} 条回复 · ${post.author}`,
         url: `https://nga.178.com/read.php?tid=${post.tid}`,
         publishedAt: new Date(post.postdate * 1000).toISOString()
@@ -339,6 +347,7 @@ export async function aggregateCommunityTopics(options?: {
         const item = validNewXhh[i];
         const sentiment = xhhSentiments[i];
         const ts = (item.modify_at || 0) > 0 ? item.modify_at : Math.floor(Date.now() / 1000);
+        const rawHeatScore = calculateXiaoheiheHeat(ts);
 
         topics.push({
           id: `xhh-${item.linkid}`,
@@ -350,10 +359,12 @@ export async function aggregateCommunityTopics(options?: {
           sentimentConfidence: sentiment.confidence,
           sentimentVersion: sentiment.version,
           sentimentAnalyzedAt: sentiment.analyzedAt,
-          heatScore: calculateXiaoheiheHeat(ts),
+          heatScore: 0,
+          rawHeatScore,
           category: classifyTopic(item.title),
           source: 'xiaoheihe',
-          trend: [calculateXiaoheiheHeat(ts)],
+          trend: [],
+          rawHeatTrend: [rawHeatScore],
           summary: item.description?.slice(0, 120) || item.title,
           url: buildXiaoheiheTopicUrl(item.linkid),
           publishedAt: new Date(ts * 1000).toISOString()
@@ -365,15 +376,17 @@ export async function aggregateCommunityTopics(options?: {
     for (const item of existingXhh) {
       const ts = (item.modify_at || 0) > 0 ? item.modify_at : Math.floor(Date.now() / 1000);
       const existing = existingTopics!.get(`xhh-${item.linkid}`)!;
-      const heatScore = calculateXiaoheiheHeat(ts);
+      const rawHeatScore = calculateXiaoheiheHeat(ts);
       topics.push({
         id: `xhh-${item.linkid}`,
         title: item.title,
         ...existing,
-        heatScore,
+        heatScore: 0,
+        rawHeatScore,
         category: classifyTopic(item.title),
         source: 'xiaoheihe',
-        trend: [heatScore],
+        trend: [],
+        rawHeatTrend: [rawHeatScore],
         summary: item.description?.slice(0, 120) || item.title,
         url: buildXiaoheiheTopicUrl(item.linkid),
         publishedAt: new Date(ts * 1000).toISOString()
@@ -383,6 +396,9 @@ export async function aggregateCommunityTopics(options?: {
 
   // Sort by heat score
   normalizeHeatBySource(topics);
+  topics.forEach(topic => {
+    topic.trend = [topic.heatScore];
+  });
   topics.sort((a, b) => b.heatScore - a.heatScore);
 
   const skipped = existingTopics ? seenExistingIds.size : 0;

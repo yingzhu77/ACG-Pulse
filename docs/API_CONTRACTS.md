@@ -129,7 +129,10 @@ query：
 - 接口采用 stale-first：总是先返回数据库快照，过期时后台刷新。
 - AI 未配置、超时或解析失败时情感为 `unknown`，不计入正/负/中性。
 - 低置信度只表达为“判断不确定”或弱化标签，不展示小数分数。
-- 当前 `heatScore` 是同来源、本轮候选集合内的 0-100 相对百分位，不是平台原始互动量。
+- `heatScore` 是展示排名分：同来源、本轮候选集合内的 0-100 相对百分位，不是平台原始互动量；热度环、列表排序和主 UI 继续只使用该字段。
+- `trend` 是 `heatScore` 的展示趋势历史，保持 0-100 语义。
+- `rawHeatScore` 是来源适配器按平台可得指标计算的原始分，仅用于同一话题的历史趋势判断、排障或后续派生指标；前端不要直接展示 raw 分数。
+- `rawHeatTrend` 是 `rawHeatScore` 的历史序列。旧数据可能为空，消费者必须按可选历史处理，不要把空 raw 趋势解释为热度为 0。
 
 ### `GET /api/community/insights`
 
@@ -139,8 +142,8 @@ query：
 
 约束：
 
-- `sourceShare` 和 `heatTrend` 目前基于 `heatScore` 聚合，适合当前相对热度展示。
-- 如果后续拆分热度指标，应保留 `heatScore` 兼容旧 UI，并新增 `rawHeatScore` 或 `momentumHeatScore` 用于趋势。
+- `sourceShare` 和 `heatTrend` 基于展示分 `heatScore/trend` 聚合，适合当前相对热度展示，不暴露 raw 分数。
+- raw 趋势判断使用 `/api/community/topics` 中的 `rawHeatScore/rawHeatTrend` 或后续派生字段；不要把不同来源的 raw 分数直接横向展示或聚合成排名。
 
 ## 管理接口
 
@@ -218,10 +221,12 @@ query：
 当前兼容字段：
 
 - `heatScore`：对外展示用相对热度，0-100，按来源内部百分位映射。
+- `trend`：展示分历史，用于 UI 中的热度趋势线。
 
 后续如拆分长期指标，建议新增而不是重命名：
 
 - `rawHeatScore`：来源内固定公式的原始分，只用于同一话题历史趋势或运维分析。
+- `rawHeatTrend`：原始分历史，旧数据为空时按缺失历史处理。
 - `momentumHeatScore`：基于 `rawHeatScore` 历史变化的趋势分，可选。
 - `heatScoreType` / `heatScoreScope`：用于说明展示分的算法和候选集合范围，可选。
 

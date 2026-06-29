@@ -2,6 +2,14 @@
 
 本文档记录对长期维护有影响的项目决策。新增决策按时间倒序追加。
 
+## 2026-06-30：社区热度拆分展示排名与趋势判断
+
+**决策**：保留 `heatScore` 作为唯一对外展示排名分，语义固定为“同来源、本轮候选集合内 0-100 百分位”。新增 `rawHeatScore` 和 `rawHeatTrend` 保存来源适配器按平台指标计算出的原始热度，用于同一话题的历史趋势判断、排障和后续派生指标。
+
+**数据流边界**：来源适配器先计算 `rawHeatScore`；归一化阶段只根据 raw 分写入 `heatScore`，不得覆盖 raw 字段。数据库写入时分别维护 `trend`（展示分历史）和 `rawHeatTrend`（原始分历史），旧数据 raw 历史为空时按缺失历史兼容。
+
+**UI 约束**：热度环、列表排序、来源占比和当前洞察页展示继续使用 `heatScore/trend`。不要直接向用户展示 `rawHeatScore`，也不要把不同来源 raw 分数横向比较成排名。
+
 ## 2026-06-29：API 契约与共享 DTO 治理
 
 **决策**：前端消费的稳定接口 DTO 统一沉淀到 `shared/`，其中公共情报、故事、报表、管理队列和社区洞察使用 `shared/api.ts`，社区话题使用 `shared/community.ts`，运维面板使用 `shared/operations.ts`。`client/src/services/api.ts` 只保留请求封装、query 序列化和 endpoint 调用，不再作为 DTO 的事实来源。

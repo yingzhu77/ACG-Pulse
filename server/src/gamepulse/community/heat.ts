@@ -1,7 +1,7 @@
 interface HeatCandidate {
   source: string;
   heatScore: number;
-  trend: number[];
+  rawHeatScore: number;
 }
 
 export function calculateBilibiliHeat(
@@ -39,7 +39,7 @@ export function normalizeHeatBySource<T extends HeatCandidate>(topics: T[]): T[]
   }
 
   for (const group of groups.values()) {
-    const sortedScores = group.map(topic => topic.heatScore).sort((a, b) => a - b);
+    const sortedScores = group.map(topic => topic.rawHeatScore).sort((a, b) => a - b);
     const rankTotals = new Map<number, { total: number; count: number }>();
     sortedScores.forEach((score, index) => {
       const ranks = rankTotals.get(score) || { total: 0, count: 0 };
@@ -48,12 +48,11 @@ export function normalizeHeatBySource<T extends HeatCandidate>(topics: T[]): T[]
       rankTotals.set(score, ranks);
     });
     for (const topic of group) {
-      const ranks = rankTotals.get(topic.heatScore)!;
+      const ranks = rankTotals.get(topic.rawHeatScore)!;
       const averageRank = ranks.total / ranks.count;
       const percentile = sortedScores.length === 1 ? 0.5 : averageRank / (sortedScores.length - 1);
       const normalized = Math.round(10 + percentile * 90);
       topic.heatScore = normalized;
-      topic.trend = [normalized];
     }
   }
   return topics;

@@ -26,9 +26,11 @@ const topic = {
   sentimentVersion: '2026-06-24-v1',
   sentimentAnalyzedAt: new Date('2026-06-21T08:05:00Z'),
   heatScore: 88,
+  rawHeatScore: 42.5,
   category: 'gameplay',
   source: 'xiaoheihe',
   trend: '[70,88]',
+  rawHeatTrend: '[35,42.5]',
   summary: 'Summary',
   url: 'https://xiaoheihe.cn/bbs/app/share/detail/123',
   publishedAt: new Date('2026-06-21T08:00:00Z')
@@ -69,6 +71,8 @@ describe('community topic pagination', () => {
     expect(result.total).toBe(31);
     expect(result.avgHeat).toBe(72);
     expect(result.sentimentCounts.positive).toBe(31);
+    expect(result.topics[0].rawHeatScore).toBe(42.5);
+    expect(result.topics[0].rawHeatTrend).toEqual([35, 42.5]);
     expect(result.topics[0].url).toBe(
       'https://api.xiaoheihe.cn/v3/bbs/app/api/web/share?link_id=123'
     );
@@ -109,5 +113,19 @@ describe('community topic pagination', () => {
     const result = await loadTopicPage({ page: 1, limit: 30, sort: 'heat' });
     expect(result.topics[0].sentiment).toBe('unknown');
     expect(result.topics[0].sentimentStatus).toBe('legacy');
+  });
+
+  it('preserves a real zero raw heat score instead of falling back to display heat', async () => {
+    findMany.mockResolvedValueOnce([{
+      ...topic,
+      heatScore: 55,
+      rawHeatScore: 0,
+      rawHeatTrend: '[0]'
+    }]);
+
+    const result = await loadTopicPage({ page: 1, limit: 30, sort: 'heat' });
+    expect(result.topics[0].heatScore).toBe(55);
+    expect(result.topics[0].rawHeatScore).toBe(0);
+    expect(result.topics[0].rawHeatTrend).toEqual([0]);
   });
 });

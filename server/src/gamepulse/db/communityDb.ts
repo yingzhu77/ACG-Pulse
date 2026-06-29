@@ -102,6 +102,7 @@ export async function upsertTopics(topics: CommunityTopic[]): Promise<void> {
     select: {
       id: true,
       trend: true,
+      rawHeatTrend: true,
       sentiment: true,
       sentimentScore: true,
       sentimentStatus: true,
@@ -150,11 +151,15 @@ export async function upsertTopics(topics: CommunityTopic[]): Promise<void> {
   for (const { topic, existing } of toUpdate) {
     try {
       const oldTrend = safeParseTrend(existing.trend, topic.id);
-      const mergedTrend = [...oldTrend, ...topic.trend].slice(-24);
+      const oldRawHeatTrend = safeParseTrend(existing.rawHeatTrend, topic.id);
+      const mergedTrend = [...oldTrend, topic.heatScore].slice(-24);
+      const mergedRawHeatTrend = [...oldRawHeatTrend, topic.rawHeatScore].slice(-24);
 
       const updateData: Record<string, unknown> = {
         heatScore: topic.heatScore,
+        rawHeatScore: topic.rawHeatScore,
         trend: JSON.stringify(mergedTrend),
+        rawHeatTrend: JSON.stringify(mergedRawHeatTrend),
         summary: topic.summary,
         url: topic.url,
         fetchedAt: now,
@@ -192,9 +197,11 @@ function topicCreateData(topic: CommunityTopic, now: Date) {
     sentimentVersion: topic.sentimentVersion,
     sentimentAnalyzedAt: topic.sentimentAnalyzedAt ? new Date(topic.sentimentAnalyzedAt) : null,
     heatScore: topic.heatScore,
+    rawHeatScore: topic.rawHeatScore,
     category: topic.category,
     source: topic.source,
-    trend: JSON.stringify(topic.trend),
+    trend: JSON.stringify(topic.trend.length > 0 ? topic.trend : [topic.heatScore]),
+    rawHeatTrend: JSON.stringify(topic.rawHeatTrend.length > 0 ? topic.rawHeatTrend : [topic.rawHeatScore]),
     summary: topic.summary,
     url: topic.url,
     publishedAt: new Date(topic.publishedAt),
@@ -266,14 +273,18 @@ function rowToTopic(row: {
   sentimentVersion: string | null;
   sentimentAnalyzedAt: Date | null;
   heatScore: number;
+  rawHeatScore?: number | null;
   category: string;
   source: string;
   trend: string;
+  rawHeatTrend?: string | null;
   summary: string;
   url: string;
   publishedAt: Date;
 }): CommunityTopic {
   const sentimentStatus = safeSentimentStatus(row.sentimentStatus);
+  const rawHeatTrend = row.rawHeatTrend ? safeParseTrend(row.rawHeatTrend, row.id) : [];
+  const rawHeatScore = row.rawHeatScore ?? (rawHeatTrend.length > 0 ? rawHeatTrend[rawHeatTrend.length - 1] : row.heatScore);
   return {
     id: row.id,
     title: row.title,
@@ -285,9 +296,11 @@ function rowToTopic(row: {
     sentimentVersion: row.sentimentVersion,
     sentimentAnalyzedAt: row.sentimentAnalyzedAt?.toISOString() || null,
     heatScore: row.heatScore,
+    rawHeatScore,
     category: row.category,
     source: row.source,
     trend: safeParseTrend(row.trend, row.id),
+    rawHeatTrend,
     summary: row.summary,
     url: normalizeCommunityTopicUrl(row),
     publishedAt: row.publishedAt.toISOString()

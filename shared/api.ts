@@ -237,7 +237,7 @@ export interface CommunitySourceShare {
 
 export interface CommunityHeatPoint {
   index: number;
-  heatScore: number;
+  heatScore: number; // aggregated display heat trend, not rawHeatScore
   topicCount: number;
 }
 

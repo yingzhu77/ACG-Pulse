@@ -13,9 +13,11 @@ export interface CommunityTopic {
   sentimentVersion: string | null;
   sentimentAnalyzedAt: string | null;
   heatScore: number;
+  rawHeatScore: number;
   category: string;
   source: string;
   trend: number[];
+  rawHeatTrend: number[];
   summary: string;
   url: string;
   publishedAt: string;

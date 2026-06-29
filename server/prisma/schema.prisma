@@ -159,9 +159,11 @@ model CommunityTopic {
   sentimentVersion String?
   sentimentAnalyzedAt DateTime?
   heatScore      Float    @default(0)
+  rawHeatScore   Float    @default(0)
   category       String
   source         String   // bilibili, nga, xiaoheihe
   trend          String   @default("[]") // JSON array of numbers
+  rawHeatTrend   String   @default("[]") // JSON array of raw heat scores
   summary        String   @default("")
   url            String
   publishedAt    DateTime
