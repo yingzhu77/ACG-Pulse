@@ -281,7 +281,11 @@ function App() {
         sources={admin.adminSources}
         sourceDraft={admin.sourceDraft}
         setSourceDraft={admin.setSourceDraft}
+        sourcePreview={admin.sourcePreview}
+        sourcePreviewLoading={admin.sourcePreviewLoading}
+        sourcePreviewError={admin.sourcePreviewError}
         onCreateSource={admin.handleCreateSource}
+        onPreviewSource={admin.handlePreviewSource}
         onSeedDefaults={admin.handleSeedDefaults}
         onRunCheck={admin.handleRunCheck}
         onReanalyzeAll={admin.handleReanalyzeAll}

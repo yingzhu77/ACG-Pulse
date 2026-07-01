@@ -44,7 +44,7 @@
   - 后续：PDF 导出方案评估（详见 DECISIONS.md）。
 - 自定义数据源：
   - 管理后台支持自定义 RSS/RSSHub/官网源。
-  - 增加源配置校验、试抓取和预览。
+  - ✅ 增加源配置校验、试抓取和预览：已接入 admin-only `/api/admin/sources/preview`，前端提供 loading/error/empty/success 闭环。
 - 多语言与展示体验：
   - 评估英文 UI 与内容摘要翻译。
   - 优化移动端批量筛选、刷新提示和空状态。

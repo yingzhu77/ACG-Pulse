@@ -877,6 +877,119 @@
   font-weight: 700;
 }
 
+.source-form-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+}
+
+.source-form-actions .action-button {
+  min-width: 0;
+  white-space: normal;
+}
+
+.source-preview-message,
+.source-preview-result {
+  margin-top: 10px;
+  border: 1px solid var(--stroke);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 10px;
+}
+
+.source-preview-message {
+  display: grid;
+  gap: 4px;
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.source-preview-message strong {
+  color: var(--pink);
+}
+
+.source-preview-message span,
+.source-preview-message em {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-style: normal;
+}
+
+.source-preview-message.error {
+  border-color: color-mix(in srgb, var(--pink) 42%, var(--stroke));
+}
+
+.source-preview-summary {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--text-main);
+  font-size: 12px;
+}
+
+.source-preview-summary strong,
+.source-preview-summary span {
+  min-width: 0;
+}
+
+.source-preview-summary span,
+.source-preview-warning {
+  color: var(--text-soft);
+  font-size: 11px;
+}
+
+.source-preview-warning {
+  margin: 6px 0 0;
+}
+
+.source-preview-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.source-preview-item {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  border: 1px solid var(--stroke);
+  border-radius: 6px;
+  background: var(--panel-soft);
+  padding: 8px;
+  color: var(--text-main);
+  text-decoration: none;
+}
+
+.source-preview-item strong,
+.source-preview-item span,
+.source-preview-item p {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.source-preview-item strong {
+  display: block;
+  color: var(--text-strong);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.source-preview-item span {
+  display: block;
+  margin-top: 3px;
+  color: var(--text-soft);
+  font-size: 11px;
+}
+
+.source-preview-item p {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .source-admin-list {
   display: grid;
   gap: 8px;
@@ -1310,6 +1423,7 @@
   .insight-strip,
   .metric-grid,
   .drawer-actions,
+  .source-form-actions,
   .form-grid {
     grid-template-columns: 1fr;
   }

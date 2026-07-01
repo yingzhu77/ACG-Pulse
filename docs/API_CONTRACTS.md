@@ -161,6 +161,7 @@ query：
 
 - `GET /api/admin/sources`
 - `POST /api/admin/sources`
+- `POST /api/admin/sources/preview`
 - `PUT /api/admin/sources/:id`
 - `PATCH /api/admin/sources/:id/toggle`
 - `DELETE /api/admin/sources/:id`
@@ -173,6 +174,51 @@ query：
 
 - 更新接口不能复用带默认值的创建 schema，否则会误写布尔字段。
 - 新增运行时配置项时同步检查 `.env.production.example`、`docker-compose.yml`、README 和部署指南。
+
+#### `POST /api/admin/sources/preview`
+
+用途：对尚未保存的 Source draft 执行一次只读试抓取，供管理后台预览和校验配置。需要 `Authorization: Bearer <token>`。
+
+请求体：复用创建源 draft 字段，并额外支持 `limit`。
+
+| 字段 | 语义 |
+| --- | --- |
+| `name` / `type` / `game` | 必填，和创建源一致 |
+| `url` / `uid` / `route` / `isOfficial` / `followed` / `enabled` / `priority` / `config` | 可选，和创建源一致 |
+| `limit` | 可选，默认 5，最大 10 |
+
+成功响应 DTO：`SourcePreviewResponse`。
+
+```ts
+{
+  ok: true;
+  source: { name: string; type: string; game: string };
+  items: Array<{
+    title: string;
+    url: string;
+    authorName: string | null;
+    publishedAt: string | null;
+    itemKind: string;
+    contentSnippet: string;
+  }>;
+  totalFetched: number;
+  truncated: boolean;
+  warnings: string[];
+}
+```
+
+失败响应：`{ error: string }`。
+
+状态码：
+- `400`：draft schema 校验失败。
+- `422`：adapter 不支持、上游抓取失败、超时或空结果。
+- `500`：非预期错误。
+
+约束：
+- 预览必须复用现有 `SourceAdapter` 的 `getAdapter(source).fetch(source)` 路径，不复制 RSS/RSSHub/B站/官网抓取逻辑。
+- 不写入 `Source`、`FeedItem`、`AnalysisTask`、`Notification`，不触发全量采集或 socket 广播。
+- 返回条目默认 5 条，最多 10 条；正文只返回 `contentSnippet`，服务端截断过长内容。
+- 响应、日志和前端提示不得回显完整 `config`、Cookie、token 或 Authorization header。
 
 ### `/api/admin/items`
 

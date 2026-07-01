@@ -26,6 +26,43 @@ export interface Source {
   _count?: { feedItems: number };
 }
 
+export interface SourcePreviewDraft {
+  name: string;
+  type: string;
+  game: string;
+  url?: string | null;
+  uid?: string | null;
+  route?: string | null;
+  isOfficial?: boolean;
+  followed?: boolean;
+  enabled?: boolean;
+  priority?: number;
+  config?: string | null;
+  limit?: number;
+}
+
+export interface SourcePreviewItem {
+  title: string;
+  url: string;
+  authorName: string | null;
+  publishedAt: string | null;
+  itemKind: string;
+  contentSnippet: string;
+}
+
+export interface SourcePreviewResponse {
+  ok: true;
+  source: {
+    name: string;
+    type: string;
+    game: string;
+  };
+  items: SourcePreviewItem[];
+  totalFetched: number;
+  truncated: boolean;
+  warnings: string[];
+}
+
 export interface Keyword {
   id: string;
   text: string;

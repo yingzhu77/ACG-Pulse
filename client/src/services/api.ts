@@ -9,6 +9,8 @@ import type {
   PublicStats,
   ReportFilters,
   ReportResponse,
+  SourcePreviewDraft,
+  SourcePreviewResponse,
   Source,
   StoriesResponse
 } from '../../../shared/api';
@@ -31,6 +33,9 @@ export type {
   ReportFilters,
   ReportResponse,
   ReportSummary,
+  SourcePreviewDraft,
+  SourcePreviewItem,
+  SourcePreviewResponse,
   Source,
   Story,
   StoryFacets,
@@ -134,6 +139,11 @@ export const adminApi = {
   getSources: () => request<Source[]>('/admin/sources', { headers: authHeaders() }),
   getOperationalMetrics: () => request<OperationalMetrics>('/admin/ops/metrics', { headers: authHeaders() }),
   createSource: (source: Partial<Source>) => request<Source>('/admin/sources', {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(source)
+  }),
+  previewSource: (source: SourcePreviewDraft) => request<SourcePreviewResponse>('/admin/sources/preview', {
     method: 'POST',
     headers: authHeaders(),
     body: JSON.stringify(source)

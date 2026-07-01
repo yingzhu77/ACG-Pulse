@@ -796,6 +796,15 @@ END
 - 归一化函数只写 `heatScore`，不得顺手覆盖 raw 字段；DB upsert 负责分别追加展示分和 raw 分。
 - 旧数据 raw 历史为空时按缺失历史处理，不能把空数组或默认 0 解释成真实热度下跌。
 
+### 5.33 Server 不要直接 import `shared/`
+
+**问题**：server `tsconfig` 的 `rootDir` 是 `server/src`。如果服务端实现文件直接从 `../../shared/api.ts` import DTO，即使只是类型导入，`npm run build` 也会报 `TS6059: File shared/api.ts is not under rootDir`。
+
+**规则**：
+- `shared/` 是前端消费和接口契约的事实来源，但 server 运行时代码不要直接 import 它，除非先调整 monorepo tsconfig 边界。
+- 服务端 route/service 可以定义本地返回类型或使用推断类型，但字段必须同步到 `shared/api.ts` 和 `docs/API_CONTRACTS.md`。
+- 新增接口时先跑 `npm --prefix server run build`，不要只依赖 Vitest；Vitest 可能不会暴露 rootDir 编译边界问题。
+
 ---
 
 ## 六、Prompt 模板（可复用）
@@ -936,3 +945,4 @@ END
 | 2026-06-23 | 补充配置闭环与 query 参数多值契约经验（5.26、5.27） |
 | 2026-06-24 | 补充 AI 状态分离、跨来源热度归一和任务历史治理经验（5.28–5.30） |
 | 2026-06-30 | 补充展示热度与 raw 热度趋势拆分经验（5.32） |
+| 2026-07-02 | 补充 server 不能直接 import `shared/` 的 tsconfig rootDir 经验（5.33） |

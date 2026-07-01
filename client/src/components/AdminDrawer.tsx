@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { CheckCircle2, Lock, LogOut, Play, Plus, RefreshCw, RotateCcw, X } from 'lucide-react';
-import type { AnalysisQueueOverview, OperationalMetrics, Source } from '../services/api';
+import { CheckCircle2, Eye, LoaderCircle, Lock, LogOut, Play, Plus, RefreshCw, RotateCcw, X } from 'lucide-react';
+import type { AnalysisQueueOverview, OperationalMetrics, Source, SourcePreviewResponse } from '../services/api';
 import { AdminOpsPanel } from './AdminOpsPanel';
 
 export interface SourceDraft {
@@ -24,7 +24,11 @@ export interface AdminDrawerProps {
   sources: Source[];
   sourceDraft: SourceDraft;
   setSourceDraft: React.Dispatch<React.SetStateAction<SourceDraft>>;
+  sourcePreview: SourcePreviewResponse | null;
+  sourcePreviewLoading: boolean;
+  sourcePreviewError: string;
   onCreateSource: (event: React.FormEvent) => void;
+  onPreviewSource: () => void;
   onSeedDefaults: () => void;
   onRunCheck: () => void;
   onReanalyzeAll: () => void;
@@ -44,6 +48,59 @@ export interface AdminDrawerProps {
   bilibiliCookie: string;
   setBilibiliCookie: (value: string) => void;
   onSaveCookie: () => void;
+}
+
+function SourcePreviewPanel({
+  preview,
+  loading,
+  error
+}: {
+  preview: SourcePreviewResponse | null;
+  loading: boolean;
+  error: string;
+}) {
+  if (loading) {
+    return (
+      <div className="source-preview-message" role="status" aria-live="polite">
+        正在试抓取数据源，通常需要几秒钟。
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="source-preview-message error" role="alert">
+        <strong>预览失败</strong>
+        <span>{error}</span>
+        <em>请检查 URL、UID、RSSHub route 和源类型是否匹配，再重新测试。</em>
+      </div>
+    );
+  }
+
+  if (!preview) return null;
+
+  return (
+    <div className="source-preview-result" aria-live="polite">
+      <div className="source-preview-summary">
+        <strong>共抓到 {preview.totalFetched} 条，展示前 {preview.items.length} 条</strong>
+        {preview.truncated && <span>内容已截断用于预览</span>}
+      </div>
+      {preview.warnings.map(warning => (
+        <p key={warning} className="source-preview-warning">{warning}</p>
+      ))}
+      <div className="source-preview-list">
+        {preview.items.map(item => (
+          <a key={`${item.url}-${item.title}`} href={item.url} target="_blank" rel="noreferrer" className="source-preview-item">
+            <div>
+              <strong>{item.title}</strong>
+              <span>{item.itemKind} · {item.authorName || '未知作者'}{item.publishedAt ? ` · ${new Date(item.publishedAt).toLocaleString()}` : ''}</span>
+            </div>
+            <p>{item.contentSnippet || '暂无摘要'}</p>
+          </a>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 export function AdminDrawer(props: AdminDrawerProps) {
@@ -185,10 +242,27 @@ export function AdminDrawer(props: AdminDrawerProps) {
                     <input type="checkbox" checked={props.sourceDraft.isOfficial} onChange={event => props.setSourceDraft(prev => ({ ...prev, isOfficial: event.target.checked }))} />
                     官方源
                   </label>
-                  <button className="action-button primary">
-                    <Plus className="h-4 w-4" />
-                    添加源
-                  </button>
+                  <div className="source-form-actions">
+                    <button
+                      className="action-button"
+                      type="button"
+                      onClick={props.onPreviewSource}
+                      disabled={props.sourcePreviewLoading}
+                      aria-busy={props.sourcePreviewLoading}
+                    >
+                      {props.sourcePreviewLoading ? <LoaderCircle className="h-4 w-4 spin-active" /> : <Eye className="h-4 w-4" />}
+                      {props.sourcePreviewLoading ? '试抓取中' : '测试预览'}
+                    </button>
+                    <button className="action-button primary">
+                      <Plus className="h-4 w-4" />
+                      添加源
+                    </button>
+                  </div>
+                  <SourcePreviewPanel
+                    preview={props.sourcePreview}
+                    loading={props.sourcePreviewLoading}
+                    error={props.sourcePreviewError}
+                  />
                 </form>
 
                 <form onSubmit={props.onFollowUrl} className="drawer-card">

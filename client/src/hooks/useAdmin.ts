@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { adminApi, tokenStore, UnauthorizedError, type AnalysisQueueOverview, type OperationalMetrics, type Source } from '../services/api';
+import { adminApi, tokenStore, UnauthorizedError, type AnalysisQueueOverview, type OperationalMetrics, type Source, type SourcePreviewResponse } from '../services/api';
 
 type ShowToast = (type: 'success' | 'error', message: string) => void;
 
@@ -21,6 +21,9 @@ export function useAdmin(showToast: ShowToast, loadPublicData: () => Promise<voi
     route: '',
     isOfficial: false
   });
+  const [sourcePreview, setSourcePreview] = useState<SourcePreviewResponse | null>(null);
+  const [sourcePreviewLoading, setSourcePreviewLoading] = useState(false);
+  const [sourcePreviewError, setSourcePreviewError] = useState('');
   const [followUrl, setFollowUrl] = useState('');
   const [followName, setFollowName] = useState('');
   const [bilibiliCookie, setBilibiliCookie] = useState('');
@@ -184,12 +187,41 @@ export function useAdmin(showToast: ShowToast, loadPublicData: () => Promise<voi
         config: JSON.stringify({ itemKind: sourceDraft.isOfficial ? 'official_post' : 'creator_video' })
       });
       setSourceDraft({ name: '', game: '', type: 'bilibili_video', uid: '', url: '', route: '', isOfficial: false });
+      setSourcePreview(null);
+      setSourcePreviewError('');
       showToast('success', '数据源已添加');
       await loadAdminSources();
     } catch (error) {
       handleAdminError(error, '添加失败');
     }
   }, [sourceDraft, handleAdminError, loadAdminSources, showToast]);
+
+  const handlePreviewSource = useCallback(async () => {
+    if (!adminToken) {
+      setAdminOpen(true);
+      return;
+    }
+    setSourcePreviewLoading(true);
+    setSourcePreviewError('');
+    setSourcePreview(null);
+    try {
+      const preview = await adminApi.previewSource({
+        ...sourceDraft,
+        url: sourceDraft.url || (sourceDraft.uid ? `https://space.bilibili.com/${sourceDraft.uid}` : ''),
+        config: JSON.stringify({ itemKind: sourceDraft.isOfficial ? 'official_post' : 'creator_video' }),
+        limit: 5
+      });
+      setSourcePreview(preview);
+    } catch (error) {
+      if (error instanceof UnauthorizedError) {
+        handleAdminError(error, '预览失败');
+      } else {
+        setSourcePreviewError(error instanceof Error ? error.message : '预览失败，请检查 URL、UID 或 RSSHub route 后重试');
+      }
+    } finally {
+      setSourcePreviewLoading(false);
+    }
+  }, [adminToken, handleAdminError, sourceDraft]);
 
   const handleToggleSource = useCallback(async (id: string) => {
     try {
@@ -242,6 +274,9 @@ export function useAdmin(showToast: ShowToast, loadPublicData: () => Promise<voi
     loadOperationalMetrics,
     sourceDraft,
     setSourceDraft,
+    sourcePreview,
+    sourcePreviewLoading,
+    sourcePreviewError,
     followUrl,
     setFollowUrl,
     followName,
@@ -255,6 +290,7 @@ export function useAdmin(showToast: ShowToast, loadPublicData: () => Promise<voi
     handleRetryAnalysisTask,
     handleRetryFailedAnalysisTasks,
     handleCreateSource,
+    handlePreviewSource,
     handleToggleSource,
     handleFollowUrl,
     handleLogout,

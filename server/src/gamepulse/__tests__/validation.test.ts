@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { CreateSourceSchema, PublicStoriesQuerySchema, UpdateSourceSchema } from '../validation.js';
+import { CreateSourceSchema, PublicStoriesQuerySchema, SourcePreviewSchema, UpdateSourceSchema } from '../validation.js';
 
 describe('source validation', () => {
   test('parses boolean-like source fields on create', () => {
@@ -25,6 +25,19 @@ describe('source validation', () => {
     });
 
     expect(parsed).toEqual({ name: 'Renamed Source' });
+  });
+
+  test('validates source preview draft and caps preview limit', () => {
+    const parsed = SourcePreviewSchema.parse({
+      name: 'Preview Source',
+      type: 'rss',
+      game: 'Test Game',
+      url: 'https://example.com/feed.xml',
+      limit: 10
+    });
+
+    expect(parsed.limit).toBe(10);
+    expect(() => SourcePreviewSchema.parse({ ...parsed, limit: 11 })).toThrow();
   });
 });
 

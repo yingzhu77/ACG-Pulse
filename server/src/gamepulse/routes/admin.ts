@@ -16,6 +16,7 @@ import type { PrismaWhereClause } from '../types.js';
 import { getOperationalMetrics } from '../observability/operationsService.js';
 import {
   CreateSourceSchema,
+  SourcePreviewSchema,
   UpdateSourceSchema,
   FollowUrlSchema,
   ReanalyzeSchema,
@@ -24,6 +25,7 @@ import {
   UpdateSettingsSchema,
   validateOrThrow
 } from '../validation.js';
+import { previewSource, SourcePreviewError, sanitizeErrorMessage } from '../services/sourcePreview.js';
 
 // Login brute-force protection
 const loginAttempts = new Map<string, { count: number; resetAt: number }>();
@@ -101,6 +103,24 @@ export function createAdminRouter(io: Server): Router {
     } catch (error) {
       console.error('Create source failed:', error);
       res.status(400).json({ error: error instanceof Error ? error.message : 'Failed to create source' });
+    }
+  });
+
+  router.post('/sources/preview', async (req, res) => {
+    try {
+      const input = validateOrThrow(SourcePreviewSchema, req.body, 'source preview');
+      const { limit, ...sourceDraft } = input;
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(await previewSource(sourceDraft, limit));
+    } catch (error) {
+      if (error instanceof SourcePreviewError) {
+        return res.status(error.statusCode).json({ error: error.message });
+      }
+      if (error instanceof Error && error.message.startsWith('Validation failed')) {
+        return res.status(400).json({ error: sanitizeErrorMessage(error.message) });
+      }
+      console.error('Preview source failed:', sanitizeErrorMessage(error));
+      res.status(500).json({ error: 'Failed to preview source' });
     }
   });
 

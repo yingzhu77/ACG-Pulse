@@ -97,6 +97,17 @@ export const CreateSourceSchema = z.object({
   config: sourceConfigString
 });
 
+export const SourcePreviewSchema = CreateSourceSchema.extend({
+  limit: z.preprocess(
+    (v) => {
+      if (v === undefined || v === null || v === '') return 5;
+      const n = Number(v);
+      return Number.isFinite(n) ? n : 5;
+    },
+    z.number().int().min(1).max(10).default(5)
+  )
+});
+
 export const UpdateSourceSchema = z.object({
   name: z.string().trim().min(1, 'name is required').optional(),
   type: z.string().trim().min(1, 'type is required').optional(),
@@ -112,6 +123,7 @@ export const UpdateSourceSchema = z.object({
 });
 
 export type CreateSourceInput = z.infer<typeof CreateSourceSchema>;
+export type SourcePreviewInput = z.infer<typeof SourcePreviewSchema>;
 export type UpdateSourceInput = z.infer<typeof UpdateSourceSchema>;
 
 // --- Admin: Follow URL ---
