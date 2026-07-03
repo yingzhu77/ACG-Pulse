@@ -72,20 +72,54 @@ const booleanLike = z.preprocess(
 const sourceConfigString = z.preprocess(
   (v) => {
     if (v === undefined || v === null) return null;
-    if (typeof v === 'string') {
-      const s = v.trim();
-      return s || null;
-    }
-    return JSON.stringify(v);
+    if (typeof v === 'string') return v.trim() || null;
+    return v;
   },
-  z.string().nullable()
-);
+  z.union([z.string(), z.unknown()]).nullable()
+).transform((value, ctx): string | null => {
+  if (value === null) return null;
+
+  let parsed: unknown;
+  if (typeof value === 'string') {
+    try {
+      parsed = JSON.parse(value);
+    } catch {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'config must be valid JSON' });
+      return z.NEVER;
+    }
+  } else {
+    parsed = value;
+  }
+
+  const result = SourceConfigSchema.safeParse(parsed);
+  if (!result.success) {
+    for (const issue of result.error.issues) {
+      const path = issue.path.length ? `${issue.path.join('.')}: ` : '';
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: `${path}${issue.message}` });
+    }
+    return z.NEVER;
+  }
+  return JSON.stringify(result.data);
+});
+
+export const SourceConfigSchema = z.object({
+  itemKind: FeedItemKindEnum.optional(),
+  route: z.string().trim().min(1).optional(),
+  routeFallbacks: z.array(z.string().trim().min(1)).max(20).optional(),
+  rssHubRoutes: z.array(z.string().trim().min(1)).max(20).optional(),
+  rssHubBaseUrls: z.array(z.string().trim().min(1)).max(10).optional(),
+  fetchTimeoutMs: z.number().int().min(5_000).max(120_000).optional(),
+  directApiFallback: booleanLike.optional(),
+  includeDynamic: booleanLike.optional(),
+  tags: z.array(z.string().trim().min(1)).max(20).optional(),
+  authorUrl: z.string().trim().min(1).optional()
+}).passthrough();
 
 // --- Admin: Source CRUD ---
 
 export const CreateSourceSchema = z.object({
   name: z.string().trim().min(1, 'name is required'),
-  type: z.string().trim().min(1, 'type is required'),
+  type: SourceTypeEnum,
   game: z.string().trim().min(1, 'game is required'),
   url: optionalNullableTrimmedString,
   uid: optionalNullableTrimmedString,
@@ -110,7 +144,7 @@ export const SourcePreviewSchema = CreateSourceSchema.extend({
 
 export const UpdateSourceSchema = z.object({
   name: z.string().trim().min(1, 'name is required').optional(),
-  type: z.string().trim().min(1, 'type is required').optional(),
+  type: SourceTypeEnum.optional(),
   game: z.string().trim().min(1, 'game is required').optional(),
   url: optionalNullableTrimmedString.optional(),
   uid: optionalNullableTrimmedString.optional(),

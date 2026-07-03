@@ -21,6 +21,7 @@ jobs:
       - run: cd server && npx prisma generate
         env:
           DATABASE_URL: file:./dev.db
+      - run: cd server && npm test
       - run: cd server && npx tsc --noEmit
       - run: cd server && npm run build
 
@@ -35,6 +36,7 @@ jobs:
           cache: npm
           cache-dependency-path: client/package-lock.json
       - run: cd client && npm ci
+      - run: cd client && npm run lint
       - run: cd client && npx tsc --noEmit
       - run: cd client && npm run build
 

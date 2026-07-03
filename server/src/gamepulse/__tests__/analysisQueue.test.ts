@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 type MockTask = {
   id: string;
   feedItemId: string;
+  dedupeKey: string | null;
   status: string;
   retryCount: number;
   maxRetries: number;
@@ -82,6 +83,8 @@ function matchesWhere(task: MockTask, where: Record<string, unknown>): boolean {
     }
   }
 
+  if ('dedupeKey' in where && task.dedupeKey !== where.dedupeKey) return false;
+
   if (where.status) {
     if (typeof where.status === 'object') {
       const statusFilter = where.status as { in?: string[]; notIn?: string[] };
@@ -131,9 +134,15 @@ vi.mock('../../db.js', () => ({
         return Object.fromEntries(Object.keys(select).map(key => [key, found[key as keyof MockTask]]));
       }),
       create: vi.fn(async ({ data }: { data: Partial<MockTask> }) => {
+        if (data.dedupeKey && tasks.some(task => task.dedupeKey === data.dedupeKey)) {
+          const error = new Error('Unique constraint failed on dedupeKey') as Error & { code: string };
+          error.code = 'P2002';
+          throw error;
+        }
         const task: MockTask = {
           id: `task-${tasks.length + 1}`,
           feedItemId: data.feedItemId || 'item-1',
+          dedupeKey: data.dedupeKey ?? null,
           status: data.status || 'pending',
           retryCount: 0,
           maxRetries: data.maxRetries || 3,
@@ -153,9 +162,11 @@ vi.mock('../../db.js', () => ({
       }),
       createMany: vi.fn(async ({ data }: { data: Partial<MockTask>[] }) => {
         for (const item of data) {
+          if (item.dedupeKey && tasks.some(task => task.dedupeKey === item.dedupeKey)) continue;
           const task: MockTask = {
             id: `task-${tasks.length + 1}`,
             feedItemId: item.feedItemId || 'item-1',
+            dedupeKey: item.dedupeKey ?? null,
             status: item.status || 'pending',
             retryCount: 0,
             maxRetries: item.maxRetries || 3,
@@ -399,6 +410,7 @@ describe('analysis queue', () => {
     tasks.push({
       id: 'task-existing',
       feedItemId: feedItem.id,
+      dedupeKey: feedItem.id,
       status: 'pending',
       retryCount: 0,
       maxRetries: 3,
@@ -501,6 +513,7 @@ describe('analysis queue', () => {
     tasks.push({
       id: 'task-open',
       feedItemId: 'item-1',
+      dedupeKey: 'item-1',
       status: 'pending',
       retryCount: 0,
       maxRetries: 3,
@@ -542,6 +555,7 @@ describe('analysis queue', () => {
     tasks.push({
       id: 'task-claim-test',
       feedItemId: 'item-1',
+      dedupeKey: 'item-1',
       status: 'pending',
       retryCount: 0,
       maxRetries: 3,
@@ -575,6 +589,7 @@ describe('analysis queue', () => {
     tasks.push({
       id: 'task-failed-1',
       feedItemId: 'item-1',
+      dedupeKey: null,
       status: 'failed',
       retryCount: 1,
       maxRetries: 3,
@@ -592,6 +607,7 @@ describe('analysis queue', () => {
     tasks.push({
       id: 'task-failed-2',
       feedItemId: 'item-2',
+      dedupeKey: null,
       status: 'failed',
       retryCount: 2,
       maxRetries: 3,
@@ -620,6 +636,7 @@ describe('analysis queue', () => {
     const now = new Date('2026-06-24T00:00:00.000Z');
     const baseTask = {
       feedItemId: 'item-1',
+      dedupeKey: null,
       retryCount: 0,
       maxRetries: 3,
       lastError: null,
@@ -686,5 +703,62 @@ describe('analysis queue', () => {
     });
     delete process.env.ANALYSIS_TASK_COMPLETED_RETENTION_DAYS;
     delete process.env.ANALYSIS_TASK_FAILED_RETENTION_DAYS;
+  });
+
+  test('backfills dedupe keys for legacy open tasks and supersedes duplicates', async () => {
+    tasks.push(
+      {
+        id: 'legacy-open-1',
+        feedItemId: 'item-1',
+        dedupeKey: null,
+        status: 'pending',
+        retryCount: 0,
+        maxRetries: 3,
+        lastError: null,
+        provider: null,
+        model: null,
+        durationMs: null,
+        nextRunAt: new Date(),
+        startedAt: null,
+        completedAt: null,
+        failedAt: null,
+        createdAt: new Date('2026-07-01T00:00:00.000Z'),
+        updatedAt: new Date()
+      },
+      {
+        id: 'legacy-open-duplicate',
+        feedItemId: 'item-1',
+        dedupeKey: null,
+        status: 'pending',
+        retryCount: 0,
+        maxRetries: 3,
+        lastError: null,
+        provider: null,
+        model: null,
+        durationMs: null,
+        nextRunAt: new Date(),
+        startedAt: null,
+        completedAt: null,
+        failedAt: null,
+        createdAt: new Date('2026-07-01T00:01:00.000Z'),
+        updatedAt: new Date()
+      }
+    );
+
+    const { backfillAnalysisTaskDedupeKeysForTest } = await import('../ai/analysisQueue.js');
+    await backfillAnalysisTaskDedupeKeysForTest();
+
+    expect(tasks.find(task => task.id === 'legacy-open-1')).toMatchObject({
+      dedupeKey: 'item-1',
+      status: 'pending'
+    });
+    expect(tasks.find(task => task.id === 'legacy-open-duplicate')).toMatchObject({
+      dedupeKey: null,
+      status: 'failed',
+      retryCount: 3,
+      maxRetries: 3,
+      nextRunAt: new Date('9999-12-31T00:00:00.000Z'),
+      lastError: 'Duplicate open analysis task superseded during dedupe backfill'
+    });
   });
 });

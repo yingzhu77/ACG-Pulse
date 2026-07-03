@@ -22,48 +22,13 @@ let cleanupSnapshot = {
 
 export async function enqueueAnalysisTask(feedItemId: string, io?: Server): Promise<void> {
   currentIo = io || currentIo;
-  const existingOpenTask = await prisma.analysisTask.findFirst({
-    where: {
-      feedItemId,
-      status: { in: ['pending', 'running'] }
-    },
-    select: { id: true }
-  });
-
-  if (!existingOpenTask) {
-    await prisma.analysisTask.create({
-      data: {
-        feedItemId,
-        status: 'pending',
-        maxRetries: getMaxRetries(),
-        nextRunAt: new Date()
-      }
-    });
-  }
-
+  await createAnalysisTaskIfAbsent(feedItemId);
   void processAnalysisQueue(currentIo);
 }
 
 export async function reanalyzeItem(feedItemId: string, io?: Server): Promise<void> {
   currentIo = io || currentIo;
-  const existingOpenTask = await prisma.analysisTask.findFirst({
-    where: {
-      feedItemId,
-      status: { in: ['pending', 'running'] }
-    },
-    select: { id: true }
-  });
-
-  if (!existingOpenTask) {
-    await prisma.analysisTask.create({
-      data: {
-        feedItemId,
-        status: 'pending',
-        maxRetries: getMaxRetries(),
-        nextRunAt: new Date()
-      }
-    });
-  }
+  await createAnalysisTaskIfAbsent(feedItemId);
   void processAnalysisQueue(currentIo);
 }
 
@@ -87,17 +52,14 @@ export async function reanalyzeAll(limit: number, io?: Server): Promise<number> 
   });
   const openFeedItemIds = new Set(existingOpenTasks.map(task => task.feedItemId));
 
-  const taskData = items.filter(item => !openFeedItemIds.has(item.id)).map(item => ({
-    feedItemId: item.id,
-    status: 'pending' as const,
-    maxRetries: getMaxRetries(),
-    nextRunAt: new Date()
-  }));
+  let created = 0;
+  for (const item of items) {
+    if (openFeedItemIds.has(item.id)) continue;
+    if (await createAnalysisTaskIfAbsent(item.id)) created++;
+  }
 
-  if (taskData.length === 0) return 0;
-  await prisma.analysisTask.createMany({ data: taskData });
-  void processAnalysisQueue(currentIo);
-  return taskData.length;
+  if (created > 0) void processAnalysisQueue(currentIo);
+  return created;
 }
 
 export function startAnalysisQueueWorker(io: Server): void {
@@ -109,6 +71,7 @@ export function startAnalysisQueueWorker(io: Server): void {
       console.error('[AnalysisQueue] History cleanup failed:', error);
     }
     try {
+      await backfillAnalysisTaskDedupeKeys();
       await recoverStaleRunningTasks();
       await processAnalysisQueue(io);
     } catch (error) {
@@ -215,9 +178,21 @@ export async function getAnalysisQueueOverview() {
 
 export async function retryAnalysisTask(taskId: string, io?: Server): Promise<void> {
   currentIo = io || currentIo;
+  await resetTaskForRetry(taskId);
+  void processAnalysisQueue(currentIo);
+}
+
+async function resetTaskForRetry(taskId: string): Promise<void> {
+  const task = await prisma.analysisTask.findUnique({
+    where: { id: taskId },
+    select: { feedItemId: true }
+  });
+  if (!task) throw new Error('Analysis task not found');
+
   await prisma.analysisTask.update({
     where: { id: taskId },
     data: {
+      dedupeKey: task.feedItemId,
       status: 'pending',
       lastError: null,
       nextRunAt: new Date(),
@@ -227,25 +202,27 @@ export async function retryAnalysisTask(taskId: string, io?: Server): Promise<vo
       durationMs: null
     }
   });
-  void processAnalysisQueue(currentIo);
 }
 
 export async function retryFailedAnalysisTasks(io?: Server): Promise<number> {
   currentIo = io || currentIo;
-  const result = await prisma.analysisTask.updateMany({
+  const failedTasks = await prisma.analysisTask.findMany({
     where: { status: 'failed' },
-    data: {
-      status: 'pending',
-      lastError: null,
-      nextRunAt: new Date(),
-      startedAt: null,
-      completedAt: null,
-      failedAt: null,
-      durationMs: null
-    }
+    select: { id: true }
   });
+
+  let retried = 0;
+  for (const task of failedTasks) {
+    try {
+      await resetTaskForRetry(task.id);
+      retried++;
+    } catch (error) {
+      if (!isPrismaUniqueConflict(error)) throw error;
+    }
+  }
+
   void processAnalysisQueue(currentIo);
-  return result.count;
+  return retried;
 }
 
 async function claimNextTask(): Promise<{ id: string; feedItemId: string } | null> {
@@ -318,6 +295,7 @@ async function runTask(taskId: string, feedItemId: string, io?: Server): Promise
   await prisma.analysisTask.update({
     where: { id: taskId },
     data: {
+      dedupeKey: null,
       status: 'completed',
       provider: result.provider,
       model: result.model,
@@ -346,6 +324,7 @@ async function markTaskFailed(taskId: string, message: string, started: number):
       lastError: message.slice(0, 500),
       durationMs: Date.now() - started,
       failedAt: new Date(),
+      dedupeKey: retryCount < maxRetries ? undefined : null,
       nextRunAt: retryCount < maxRetries
         ? new Date(Date.now() + retryDelayMs(retryCount))
         : TERMINAL_NEXT_RUN_AT
@@ -419,6 +398,10 @@ export function clearRetryTimerForTest(): void {
   clearRetryTimer();
 }
 
+export async function backfillAnalysisTaskDedupeKeysForTest(): Promise<void> {
+  await backfillAnalysisTaskDedupeKeys();
+}
+
 async function recoverStaleRunningTasks(): Promise<void> {
   await prisma.analysisTask.updateMany({
     where: { status: 'running' },
@@ -428,6 +411,83 @@ async function recoverStaleRunningTasks(): Promise<void> {
       nextRunAt: new Date()
     }
   });
+}
+
+async function backfillAnalysisTaskDedupeKeys(): Promise<void> {
+  const candidates = await prisma.analysisTask.findMany({
+    where: {
+      dedupeKey: null,
+      OR: [
+        { status: { in: ['pending', 'running'] } },
+        { status: 'failed', nextRunAt: { lt: TERMINAL_NEXT_RUN_AT } }
+      ]
+    },
+    orderBy: [{ createdAt: 'asc' }],
+    select: { id: true, feedItemId: true }
+  });
+  const seenFeedItems = new Set<string>();
+
+  for (const task of candidates) {
+    if (seenFeedItems.has(task.feedItemId)) {
+      await markDuplicateOpenTaskSuperseded(task.id);
+      continue;
+    }
+
+    try {
+      await prisma.analysisTask.update({
+        where: { id: task.id },
+        data: { dedupeKey: task.feedItemId }
+      });
+      seenFeedItems.add(task.feedItemId);
+    } catch (error) {
+      if (!isPrismaUniqueConflict(error)) throw error;
+      seenFeedItems.add(task.feedItemId);
+      await markDuplicateOpenTaskSuperseded(task.id);
+    }
+  }
+}
+
+async function markDuplicateOpenTaskSuperseded(taskId: string): Promise<void> {
+  const maxRetries = getMaxRetries();
+  await prisma.analysisTask.update({
+    where: { id: taskId },
+    data: {
+      dedupeKey: null,
+      status: 'failed',
+      retryCount: maxRetries,
+      maxRetries,
+      lastError: 'Duplicate open analysis task superseded during dedupe backfill',
+      failedAt: new Date(),
+      nextRunAt: TERMINAL_NEXT_RUN_AT
+    }
+  });
+}
+
+async function createAnalysisTaskIfAbsent(feedItemId: string): Promise<boolean> {
+  try {
+    await prisma.analysisTask.create({
+      data: {
+        feedItemId,
+        dedupeKey: feedItemId,
+        status: 'pending',
+        maxRetries: getMaxRetries(),
+        nextRunAt: new Date()
+      }
+    });
+    return true;
+  } catch (error) {
+    if (isPrismaUniqueConflict(error)) return false;
+    throw error;
+  }
+}
+
+function isPrismaUniqueConflict(error: unknown): boolean {
+  return Boolean(
+    error
+    && typeof error === 'object'
+    && 'code' in error
+    && (error as { code?: unknown }).code === 'P2002'
+  );
 }
 
 function getMaxRetries(): number {

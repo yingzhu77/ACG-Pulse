@@ -2,6 +2,14 @@
 
 > 多窗口协作时，优先使用 [后续小窗口任务提示词](NEXT_WINDOW_PROMPTS.md) 分派工作；每个窗口完成后同步更新这里的状态。
 
+## 2026-07-03 Review Follow-Up
+
+- Done: CI now runs the server Vitest suite and client ESLint before build.
+- Done: Admin source validation now rejects unsupported source types and validates known `config` fields before persistence.
+- Done: AI analysis task enqueue now uses a database-level `dedupeKey` to make open/retryable tasks idempotent per `feedItemId`.
+- Planned: replace the fixed `/api/public/stories` candidate window with a cursor/bucketed story paging design. The current 500-item window is stable for small data sets, but it can undercount totals once the retained feed exceeds that window.
+- Planned: replace production `prisma db push --accept-data-loss` with explicit Prisma migrations after the next schema stabilization pass.
+
 ## 第一阶段：基础稳固（已完成）
 
 - 明确项目使用 UTF-8 编码，并添加 `.editorconfig` 固化编辑器约定。

@@ -39,6 +39,51 @@ describe('source validation', () => {
     expect(parsed.limit).toBe(10);
     expect(() => SourcePreviewSchema.parse({ ...parsed, limit: 11 })).toThrow();
   });
+
+  test('rejects unsupported source types', () => {
+    expect(() => CreateSourceSchema.parse({
+      name: 'Bad Source',
+      type: 'webhook',
+      game: 'Test Game'
+    })).toThrow();
+  });
+
+  test('normalizes and validates source config', () => {
+    const parsed = CreateSourceSchema.parse({
+      name: 'RSSHub Source',
+      type: 'rsshub',
+      game: 'Test Game',
+      config: {
+        itemKind: 'official_post',
+        rssHubRoutes: ['/mihoyo/bbs/official/2/1/20'],
+        fetchTimeoutMs: 10000,
+        directApiFallback: 'true'
+      }
+    });
+
+    expect(JSON.parse(parsed.config || '{}')).toMatchObject({
+      itemKind: 'official_post',
+      rssHubRoutes: ['/mihoyo/bbs/official/2/1/20'],
+      fetchTimeoutMs: 10000,
+      directApiFallback: true
+    });
+  });
+
+  test('rejects malformed source config JSON and invalid known fields', () => {
+    expect(() => CreateSourceSchema.parse({
+      name: 'Bad Config',
+      type: 'rss',
+      game: 'Test Game',
+      config: '{bad-json'
+    })).toThrow();
+
+    expect(() => CreateSourceSchema.parse({
+      name: 'Bad Config',
+      type: 'rss',
+      game: 'Test Game',
+      config: { itemKind: 'unknown_kind' }
+    })).toThrow();
+  });
 });
 
 describe('stories query validation', () => {

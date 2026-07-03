@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { AdapterError, type SourceAdapter } from '../adapters/base.js';
 import { previewSource, sanitizeErrorMessage } from '../services/sourcePreview.js';
+import type { CreateSourceInput } from '../validation.js';
 
 const fetchMock = vi.fn<SourceAdapter['fetch']>();
 
@@ -28,7 +29,7 @@ const draft = {
   enabled: true,
   priority: 50,
   config: null
-};
+} satisfies CreateSourceInput;
 
 describe('source preview service', () => {
   beforeEach(() => {
@@ -73,7 +74,7 @@ describe('source preview service', () => {
   });
 
   test('reports unsupported source type as a sanitized fetch failure', async () => {
-    await expect(previewSource({ ...draft, type: 'unsupported' }, 5))
+    await expect(previewSource({ ...draft, type: 'unsupported' } as unknown as CreateSourceInput, 5))
       .rejects.toMatchObject({
         statusCode: 422,
         message: 'Unsupported source type: unsupported token=[redacted]'
