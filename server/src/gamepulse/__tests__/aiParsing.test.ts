@@ -152,6 +152,22 @@ describe('AI JSON parsing', () => {
     expect(result.analysis.importance).toBe('low');
   });
 
+  test('normalizes invalid visibility to public', async () => {
+    mockProviderResponse(JSON.stringify({
+      category: 'other',
+      importance: 'low',
+      visibility: 'private',
+      confidence: 50,
+      summary: '测试',
+      reason: '测试',
+      dedupKeywords: []
+    }));
+
+    const result = await analyzeWithProvider(baseInput);
+
+    expect(result.analysis.visibility).toBe('public');
+  });
+
   test('clamps confidence to 0-100 range', async () => {
     mockProviderResponse(JSON.stringify({
       category: 'other',
@@ -212,6 +228,40 @@ describe('AI JSON parsing', () => {
     expect(result.analysis.visibility).toBe('public');
     expect(result.analysis.confidence).toBe(50);
     expect(result.analysis.summary).toBe('暂无摘要');
+  });
+
+  test('throws on invalid JSON instead of returning fallback analysis', async () => {
+    mockPost.mockResolvedValue({
+      data: {
+        choices: [{ message: { content: 'not json at all' } }]
+      }
+    });
+
+    await expect(analyzeWithProvider(baseInput)).rejects.toThrow('AI response did not contain JSON');
+    expect(mockPost).toHaveBeenCalledTimes(3);
+  });
+
+  test('throws on empty response instead of returning fallback analysis', async () => {
+    mockPost.mockResolvedValue({
+      data: {
+        choices: [{ message: { content: '' } }]
+      }
+    });
+
+    await expect(analyzeWithProvider(baseInput)).rejects.toThrow('AI response did not contain JSON');
+    expect(mockPost).toHaveBeenCalledTimes(3);
+  });
+
+  test('uses low-confidence rules fallback when provider is not configured', async () => {
+    delete process.env.MIMO_API_KEY;
+
+    const result = await analyzeWithProvider(baseInput);
+
+    expect(result.provider).toBe('fallback');
+    expect(result.model).toBe('rules');
+    expect(result.analysis.confidence).toBe(35);
+    expect(result.analysis.importance).toBe('medium');
+    expect(mockPost).not.toHaveBeenCalled();
   });
 
   test('retries on API error and throws after max retries', async () => {

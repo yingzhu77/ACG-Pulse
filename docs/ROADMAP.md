@@ -25,7 +25,7 @@
   - ✅ 为定时任务增加互斥锁，避免重叠执行。
   - ✅ 源健康日志保留策略（默认 30 天，可配置 HEALTH_LOG_RETENTION_DAYS）。
 - 补齐测试：
-  - AI JSON 解析与 fallback 测试（未实现）。
+  - ✅ AI JSON 解析与 fallback 测试（`aiParsing.test.ts`、`analysisQueue.test.ts`）。
   - ✅ source 创建/更新/布尔值解析测试（`validation.test.ts`）。
   - ✅ stories filter/facet 组合测试。
   - ✅ checker 稳定身份与去重测试，覆盖 external ID 格式漂移、同源更新和跨源隔离。

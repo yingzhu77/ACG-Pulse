@@ -459,6 +459,44 @@ describe('analysis queue', () => {
     });
   });
 
+  test('provider failure marks analysis failed and clears stale business fields', async () => {
+    const provider = await import('../ai/provider.js');
+    vi.mocked(provider.analyzeWithProvider).mockRejectedValueOnce(new Error('invalid provider JSON'));
+    analysisRecords.set(feedItem.id, {
+      status: 'completed',
+      category: 'version',
+      importance: 'high',
+      visibility: 'public',
+      confidence: 95,
+      summary: '旧高置信摘要',
+      reason: '旧分析',
+      dedupKeywords: '["旧"]',
+      provider: 'old-provider',
+      model: 'old-model',
+      error: null,
+      analyzedAt: new Date('2026-06-01T00:00:00.000Z')
+    });
+
+    const { ensureAnalysis } = await import('../ai/analyzer.js');
+    const result = await ensureAnalysis(feedItem, { force: true });
+
+    expect(result).toEqual({ status: 'failed', error: 'invalid provider JSON' });
+    expect(analysisRecords.get(feedItem.id)).toMatchObject({
+      status: 'failed',
+      category: null,
+      importance: 'low',
+      visibility: 'public',
+      confidence: 0,
+      summary: null,
+      reason: null,
+      dedupKeywords: null,
+      provider: null,
+      model: null,
+      analyzedAt: null,
+      error: 'invalid provider JSON'
+    });
+  });
+
   test('reanalyzeAll skips items with open tasks', async () => {
     tasks.push({
       id: 'task-open',

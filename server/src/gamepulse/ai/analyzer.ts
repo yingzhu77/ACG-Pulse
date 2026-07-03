@@ -152,6 +152,16 @@ export async function ensureAnalysis(
       where: { feedItemId: item.id },
       data: {
         status: 'failed',
+        category: null,
+        importance: 'low',
+        visibility: 'public',
+        confidence: 0,
+        summary: null,
+        reason: null,
+        dedupKeywords: null,
+        provider: null,
+        model: null,
+        analyzedAt: null,
         error: message
       }
     });
