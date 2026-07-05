@@ -16,13 +16,31 @@ import {
   validateOrThrow
 } from '../validation.js';
 import { searchFeedItems, isFTS5Ready } from '../search.js';
+import { getMaxFeedItems } from '../config.js';
+import type { FeedItemWithRelations } from '../types.js';
 
 const router = Router();
 
 // Stories 聚合缓存：相同查询条件 60s 内直接返回缓存结果
 const storiesCache = new Map<string, { data: unknown; expires: number }>();
 const STORIES_CACHE_TTL = 60_000;
-const STORIES_CANDIDATE_LIMIT = 500;
+const STORIES_BATCH_SIZE = 500;
+const FTS_RECALL_LIMIT = 10000;
+
+const storyCandidateInclude = {
+  source: {
+    select: {
+      id: true,
+      name: true,
+      type: true,
+      game: true,
+      isOfficial: true,
+      followed: true,
+      healthStatus: true
+    }
+  },
+  analysis: true
+} as const;
 
 function getStoriesCacheKey(params: Record<string, unknown>): string {
   return Object.entries(params)
@@ -46,6 +64,28 @@ function setCachedStories(key: string, data: unknown): void {
     const oldest = storiesCache.keys().next().value;
     if (oldest) storiesCache.delete(oldest);
   }
+}
+
+async function fetchStoryCandidateItems(where: PrismaWhereClause, maxItems: number): Promise<FeedItemWithRelations[]> {
+  const items: FeedItemWithRelations[] = [];
+  let cursor: { id: string } | undefined;
+
+  while (items.length < maxItems) {
+    const take = Math.min(STORIES_BATCH_SIZE, maxItems - items.length);
+    const batch = await prisma.feedItem.findMany({
+      where,
+      orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
+      ...(cursor ? { cursor, skip: 1 } : {}),
+      take,
+      include: storyCandidateInclude
+    });
+
+    items.push(...batch);
+    if (batch.length < take) break;
+    cursor = { id: batch[batch.length - 1].id };
+  }
+
+  return items;
 }
 
 /**
@@ -78,7 +118,6 @@ router.get('/items', async (req, res) => {
     }
 
     // FTS5 search: use FTS if available, fallback to LIKE
-    const FTS_RECALL_LIMIT = 10000;
     let ftsIds: string[] | null = null;
     if (q) {
       const ftsReady = await isFTS5Ready();
@@ -199,7 +238,6 @@ router.get('/stories', async (req, res) => {
     }
 
     // FTS5 search: use FTS if available, fallback to LIKE
-    const FTS_RECALL_LIMIT = 10000;
     let ftsIds: string[] | null = null;
     if (q) {
       const ftsReady = await isFTS5Ready();
@@ -248,26 +286,10 @@ router.get('/stories', async (req, res) => {
     }
     applyLowValueNoticeFilter(where, visibility);
 
-    const items = await prisma.feedItem.findMany({
-      where,
-      orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }],
-      // Every page must aggregate the same candidate window or totals and boundaries drift.
-      take: q && ftsIds ? Math.min(ftsIds.length, FTS_RECALL_LIMIT) : STORIES_CANDIDATE_LIMIT,
-      include: {
-        source: {
-          select: {
-            id: true,
-            name: true,
-            type: true,
-            game: true,
-            isOfficial: true,
-            followed: true,
-            healthStatus: true
-          }
-        },
-        analysis: true
-      }
-    });
+    const maxCandidates = q && ftsIds
+      ? Math.min(ftsIds.length, FTS_RECALL_LIMIT, getMaxFeedItems())
+      : getMaxFeedItems();
+    const items = await fetchStoryCandidateItems(where, maxCandidates);
 
     // Aggregate stories for display
     const allStories = aggregateFeedItemsToStories(items);
