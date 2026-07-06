@@ -212,13 +212,38 @@ bash scripts/check-config.sh server/.env  # 检查本地开发 .env
 
 **处理**：先把 diff 和目录移动到仓库外留档，再恢复 tracked 文件并拉取。完整命令见 `deployment-guide.md` 的“收拢旧热修并拉取代码”。不要使用 `git reset --hard`，也不要删除 `.env`、数据库备份或 Docker volume。
 
-### 新增唯一索引时 Prisma 拒绝启动
+### Prisma 迁移失败或提示 drift
 
-**现象**：容器日志提示 `Use the --accept-data-loss flag`，服务停在 `prisma db push`。
+**现象**：容器日志停在 `prisma migrate deploy`，或提示迁移历史和数据库结构不一致。
 
-**原因**：Prisma 对新增唯一约束要求显式确认。项目入口脚本会先创建 SQLite 热备、校验备份、移除可重建 FTS，再以 `--accept-data-loss` 同步 schema。
+**原因**：生产库已经从 `prisma db push` 切换到 Prisma Migrate。旧生产库第一次升级时会自动把 `20260706000000_baseline` 标记为已应用；之后任何 schema 变更都必须有对应的 `server/prisma/migrations/*/migration.sql`。如果只改了 `schema.prisma` 却没有提交 migration，生产不会再自动推断并修改表结构。
 
-**处理**：更新到包含该入口修复的最新镜像后重新创建 app。不要跳过备份直接在生产数据库手工执行 schema 修改。
+**处理**：
+
+```bash
+cd /opt/personal-hot-monitor
+docker compose logs app --tail 200
+ls -la server/prisma/migrations
+docker exec game-pulse ls -la /app/server/data/pre-migrate-backups
+```
+
+不要在生产上改回 `prisma db push --accept-data-loss`，也不要直接手工改库。先保留日志和 `pre-migrate-backups` 中的自动备份，在本地生成并 review migration：
+
+```bash
+cd server
+npm run db:migrate -- --name 描述性迁移名
+npm run db:status
+```
+
+修正后提交、构建并重新部署 app。
+
+### 新增唯一索引时迁移失败
+
+**现象**：`prisma migrate deploy` 在新增唯一约束时失败，例如提示现有数据违反唯一索引。
+
+**原因**：迁移文件是显式 SQL，不会像旧的 `db push --accept-data-loss` 那样只给出交互式警告。生产存在重复值时，唯一索引无法创建。
+
+**处理**：不要删除数据硬闯。先用备份库或只读查询定位重复记录，补一份有数据清理步骤的 migration，或者先发布应用级回填/去重逻辑，确认重复值消失后再发布唯一索引迁移。
 
 ## 常用运维命令
 

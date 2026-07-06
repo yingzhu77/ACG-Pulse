@@ -197,7 +197,7 @@ docker compose ps
 docker compose logs app --tail 120
 ```
 
-升级到稳定情报身份版本时，日志应包含 `Identity backfill completed`；若历史数据已经回填完成，后续重启不会重复输出该行。
+首次升级到可审计迁移版本时，日志应包含 `Existing database has no Prisma migration history; marking baseline as applied...` 和 `Applying migration` / `No pending migrations to apply`。这表示旧生产库已保留现有结构，并从 baseline 开始接入 Prisma Migrate 历史。升级到稳定情报身份版本时，日志应包含 `Identity backfill completed`；若历史数据已经回填完成，后续重启不会重复输出该行。
 
 ### 5. 验收
 
@@ -216,6 +216,48 @@ docker compose ps
 ```bash
 curl -sSI https://acg.yingzhu.xyz/api/health | grep -i access-control-allow-origin
 ```
+
+## 数据库迁移流程
+
+生产数据库结构变更必须走 Prisma Migrate。不要在生产容器入口或部署命令中使用 `prisma db push --accept-data-loss` 同步 schema；`db push` 只适合本地临时原型验证。
+
+当前仓库包含 `server/prisma/migrations/20260706000000_baseline`。这份迁移描述的是项目在迁移化之前已经由 `db push` 管理出来的完整 schema：
+
+- 新部署的空数据库会通过 `prisma migrate deploy` 从 baseline 建表。
+- 已有生产数据库如果没有 `_prisma_migrations` 表，入口脚本会在备份和 FTS 清理后执行一次 `prisma migrate resolve --applied 20260706000000_baseline`，再运行 `prisma migrate deploy`。
+- 后续新增字段、索引、约束时，必须提交新的 migration 目录，不再依赖 Prisma 在生产自动推断 schema diff。
+
+本地开发生成迁移：
+
+```bash
+cd server
+npm run db:migrate -- --name 描述性迁移名
+npm run db:status
+```
+
+只创建迁移文件、暂不应用到本地库：
+
+```bash
+cd server
+npx prisma migrate dev --create-only --name 描述性迁移名
+```
+
+提交前检查：
+
+```bash
+npm --prefix server test
+npm --prefix server run build
+git diff --check
+```
+
+生产发布时仍按“更新部署”流程执行。新容器启动后会自动运行：
+
+```bash
+npx prisma generate
+npx prisma migrate deploy
+```
+
+如果 `migrate deploy` 失败，不要手工修改生产库；先保留日志和 `pre-migrate-backups` 中的备份，回到本地修正 migration 后重新发布。
 
 ## 数据备份
 
