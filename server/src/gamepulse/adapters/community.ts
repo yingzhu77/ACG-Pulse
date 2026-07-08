@@ -346,8 +346,10 @@ export async function aggregateCommunityTopics(options?: {
       for (let i = 0; i < validNewXhh.length; i++) {
         const item = validNewXhh[i];
         const sentiment = xhhSentiments[i];
-        const ts = (item.modify_at || 0) > 0 ? item.modify_at : Math.floor(Date.now() / 1000);
-        const rawHeatScore = calculateXiaoheiheHeat(ts);
+        const ts = typeof item.modify_at === 'number' && item.modify_at > 0
+          ? item.modify_at
+          : Math.floor(Date.now() / 1000);
+        const rawHeatScore = calculateXiaoheiheHeat(item);
 
         topics.push({
           id: `xhh-${item.linkid}`,
@@ -374,9 +376,11 @@ export async function aggregateCommunityTopics(options?: {
 
     // Existing items: just keep heat score
     for (const item of existingXhh) {
-      const ts = (item.modify_at || 0) > 0 ? item.modify_at : Math.floor(Date.now() / 1000);
+      const ts = typeof item.modify_at === 'number' && item.modify_at > 0
+        ? item.modify_at
+        : Math.floor(Date.now() / 1000);
       const existing = existingTopics!.get(`xhh-${item.linkid}`)!;
-      const rawHeatScore = calculateXiaoheiheHeat(ts);
+      const rawHeatScore = calculateXiaoheiheHeat(item);
       topics.push({
         id: `xhh-${item.linkid}`,
         title: item.title,

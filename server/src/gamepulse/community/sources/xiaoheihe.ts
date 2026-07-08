@@ -6,7 +6,12 @@ export interface XiaoheiheNewsItem {
   linkid: number;
   title: string;
   description: string;
-  modify_at: number;
+  modify_at?: number;
+  comment_num?: number;
+  link_award_num?: number;
+  down?: number;
+  forward_num?: number;
+  topics?: Array<{ hot_value_v2?: number }>;
 }
 
 const XHH_DICT = 'JKMNPQRTX1234OABCDFG56789H';

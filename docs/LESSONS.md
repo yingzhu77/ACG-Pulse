@@ -805,7 +805,18 @@ END
 - 归一化函数只写 `heatScore`，不得顺手覆盖 raw 字段；DB upsert 负责分别追加展示分和 raw 分。
 - 旧数据 raw 历史为空时按缺失历史处理，不能把空数组或默认 0 解释成真实热度下跌。
 
-### 5.33 Server 不要直接 import `shared/`
+### 5.33 小黑盒热度不能只依赖更新时间
+
+**问题**：小黑盒列表响应里同时有评论数、互动/奖励数、转发数、话题热度和负反馈。如果 raw 热度只按 `modify_at` 做时间衰减，“刚更新但几乎没人讨论”的内容会虚高，真实互动更强的话题反而可能被压低。
+
+**规则**：
+- 优先使用列表响应已有字段计算 raw 热度，不新增详情请求，避免性能退化和接口限流。
+- 评论、互动/奖励、转发和话题热度使用 `log1p` 或类似压缩方式，避免大数单点打穿排序。
+- 负反馈只做轻量惩罚；争议内容仍可能是热点，不能直接归零。
+- 时间仍作为衰减因子，而不是唯一热度来源。
+- 公式变化必须同步 `communityHeat.test.ts`、`docs/API_CONTRACTS.md` 和 `docs/DECISIONS.md`。
+
+### 5.34 Server 不要直接 import `shared/`
 
 **问题**：server `tsconfig` 的 `rootDir` 是 `server/src`。如果服务端实现文件直接从 `../../shared/api.ts` import DTO，即使只是类型导入，`npm run build` 也会报 `TS6059: File shared/api.ts is not under rootDir`。
 

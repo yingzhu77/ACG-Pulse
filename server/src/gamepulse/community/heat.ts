@@ -24,10 +24,31 @@ export function calculateNgaHeat(post: { replies: number; postdate: number }): n
   return Math.max(0, (replyScore + recencyBoost) * decay);
 }
 
-export function calculateXiaoheiheHeat(modifiedAt: number): number {
-  const timestamp = modifiedAt > 0 ? modifiedAt : Date.now() / 1000;
+export function calculateXiaoheiheHeat(item: {
+  modify_at?: number;
+  comment_num?: number;
+  link_award_num?: number;
+  forward_num?: number;
+  down?: number;
+  topics?: Array<{ hot_value_v2?: number }>;
+}): number {
+  const timestamp = (item.modify_at || 0) > 0 ? item.modify_at! : Date.now() / 1000;
   const ageHours = Math.max(0.1, (Date.now() / 1000 - timestamp) / 3600);
-  return 100 * Math.pow(0.5, ageHours / 36);
+  const decay = Math.pow(0.5, ageHours / 36);
+  const capLogScore = (value: number | undefined, maxScore: number, softCap: number) => (
+    Math.min(maxScore, (Math.log1p(Math.max(0, value || 0)) / Math.log1p(softCap)) * maxScore)
+  );
+  const topicHot = Math.max(0, ...(item.topics || []).map(topic => topic.hot_value_v2 || 0));
+
+  const commentScore = capLogScore(item.comment_num, 38, 300);
+  const awardScore = capLogScore(item.link_award_num, 32, 120);
+  const forwardScore = capLogScore(item.forward_num, 10, 80);
+  const topicScore = capLogScore(topicHot, 12, 100_000);
+  const freshBoost = Math.min(8, 8 * Math.pow(0.5, ageHours / 12));
+  const downPenalty = capLogScore(item.down, 12, 500);
+  const score = commentScore + awardScore + forwardScore + topicScore + freshBoost - downPenalty;
+
+  return Math.max(0, score * decay);
 }
 
 export function normalizeHeatBySource<T extends HeatCandidate>(topics: T[]): T[] {

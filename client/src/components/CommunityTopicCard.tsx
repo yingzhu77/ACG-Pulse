@@ -13,6 +13,25 @@ interface CommunityTopicCardProps {
   topic: CommunityTopic;
 }
 
+const HTML_ENTITIES: Record<string, string> = {
+  '&nbsp;': ' ',
+  '&amp;': '&',
+  '&lt;': '<',
+  '&gt;': '>',
+  '&quot;': '"',
+  '&#39;': "'"
+};
+
+function sanitizeDisplayText(raw: string): string {
+  return (raw || '')
+    .replace(/&(nbsp|amp|lt|gt|quot|#39);/g, entity => HTML_ENTITIES[entity] || entity)
+    .replace(/<br\s*\/?>/gi, ' ')
+    .replace(/<[^>]+>/g, '')
+    .replace(/\[.*?\]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 export const CommunityTopicCard = memo(function CommunityTopicCard({ topic }: CommunityTopicCardProps) {
   const sentimentColor =
     topic.sentiment === 'positive' ? 'var(--green)' :
@@ -45,7 +64,7 @@ export const CommunityTopicCard = memo(function CommunityTopicCard({ topic }: Co
         <a href={topic.url} target="_blank" rel="noreferrer" className="story-title">
           {topic.title}
         </a>
-        <p className="story-summary">{topic.summary}</p>
+        <p className="story-summary">{sanitizeDisplayText(topic.summary)}</p>
 
         <div className="story-footer">
           <span className="hot-heat-badge">

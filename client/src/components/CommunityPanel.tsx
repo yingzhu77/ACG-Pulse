@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { ArrowUp, Clock3, Flame, TrendingUp } from 'lucide-react';
+import { ArrowUp, Clock3, Flame, Info, TrendingUp, X } from 'lucide-react';
 import { SENTIMENT_TYPES, TOPIC_CATEGORIES, COMMUNITY_SOURCES } from '../constants';
 import type { CommunityTopic } from '../constants';
 import { cn } from '../lib/utils';
@@ -29,10 +29,27 @@ export function CommunityPanel() {
   const [isStale, setIsStale] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [showScrollTop, setShowScrollTop] = useState(false);
+  const [heatInfoOpen, setHeatInfoOpen] = useState(false);
   const panelTopRef = useRef<HTMLDivElement | null>(null);
+  const heatInfoButtonRef = useRef<HTMLButtonElement | null>(null);
+  const heatInfoCloseRef = useRef<HTMLButtonElement | null>(null);
   const requestControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => () => requestControllerRef.current?.abort(), []);
+
+  useEffect(() => {
+    if (!heatInfoOpen) return;
+    const opener = heatInfoButtonRef.current;
+    heatInfoCloseRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setHeatInfoOpen(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      opener?.focus();
+    };
+  }, [heatInfoOpen]);
 
   useEffect(() => {
     const panelTop = panelTopRef.current;
@@ -135,6 +152,16 @@ export function CommunityPanel() {
           已展示 {topics.length} / {total}
         </span>
         <h2>社区热点风向</h2>
+        <button
+          ref={heatInfoButtonRef}
+          type="button"
+          className="community-info-button"
+          onClick={() => setHeatInfoOpen(true)}
+          aria-label="查看热度分数规则"
+          title="热度分数规则"
+        >
+          <Info className="h-4 w-4" />
+        </button>
         {loading && topics.length === 0 ? (
           <span style={{ fontSize: '0.75rem', color: 'var(--text-soft)' }}>加载中...</span>
         ) : isRefreshing ? (
@@ -269,6 +296,51 @@ export function CommunityPanel() {
       >
         <ArrowUp className="h-5 w-5" />
       </button>
+      {heatInfoOpen && (
+        <div
+          className="community-info-backdrop"
+          role="presentation"
+          onMouseDown={() => setHeatInfoOpen(false)}
+        >
+          <div
+            className="community-info-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="community-heat-info-title"
+            onMouseDown={event => event.stopPropagation()}
+          >
+            <div className="community-info-dialog-heading">
+              <div>
+                <span>评分说明</span>
+                <h3 id="community-heat-info-title">热度分数如何计算</h3>
+              </div>
+              <button
+                ref={heatInfoCloseRef}
+                type="button"
+                className="community-info-close"
+                onClick={() => setHeatInfoOpen(false)}
+                aria-label="关闭热度说明"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="community-info-dialog-body">
+              <p>
+                页面展示的热度是 10-100 的相对分数，用来排序同一轮抓取中的社区话题，不代表不同平台播放量、回复数或浏览量可以直接横向比较。
+              </p>
+              <ul>
+                <li>B站先按播放、点赞、评论和发布时间衰减计算原始热度。</li>
+                <li>NGA 主要按回复数、发帖时间和新帖加权计算原始热度。</li>
+                <li>小黑盒结合评论、互动、转发、话题热度与时间衰减计算原始热度。</li>
+                <li>最终分数会在各自来源内部按百分位归一化，降低平台体量差异带来的偏差。</li>
+              </ul>
+              <p>
+                因此分数更适合判断“这个来源当前哪些话题更热”，不适合作为绝对热度或舆论结论。
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

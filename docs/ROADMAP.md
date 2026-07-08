@@ -7,8 +7,8 @@
 - Done: CI now runs the server Vitest suite and client ESLint before build.
 - Done: Admin source validation now rejects unsupported source types and validates known `config` fields before persistence.
 - Done: AI analysis task enqueue now uses a database-level `dedupeKey` to make open/retryable tasks idempotent per `feedItemId`.
-- Planned: replace the fixed `/api/public/stories` candidate window with a cursor/bucketed story paging design. The current 500-item window is stable for small data sets, but it can undercount totals once the retained feed exceeds that window.
-- Planned: replace production `prisma db push --accept-data-loss` with explicit Prisma migrations after the next schema stabilization pass.
+- Done: `/api/public/stories` now reads candidates in stable cursor batches instead of a fixed 500-item window, preventing deep pagination totals from being truncated.
+- Done: production schema sync now uses explicit Prisma migrations with a baseline and `prisma migrate deploy`; `db push` remains local-only.
 
 ## 第一阶段：基础稳固（已完成）
 
@@ -68,4 +68,7 @@
   - ✅ P1：Framer Motion 去掉逐帧 stagger delay，加 React.memo。
   - ✅ P2：数据库批量 upsert 替代逐条写入（findMany + createMany）。
   - ✅ P3：API 响应加 Cache-Control 头（公开接口 60-3600s，管理端 no-store）。
+  - ✅ P3：清理 NGA 摘要中的 HTML/论坛标记，前端展示再兜底清洗。
+  - ✅ P3：小黑盒热度改为使用评论、互动、转发、话题热度、轻量负反馈和时间衰减，减少“只因更新时间新就虚高”的偏差。
+  - ✅ P3：社区热度说明改为标题旁信息弹窗，明确各来源热度规则和来源内归一化边界。
   - 不做：跳过低热话题 AI 情绪分析——保留全量 AI 分析以保证情绪数据完整性。

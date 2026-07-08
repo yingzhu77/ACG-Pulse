@@ -17,6 +17,27 @@ export interface NgaPostContent {
 
 const NGA_FORUMS = [476, 650, 341, 710, 694, 447];
 
+const HTML_ENTITIES: Record<string, string> = {
+  '&nbsp;': ' ',
+  '&amp;': '&',
+  '&lt;': '<',
+  '&gt;': '>',
+  '&quot;': '"',
+  '&#39;': "'"
+};
+
+export function sanitizeNgaContent(raw: string, maxLength = 200): string {
+  return (raw || '')
+    .replace(/&(nbsp|amp|lt|gt|quot|#39);/g, entity => HTML_ENTITIES[entity] || entity)
+    .replace(/<br\s*\/?>/gi, ' ')
+    .replace(/<\/p\s*>/gi, ' ')
+    .replace(/<[^>]+>/g, '')
+    .replace(/\[.*?\]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, maxLength);
+}
+
 async function fetchNgaHotPosts(fid: number, limit: number): Promise<NgaPost[]> {
   try {
     const timestamp = Math.floor(Date.now() / 1000);
@@ -59,7 +80,7 @@ async function fetchNgaPostContent(tid: number): Promise<NgaPostContent[]> {
     );
     if (response.data.code !== 0 || !response.data.result) return [];
     return (response.data.result || []).map((post: NgaPostContent) => ({
-      content: (post.content || '').replace(/\[.*?\]/g, '').slice(0, 200),
+      content: sanitizeNgaContent(post.content || ''),
       author: post.author || ''
     }));
   } catch {
