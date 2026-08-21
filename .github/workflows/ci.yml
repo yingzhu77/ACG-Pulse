@@ -50,3 +50,4 @@ jobs:
         env:
           ADMIN_PASSWORD: ci-test-password-not-real
           ADMIN_JWT_SECRET: ci-test-secret-must-be-at-least-32-characters-long
+          CLIENT_URL: https://ci.example.com
