@@ -1,12 +1,10 @@
 # ACG Pulse 部署踩坑记录
 
-## 服务器环境
+## 历史生产环境
 
 - **配置**: 阿里云 2核/2GB/Ubuntu 24.04
 - **区域**: 新加坡
-- **IP**: 8.219.121.132
-- **域名**: acg.yingzhu.xyz
-- **在线体验**: https://acg.yingzhu.xyz
+- **状态**: 已于 2026 年 8 月下线，旧公网 IP 与域名不再使用
 
 ---
 
@@ -24,7 +22,7 @@
 **原因**: 服务器重置后 SSH 密钥重新生成
 **解决**:
 ```bash
-ssh-keygen -R 8.219.121.132
+ssh-keygen -R 旧服务器IP
 ```
 
 ### 3. 文件权限问题
@@ -172,7 +170,7 @@ sudo docker compose up -d --build
 
 ### 生产 CORS 仍指向 localhost
 
-**现象**：`curl -sSI https://acg.yingzhu.xyz/api/health` 返回 `Access-Control-Allow-Origin: http://localhost:3001`。
+**现象**：访问生产域名的 `/api/health` 时，响应仍返回 `Access-Control-Allow-Origin: http://localhost:3001`。
 
 **原因**：服务器根目录 `.env` 中仍保留旧的 `CLIENT_URL`，Docker Compose 会优先使用该值，而不是 compose 文件中的生产默认值。
 
@@ -180,7 +178,8 @@ sudo docker compose up -d --build
 
 ```bash
 cd /opt/personal-hot-monitor
-sed -i 's#^CLIENT_URL=.*#CLIENT_URL=https://acg.yingzhu.xyz#' .env
+PUBLIC_ORIGIN="https://your-domain.example"
+sed -i "s#^CLIENT_URL=.*#CLIENT_URL=${PUBLIC_ORIGIN}#" .env
 grep -q '^TRUST_PROXY_HOPS=' .env \
   && sed -i 's#^TRUST_PROXY_HOPS=.*#TRUST_PROXY_HOPS=1#' .env \
   || printf 'TRUST_PROXY_HOPS=1\n' >> .env

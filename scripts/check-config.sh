@@ -83,6 +83,7 @@ check_not_default "ADMIN_JWT_SECRET" "your_random_secret_here_at_least_32_chars"
 check_min_length "ADMIN_JWT_SECRET" 32
 
 check_var "CLIENT_URL"
+check_not_default "CLIENT_URL" "https://your-domain.example"
 CLIENT_URL_VALUE="$(get_env_value "CLIENT_URL")"
 case "$CLIENT_URL_VALUE" in
   https://*) ;;

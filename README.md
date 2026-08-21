@@ -7,7 +7,7 @@
 
   从多源采集、故事聚合到社区风向与数据洞察，把分散资讯整理成可持续追踪的情报流。
 
-  [在线体验](https://acg.yingzhu.xyz) · [快速部署](#快速开始) · [部署文档](docs/deployment-guide.md) · [问题反馈](https://github.com/yingzhu77/ACG-Pulse/issues)
+  [项目复盘](docs/deployment-retrospective-2026-08-17.md) · [快速部署](#快速开始) · [部署文档](docs/deployment-guide.md) · [问题反馈](https://github.com/yingzhu77/ACG-Pulse/issues)
 
   [![CI](https://github.com/yingzhu77/ACG-Pulse/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/yingzhu77/ACG-Pulse/actions/workflows/ci.yml)
   ![React 19](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)
@@ -16,6 +16,9 @@
 </div>
 
 ![ACG Pulse 情报总览](docs/images/acg-pulse-overview.png)
+
+> [!NOTE]
+> 原公开演示已于 2026 年 8 月随生产服务器到期下线，旧域名不再提供服务。仓库保留完整源码、部署文档与生产复盘，可在本地或新服务器重新部署。
 
 ## 为什么做 ACG Pulse
 
@@ -91,8 +94,8 @@ DEEPSEEK_API_KEY=your_api_key
 DEEPSEEK_MODEL=deepseek-v4-flash
 ADMIN_PASSWORD=your_strong_password
 ADMIN_JWT_SECRET=your_random_secret_at_least_32_chars
-CLIENT_URL=http://localhost:3001
-TRUST_PROXY_HOPS=0
+CLIENT_URL=https://your-domain.example
+TRUST_PROXY_HOPS=1
 ```
 
 检查配置并启动：
@@ -102,7 +105,7 @@ bash scripts/check-config.sh .env
 docker compose up -d --build
 ```
 
-访问 [http://localhost:3001](http://localhost:3001)。B站数据源建议在后台设置 Cookie，以降低匿名请求被限流的概率。
+配置 Caddy 或其他 HTTPS 反向代理后，访问 `CLIENT_URL` 对应的地址。B站数据源建议在后台设置 Cookie，以降低匿名请求被限流的概率；仅做本地开发时使用下方的开发模式。
 
 ### 本地开发
 
@@ -166,6 +169,8 @@ CI 会在推送和 Pull Request 时运行项目验证。
 | [路线图](docs/ROADMAP.md) | 当前阶段和后续方向 |
 | [踩坑记录](docs/LESSONS.md) | 已验证的问题模式、根因和处理规则 |
 | [架构决策](docs/DECISIONS.md) | 长期技术选择及变更入口 |
+| [生产部署复盘](docs/deployment-retrospective-2026-08-17.md) | 实例到期归档、故障归因与迁移恢复记录 |
+| [项目案例与简历素材](docs/resume-project-case-study.md) | 简历条目、面试表达与可验证项目指标 |
 
 ## 项目结构
 
