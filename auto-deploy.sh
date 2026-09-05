@@ -6,6 +6,7 @@
 #   export ADMIN_PASSWORD=your_secure_password
 #   export MIMO_API_KEY=your_mimo_key
 #   export ADMIN_JWT_SECRET=your_random_secret_at_least_32_chars
+#   export CLIENT_URL=https://your-domain.example
 
 set -e
 
@@ -14,7 +15,7 @@ echo "  ACG Pulse 一键自动部署"
 echo "=========================================="
 
 # 校验必需环境变量
-for var in ADMIN_PASSWORD MIMO_API_KEY ADMIN_JWT_SECRET; do
+for var in ADMIN_PASSWORD MIMO_API_KEY ADMIN_JWT_SECRET CLIENT_URL; do
   if [ -z "${!var}" ]; then
     echo "❌ 缺少环境变量: $var"
     echo "   请先运行: export $var=your_value"
@@ -46,7 +47,7 @@ ADMIN_JWT_SECRET=${ADMIN_JWT_SECRET}
 MAX_FEED_ITEMS=2000
 DATABASE_URL=file:/app/server/data/prod.db
 PORT=3001
-CLIENT_URL=https://acg.yingzhu.xyz
+CLIENT_URL=${CLIENT_URL}
 TRUST_PROXY_HOPS=1
 RSSHUB_BASE_URLS=http://rsshub:1200
 RSS_FETCH_TIMEOUT_MS=30000
@@ -89,7 +90,7 @@ echo ""
 echo "=========================================="
 echo "  ✅ 部署完成！"
 echo "=========================================="
-echo "  访问: http://$(curl -s ifconfig.me):3001"
+echo "  访问: ${CLIENT_URL}"
 echo "  管理密码: (已从环境变量配置，未显示)"
 echo "=========================================="
 echo ""

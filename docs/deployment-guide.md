@@ -1,11 +1,11 @@
 # ACG Pulse 部署指南
 
-## 服务器信息
+## 推荐环境
 
 - **系统**: Ubuntu 24.04
 - **配置**: 2核 CPU / 2GB 内存 / 30GB 磁盘（推荐）
-- **区域**: 新加坡
-- **域名**: acg.yingzhu.xyz
+
+> 原生产环境已于 2026 年 8 月下线，不再提供在线演示。新部署必须在 `.env` 中设置自己的 `CLIENT_URL`，并配置对应域名与 HTTPS。
 
 ## 一键部署（推荐）
 
@@ -16,7 +16,7 @@ curl -sL https://raw.githubusercontent.com/yingzhu77/ACG-Pulse/master/server-dep
 ```
 
 部署完成后：
-1. 访问 `https://acg.yingzhu.xyz`
+1. 访问 `.env` 中 `CLIENT_URL` 对应的地址
 2. 使用服务器 `.env` 中自行设置的 `ADMIN_PASSWORD` 登录管理后台
 3. 在「B站 Cookie 配置」中填入 Cookie
 4. 重启服务
@@ -148,9 +148,11 @@ git rev-parse --short HEAD
 cd /opt/personal-hot-monitor
 cp .env ".env.predeploy.$(date +%Y%m%d_%H%M%S)"
 
+PUBLIC_ORIGIN="https://your-domain.example"
+
 grep -q '^CLIENT_URL=' .env \
-  && sed -i 's#^CLIENT_URL=.*#CLIENT_URL=https://acg.yingzhu.xyz#' .env \
-  || printf '\nCLIENT_URL=https://acg.yingzhu.xyz\n' >> .env
+  && sed -i "s#^CLIENT_URL=.*#CLIENT_URL=${PUBLIC_ORIGIN}#" .env \
+  || printf '\nCLIENT_URL=%s\n' "$PUBLIC_ORIGIN" >> .env
 grep -q '^TRUST_PROXY_HOPS=' .env \
   && sed -i 's#^TRUST_PROXY_HOPS=.*#TRUST_PROXY_HOPS=1#' .env \
   || printf 'TRUST_PROXY_HOPS=1\n' >> .env
@@ -206,15 +208,17 @@ cd /opt/personal-hot-monitor
 git rev-parse --short HEAD
 curl -fsS http://127.0.0.1:3001/api/health && echo
 curl -fsS 'http://127.0.0.1:3001/api/public/stories?limit=1&page=1&includeFacets=false' >/dev/null
-curl -fsS https://acg.yingzhu.xyz/api/health && echo
-curl -sSI https://acg.yingzhu.xyz/api/health | grep -iE 'HTTP/|access-control-allow-origin'
+PUBLIC_ORIGIN="$(sed -n 's/^CLIENT_URL=//p' .env | tail -n 1)"
+curl -fsS "${PUBLIC_ORIGIN}/api/health" && echo
+curl -sSI "${PUBLIC_ORIGIN}/api/health" | grep -iE 'HTTP/|access-control-allow-origin'
 docker compose ps
 ```
 
-部署后响应头中的 `Access-Control-Allow-Origin` 应为 `https://acg.yingzhu.xyz`，不应继续是 localhost：
+部署后响应头中的 `Access-Control-Allow-Origin` 应与 `.env` 中的 `CLIENT_URL` 一致，不应继续是 localhost：
 
 ```bash
-curl -sSI https://acg.yingzhu.xyz/api/health | grep -i access-control-allow-origin
+PUBLIC_ORIGIN="$(sed -n 's/^CLIENT_URL=//p' .env | tail -n 1)"
+curl -sSI "${PUBLIC_ORIGIN}/api/health" | grep -i access-control-allow-origin
 ```
 
 ## 数据库迁移流程
