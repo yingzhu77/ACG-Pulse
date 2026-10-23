@@ -112,7 +112,14 @@ export const SourceConfigSchema = z.object({
   directApiFallback: booleanLike.optional(),
   includeDynamic: booleanLike.optional(),
   tags: z.array(z.string().trim().min(1)).max(20).optional(),
-  authorUrl: z.string().trim().min(1).optional()
+  authorUrl: z.string().trim().min(1).optional(),
+  articleSelector: z.string().trim().min(1).optional(),
+  titleSelector: z.string().trim().min(1).optional(),
+  linkSelector: z.string().trim().min(1).optional(),
+  dateSelector: z.string().trim().min(1).optional(),
+  urlPattern: z.string().trim().min(1).refine(value => {
+    try { new RegExp(value); return true; } catch { return false; }
+  }, 'urlPattern must be a valid regular expression').optional()
 }).passthrough();
 
 // --- Admin: Source CRUD ---
@@ -131,7 +138,17 @@ export const CreateSourceSchema = z.object({
   config: sourceConfigString
 });
 
+const previewGame = z.preprocess(
+  (v) => {
+    if (v === undefined || v === null) return '';
+    return String(v).trim();
+  },
+  z.string()
+);
+
 export const SourcePreviewSchema = CreateSourceSchema.extend({
+  // Existing followed sources may have game=''; preview must not require a backfill.
+  game: previewGame,
   limit: z.preprocess(
     (v) => {
       if (v === undefined || v === null || v === '') return 5;
@@ -201,9 +218,19 @@ export type LoginInput = z.infer<typeof LoginSchema>;
 
 // --- Admin: Settings ---
 
-export const UpdateSettingsSchema = z.record(z.string(), z.unknown());
+// Internal keys such as COMMUNITY_SOURCE_HEALTH must stay outside the admin settings API.
+export const EDITABLE_SETTING_KEYS = ['BILIBILI_COOKIE'] as const;
 
+export const UpdateSettingsSchema = z.object({
+  BILIBILI_COOKIE: z.string()
+}).strict();
+
+export type EditableSettingKey = typeof EDITABLE_SETTING_KEYS[number];
 export type UpdateSettingsInput = z.infer<typeof UpdateSettingsSchema>;
+
+export function isEditableSettingKey(key: string): key is EditableSettingKey {
+  return (EDITABLE_SETTING_KEYS as readonly string[]).includes(key);
+}
 
 // --- Public: Query filters ---
 

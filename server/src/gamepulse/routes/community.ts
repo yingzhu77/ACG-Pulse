@@ -7,8 +7,9 @@
 
 import { Router } from 'express';
 import { getStalenessInfo, loadTopicPage, loadAllTopics } from '../db/communityDb.js';
-import { refreshCommunityData } from '../services/communityService.js';
+import { isCommunityRefreshCoolingDown, refreshCommunityData } from '../services/communityService.js';
 import { asyncHandler } from './asyncHandler.js';
+import type { CommunitySource } from '../community/types.js';
 
 const router = Router();
 
@@ -17,24 +18,24 @@ const VALID_SOURCES = new Set(['bilibili', 'nga', 'xiaoheihe']);
 const VALID_SORTS = new Set(['heat', 'latest']);
 
 router.get('/topics', asyncHandler(async (req, res) => {
+  const { sentiment, category, source, sort = 'heat', page = '1', limit = '30' } = req.query;
+  const sourceFilter = source && source !== 'all' && VALID_SOURCES.has(String(source)) ? String(source) as CommunitySource : undefined;
   // Check staleness without blocking — always return DB snapshot immediately
   let isRefreshing = false;
-  const { isStale, lastFetchTime } = await getStalenessInfo();
+  const { isStale, lastFetchTime, refreshDue } = await getStalenessInfo(sourceFilter);
 
   // Fire background refresh if data is stale (fire-and-forget, deduped by communityService)
-  if (isStale) {
+  if (isStale && refreshDue && !isCommunityRefreshCoolingDown()) {
     isRefreshing = true;
     refreshCommunityData().catch(err => {
       console.error('[Community] Background refresh failed:', err);
     });
   }
 
-  const { sentiment, category, source, sort = 'heat', page = '1', limit = '30' } = req.query;
-
   const filters = {
     sentiment: sentiment && sentiment !== 'all' && VALID_SENTIMENTS.has(String(sentiment)) ? String(sentiment) : undefined,
     category: category && category !== 'all' ? String(category) : undefined,
-    source: source && source !== 'all' && VALID_SOURCES.has(String(source)) ? String(source) : undefined
+    source: sourceFilter
   };
 
   // Validate sorting before passing the query to the database layer.
@@ -69,9 +70,9 @@ router.get('/topics', asyncHandler(async (req, res) => {
 // GET /api/community/insights — aggregated data for the InsightsPage "社区风向" section
 router.get('/insights', asyncHandler(async (_req, res) => {
   let isRefreshing = false;
-  const { isStale, lastFetchTime } = await getStalenessInfo();
+  const { isStale, lastFetchTime, refreshDue } = await getStalenessInfo();
 
-  if (isStale) {
+  if (isStale && refreshDue && !isCommunityRefreshCoolingDown()) {
     isRefreshing = true;
     refreshCommunityData().catch(err => {
       console.error('[Community] Background refresh failed:', err);

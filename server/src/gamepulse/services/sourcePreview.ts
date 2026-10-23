@@ -5,7 +5,9 @@ import { getAdapter } from '../adapters/registry.js';
 
 const DEFAULT_PREVIEW_LIMIT = 5;
 const MAX_PREVIEW_LIMIT = 10;
-const PREVIEW_TIMEOUT_MS = 15_000;
+const DEFAULT_PREVIEW_TIMEOUT_MS = 30_000;
+const MIN_PREVIEW_TIMEOUT_MS = 5_000;
+const MISSING_GAME_LABEL = '通用';
 const SNIPPET_MAX_LENGTH = 280;
 
 interface SourcePreviewResponse {
@@ -45,12 +47,14 @@ export async function previewSource(
   const limit = clampPreviewLimit(requestedLimit);
   const source = buildPreviewSource(draft);
 
+  const timeoutMs = getPreviewTimeoutMs();
+
   let items;
   try {
     items = await withTimeout(
       getAdapter(source).fetch(source),
-      PREVIEW_TIMEOUT_MS,
-      'Source preview timed out. Try a smaller route or check whether the upstream source is reachable.'
+      timeoutMs,
+      `Source preview timed out after ${Math.round(timeoutMs / 1000)}s. Try a smaller route or check whether the upstream source is reachable.`
     );
   } catch (error) {
     if (error instanceof AdapterError) {
@@ -77,7 +81,7 @@ export async function previewSource(
     source: {
       name: source.name,
       type: source.type,
-      game: source.game
+      game: source.game || MISSING_GAME_LABEL
     },
     items: previewItems,
     totalFetched: items.length,
@@ -114,6 +118,11 @@ function buildPreviewSource(draft: CreateSourceInput): Source {
 function clampPreviewLimit(value: number): number {
   if (!Number.isFinite(value)) return DEFAULT_PREVIEW_LIMIT;
   return Math.min(MAX_PREVIEW_LIMIT, Math.max(1, Math.trunc(value)));
+}
+
+function getPreviewTimeoutMs(): number {
+  const parsed = Number(process.env.SOURCE_PREVIEW_TIMEOUT_MS);
+  return Number.isFinite(parsed) && parsed >= MIN_PREVIEW_TIMEOUT_MS ? parsed : DEFAULT_PREVIEW_TIMEOUT_MS;
 }
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, timeoutMessage: string): Promise<T> {

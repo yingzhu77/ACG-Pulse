@@ -30,8 +30,13 @@ export async function fetchRss(source: Source, feedUrl: string): Promise<RawFeed
   });
 
   const body = typeof response.data === 'string' ? response.data : String(response.data);
+  return parseRss(source, body, feedUrl);
+}
+
+export function parseRss(source: Source, body: string, feedUrl: string): RawFeedItem[] {
   assertRssLikeContent(body, feedUrl);
 
+  const config = parseSourceConfig(source);
   const $ = cheerio.load(body, { xmlMode: true });
   const itemKind = config.itemKind ?? (source.isOfficial ? 'official_post' : 'creator_video');
   const items: RawFeedItem[] = [];

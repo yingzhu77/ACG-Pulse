@@ -5,6 +5,7 @@ import { parseSourceConfig } from '../utils.js';
 import type { SourceAdapter } from './base.js';
 import { AdapterError } from './base.js';
 import { fetchRss } from './rss.js';
+import { filterValidItems } from '../community/sources/common.js';
 
 export class RssHubAdapter implements SourceAdapter {
   type = 'rsshub' as const;
@@ -48,20 +49,15 @@ export async function fetchRssHubRoute(source: Source, routeOrUrl: string): Prom
     try {
       return await fetchRss(source, feedUrl);
     } catch (error) {
-      if (isEmptyRssHubRoute(error)) {
-        const directMihoyoItems = await fetchMihoyoOfficialFallback(source, routeOrUrl);
-        if (directMihoyoItems) {
-          return directMihoyoItems;
-        }
-        return [];
-      }
       errors.push(formatError(feedUrl, error));
     }
   }
 
-  const directMihoyoItems = await fetchMihoyoOfficialFallback(source, routeOrUrl);
-  if (directMihoyoItems) {
-    return directMihoyoItems;
+  try {
+    const directMihoyoItems = await fetchMihoyoOfficialFallback(source, routeOrUrl);
+    if (directMihoyoItems) return directMihoyoItems;
+  } catch (error) {
+    errors.push(formatError('MiHoYo direct fallback', error));
   }
 
   throw new AdapterError(`RSSHub route failed: ${routeOrUrl}; ${errors.join(' | ')}`, source.type);
@@ -91,11 +87,19 @@ async function fetchMihoyoOfficialFallback(source: Source, routeOrUrl: string): 
       timeout: 10000
     });
 
-    const list: MihoyoNewsEntry[] = Array.isArray(resp.data?.data?.list) ? resp.data.data.list : [];
-    return list
-      .map((entry: MihoyoNewsEntry): RawFeedItem | null => {
+    if (resp.data?.retcode !== 0 || !Array.isArray(resp.data?.data?.list)) {
+      throw new Error(`MiHoYo response failed or missing list (retcode=${resp.data?.retcode}, message=${resp.data?.message || ''})`);
+    }
+    const list: MihoyoNewsEntry[] = resp.data.data.list;
+    return filterValidItems(
+      list,
+      entry => Boolean(entry?.post?.post_id)
+        && typeof entry.post.subject === 'string'
+        && entry.post.subject.trim().length > 0,
+      'MiHoYo'
+    )
+      .map((entry: MihoyoNewsEntry): RawFeedItem => {
         const post = entry.post;
-        if (!post?.post_id || !post.subject) return null;
         const summary = post.summary || post.content || post.subject;
         return {
           externalId: post.post_id,
@@ -107,8 +111,7 @@ async function fetchMihoyoOfficialFallback(source: Source, routeOrUrl: string): 
           coverUrl: entry.cover?.url || post.cover || post.images?.[0],
           publishedAt: post.created_at ? new Date(post.created_at * 1000) : undefined
         };
-      })
-      .filter((item): item is RawFeedItem => Boolean(item));
+      });
   } catch (error) {
     throw new AdapterError(`MiHoYo direct fallback failed: ${error instanceof Error ? error.message : String(error)}`, source.type);
   }
@@ -125,9 +128,9 @@ function mihoyoSiteFromGids(gids: string): string {
 }
 
 interface MihoyoNewsEntry {
-  post?: {
-    post_id?: string;
-    subject?: string;
+  post: {
+    post_id: string;
+    subject: string;
     content?: string;
     summary?: string;
     cover?: string;
@@ -167,12 +170,4 @@ function unique(values: Array<string | null | undefined>): string[] {
 function formatError(scope: string, error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   return `${scope} -> ${message}`;
-}
-
-function isEmptyRssHubRoute(error: unknown): boolean {
-  if (!axios.isAxiosError(error)) return false;
-  const body = typeof error.response?.data === 'string'
-    ? error.response.data
-    : JSON.stringify(error.response?.data || {});
-  return body.includes('this route is empty');
 }

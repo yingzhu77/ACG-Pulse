@@ -58,7 +58,8 @@ vi.mock('../../db.js', () => ({
 }));
 
 vi.mock('../ai/analysisQueue.js', () => ({
-  enqueueAnalysisTask: vi.fn(async () => {})
+  createAnalysisTaskIfAbsent: vi.fn(async () => {}),
+  wakeAnalysisQueue: vi.fn()
 }));
 
 vi.mock('../services/feedItemDedup.js', () => ({

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { AdapterError, type SourceAdapter } from '../adapters/base.js';
 import { previewSource, sanitizeErrorMessage } from '../services/sourcePreview.js';
 import type { CreateSourceInput } from '../validation.js';
@@ -34,6 +34,11 @@ const draft = {
 describe('source preview service', () => {
   beforeEach(() => {
     fetchMock.mockReset();
+    delete process.env.SOURCE_PREVIEW_TIMEOUT_MS;
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   test('returns a truncated read-only preview from adapter results', async () => {
@@ -71,6 +76,53 @@ describe('source preview service', () => {
 
     expect(result.items).toHaveLength(10);
     expect(result.totalFetched).toBe(12);
+  });
+
+  test('previews a source without a game using the display label', async () => {
+    fetchMock.mockResolvedValue([{
+      itemKind: 'creator_video',
+      title: 'Item',
+      content: 'content',
+      url: 'https://example.com/0'
+    }]);
+
+    const result = await previewSource({ ...draft, game: '' }, 5);
+
+    expect(result.source.game).toBe('通用');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  test('uses a 30 second default preview timeout', async () => {
+    vi.useFakeTimers();
+    fetchMock.mockReturnValue(new Promise(() => {}));
+
+    const promise = previewSource(draft, 5);
+    const assertion = expect(promise).rejects.toMatchObject({
+      statusCode: 422,
+      message: expect.stringContaining('timed out after 30s')
+    });
+    let settled = false;
+    void promise.catch(() => { settled = true; });
+
+    await vi.advanceTimersByTimeAsync(29_999);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    await assertion;
+  });
+
+  test('honors SOURCE_PREVIEW_TIMEOUT_MS for slow previews', async () => {
+    vi.useFakeTimers();
+    process.env.SOURCE_PREVIEW_TIMEOUT_MS = '5000';
+    fetchMock.mockReturnValue(new Promise(() => {}));
+
+    const promise = previewSource(draft, 5);
+    const assertion = expect(promise).rejects.toMatchObject({
+      statusCode: 422,
+      message: expect.stringContaining('timed out after 5s')
+    });
+
+    await vi.advanceTimersByTimeAsync(5_000);
+    await assertion;
   });
 
   test('reports unsupported source type as a sanitized fetch failure', async () => {

@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 
+vi.mock('@prisma/client', () => ({
+  PrismaClient: class { constructor() { throw new Error('Real Prisma is forbidden in anonymous collection tests'); } }
+}));
+
 let mockSources: Array<{
   id: string; name: string; type: string; game: string; enabled: boolean;
   priority: number; healthStatus: string; uid: string | null; avatar: string | null;
@@ -18,13 +22,28 @@ interface MockFeedItem {
   authorUrl?: string | null;
   coverUrl?: string | null;
   publishedAt?: Date | null;
+  analysis?: { status: string } | null;
 }
 
 let mockFeedItems: MockFeedItem[] = [];
 let createdItems: Array<{ sourceId: string; contentHash: string; title: string }> = [];
+let mockAnalysisTasks: Array<{ feedItemId: string; dedupeKey: string | null; status: string }> = [];
+let createdNotifications: Array<Record<string, unknown>> = [];
 
-vi.mock('../../db.js', () => ({
-  prisma: {
+vi.mock('../../db.js', () => {
+  const mockPrisma = {
+    $transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) => {
+      const snapshot = structuredClone({ mockFeedItems, createdItems, mockAnalysisTasks, createdNotifications });
+      try {
+        return await callback(mockPrisma);
+      } catch (error) {
+        mockFeedItems = snapshot.mockFeedItems;
+        createdItems = snapshot.createdItems;
+        mockAnalysisTasks = snapshot.mockAnalysisTasks;
+        createdNotifications = snapshot.createdNotifications;
+        throw error;
+      }
+    }),
     source: {
       findMany: vi.fn(async ({ where }: { where: { enabled: boolean } }) =>
         mockSources.filter(s => s.enabled === where.enabled)
@@ -92,13 +111,51 @@ vi.mock('../../db.js', () => ({
       count: vi.fn(async () => mockFeedItems.length),
       deleteMany: vi.fn(async () => ({ count: 0 }))
     },
-    analysis: { deleteMany: vi.fn(async () => ({ count: 0 })) },
-    notification: { create: vi.fn(async () => ({})), deleteMany: vi.fn(async () => ({ count: 0 })) }
-  }
-}));
+    analysis: {
+      deleteMany: vi.fn(async () => ({ count: 0 })),
+      updateMany: vi.fn(async ({ where, data }: { where: { feedItemId: string }; data: { status: string } }) => {
+        const item = mockFeedItems.find(candidate => candidate.id === where.feedItemId);
+        if (!item?.analysis) return { count: 0 };
+        Object.assign(item.analysis, data);
+        return { count: 1 };
+      })
+    },
+    analysisTask: {
+      create: vi.fn(async ({ data }: { data: { feedItemId: string; dedupeKey: string | null; status: string } }) => {
+        if (mockAnalysisTasks.some(task => task.dedupeKey && task.dedupeKey === data.dedupeKey)) {
+          throw Object.assign(new Error('Duplicate open task'), { code: 'P2002' });
+        }
+        mockAnalysisTasks.push(data);
+        return data;
+      }),
+      count: vi.fn(async ({ where }: { where: { feedItemId: string } }) =>
+        mockAnalysisTasks.filter(task => task.feedItemId === where.feedItemId).length
+      )
+    },
+    notification: {
+      create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
+        createdNotifications.push(data);
+        return data;
+      }),
+      deleteMany: vi.fn(async () => ({ count: 0 }))
+    }
+  };
+  return { prisma: mockPrisma };
+});
 
 vi.mock('../ai/analysisQueue.js', () => ({
-  enqueueAnalysisTask: vi.fn(async () => {})
+  createAnalysisTaskIfAbsent: vi.fn(async (feedItemId: string, tx: {
+    analysisTask: { create: (args: { data: { feedItemId: string; dedupeKey: string; status: string } }) => Promise<unknown> }
+  }) => {
+    try {
+      await tx.analysisTask.create({ data: { feedItemId, dedupeKey: feedItemId, status: 'pending' } });
+      return true;
+    } catch (error) {
+      if ((error as { code?: string }).code === 'P2002') return false;
+      throw error;
+    }
+  }),
+  wakeAnalysisQueue: vi.fn()
 }));
 
 vi.mock('../adapters/registry.js', () => ({
@@ -150,6 +207,8 @@ describe('checker content dedup', () => {
     ];
     mockFeedItems = [];
     createdItems = [];
+    mockAnalysisTasks = [];
+    createdNotifications = [];
     vi.clearAllMocks();
   });
 
@@ -308,5 +367,76 @@ describe('checker content dedup', () => {
     // src-1: 1 new (ext-1 skipped), src-2: 1 new = total 2
     expect(result.newItems).toBe(2);
     expect(result.checkedSources).toBe(2);
+  });
+
+  test('rolls back a new item when its durable analysis task cannot be created', async () => {
+    const { prisma } = await import('../../db.js');
+    vi.mocked(prisma.analysisTask.create).mockRejectedValueOnce(new Error('anonymous task write failure'));
+    const adapter = await import('../adapters/registry.js');
+    vi.mocked(adapter.getAdapter).mockReturnValue({
+      fetch: vi.fn(async () => [{ externalId: 'anonymous-1', url: 'https://example.test/article/1', title: '匿名公告', content: '匿名公告正文' }])
+    } as never);
+
+    const { runGamePulseCheck } = await import('../jobs/checker.js');
+    const result = await runGamePulseCheck();
+
+    expect(result.failedSources).toBe(1);
+    expect(mockFeedItems).toHaveLength(0);
+    expect(mockAnalysisTasks).toHaveLength(0);
+    expect(createdNotifications).toHaveLength(0);
+  });
+
+  test('keeps a persisted analysis task when the later notification write fails', async () => {
+    const { prisma } = await import('../../db.js');
+    vi.mocked(prisma.notification.create).mockRejectedValueOnce(new Error('anonymous notification write failure'));
+    const adapter = await import('../adapters/registry.js');
+    vi.mocked(adapter.getAdapter).mockReturnValue({
+      fetch: vi.fn(async () => [{ externalId: 'anonymous-1', url: 'https://example.test/article/1', title: '匿名公告', content: '匿名公告正文' }])
+    } as never);
+
+    const { runGamePulseCheck } = await import('../jobs/checker.js');
+    await runGamePulseCheck();
+
+    expect(mockFeedItems).toHaveLength(1);
+    expect(mockAnalysisTasks).toHaveLength(1);
+    expect(mockAnalysisTasks[0].feedItemId).toBe(mockFeedItems[0].id);
+  });
+
+  test('rolls back a body update if the replacement analysis task cannot be persisted', async () => {
+    const publishedAt = new Date('2026-06-15T00:00:00Z');
+    mockFeedItems.push(existingItem({ id: 'anonymous-existing', externalId: 'anonymous-1', url: 'https://example.test/article/1', title: '匿名公告', content: '原始匿名正文', publishedAt }));
+    const { prisma } = await import('../../db.js');
+    vi.mocked(prisma.analysisTask.create).mockRejectedValueOnce(new Error('anonymous task write failure'));
+    const adapter = await import('../adapters/registry.js');
+    vi.mocked(adapter.getAdapter).mockReturnValue({
+      fetch: vi.fn(async () => [{ externalId: 'anonymous-1', url: 'https://example.test/article/1', title: '匿名公告', content: '更新后的匿名正文', publishedAt }])
+    } as never);
+
+    const { runGamePulseCheck } = await import('../jobs/checker.js');
+    const result = await runGamePulseCheck();
+
+    expect(result.failedSources).toBe(1);
+    expect(mockFeedItems[0].content).toBe('原始匿名正文');
+    expect(mockAnalysisTasks).toHaveLength(0);
+  });
+
+  test('leaves an exhausted task alone until the same article body changes', async () => {
+    const publishedAt = new Date('2026-06-15T00:00:00Z');
+    mockFeedItems.push(existingItem({ id: 'anonymous-existing', externalId: 'anonymous-1', url: 'https://example.test/article/1', title: '匿名公告', content: '原始匿名正文', publishedAt }));
+    mockFeedItems[0].analysis = { status: 'failed' };
+    mockAnalysisTasks.push({ feedItemId: 'anonymous-existing', dedupeKey: null, status: 'failed' });
+    let content = '原始匿名正文';
+    const adapter = await import('../adapters/registry.js');
+    vi.mocked(adapter.getAdapter).mockReturnValue({
+      fetch: vi.fn(async () => [{ externalId: 'anonymous-1', url: 'https://example.test/article/1', title: '匿名公告', content, publishedAt }])
+    } as never);
+    const { runGamePulseCheck } = await import('../jobs/checker.js');
+
+    await runGamePulseCheck();
+    expect(mockAnalysisTasks).toHaveLength(1);
+    content = '更新后的匿名正文';
+    await runGamePulseCheck();
+    expect(mockAnalysisTasks).toHaveLength(2);
+    expect(mockAnalysisTasks[1]).toMatchObject({ feedItemId: 'anonymous-existing', status: 'pending' });
   });
 });

@@ -12,18 +12,20 @@ import {
   normalizeHeatBySource
 } from '../community/heat.js';
 import { analyzeSentimentBatch, shouldReanalyzeSentiment } from '../community/sentiment.js';
-import type { CommunityTopic, ExistingCommunityTopic } from '../community/types.js';
+import type { CommunitySource, CommunitySourceResult, CommunityTopic, ExistingCommunityTopic } from '../community/types.js';
 import {
   fetchBilibiliAnimeRanking,
   fetchBilibiliComments,
   fetchBilibiliGameRanking,
   fetchBilibiliPopular,
+  type BilibiliComment,
   type BilibiliVideo
 } from '../community/sources/bilibili.js';
 import {
-  fetchAllNgaHotPosts,
+  fetchAllNgaHotPostsWithStatus,
   fetchNgaComments,
-  type NgaPost
+  type NgaPost,
+  type NgaPostContent
 } from '../community/sources/nga.js';
 import { fetchXiaoheiheNews } from '../community/sources/xiaoheihe.js';
 
@@ -95,6 +97,16 @@ function isDuplicate(title: string, seenTitles: Set<string>): boolean {
 export async function aggregateCommunityTopics(options?: {
   existingTopics?: Map<string, ExistingCommunityTopic>;
 }): Promise<CommunityTopic[]> {
+  const result = await aggregateCommunityTopicsWithStatus(options);
+  if (result.sources.every(source => source.status === 'failed')) {
+    throw new Error(`All community sources failed: ${result.sources.map(source => `${source.source}: ${source.error}`).join(' | ')}`);
+  }
+  return result.topics;
+}
+
+export async function aggregateCommunityTopicsWithStatus(options?: {
+  existingTopics?: Map<string, ExistingCommunityTopic>;
+}): Promise<{ topics: CommunityTopic[]; sources: CommunitySourceResult[] }> {
   const existingTopics = options?.existingTopics;
   const existingCount = existingTopics?.size ?? 0;
   console.log(`[Community] Fetching from Bilibili + NGA + Xiaoheihe... (existing: ${existingCount})`);
@@ -104,22 +116,51 @@ export async function aggregateCommunityTopics(options?: {
     fetchBilibiliGameRanking(),
     fetchBilibiliAnimeRanking(),
     fetchBilibiliPopular(),
-    fetchAllNgaHotPosts(),
+    fetchAllNgaHotPostsWithStatus(),
     fetchXiaoheiheNews(15)
   ]);
 
   const topics: CommunityTopic[] = [];
+  const sources: CommunitySourceResult[] = [];
   const seenTitles = new Set<string>();
+
+  async function collectSource(
+    source: CommunitySource,
+    failures: string[],
+    collect: () => Promise<void>
+  ) {
+    const topicStart = topics.length;
+    const titlesBefore = new Set(seenTitles);
+    try {
+      await collect();
+      sources.push(failures.length
+        ? { source, status: 'degraded', error: failures.join(' | ') }
+        : { source, status: 'healthy' });
+    } catch (error) {
+      topics.splice(topicStart);
+      seenTitles.clear();
+      titlesBefore.forEach(title => seenTitles.add(title));
+      const message = error instanceof Error ? error.message : String(error);
+      sources.push({ source, status: 'failed', error: message });
+      console.error(`[Community] ${source} failed: ${message}`);
+    }
+  }
 
   // Track which existing topics were seen (for cleanup)
   const seenExistingIds = new Set<string>();
 
   // === Bilibili topics ===
-  if (gameRanking.status === 'fulfilled' || animeRanking.status === 'fulfilled' || popular.status === 'fulfilled') {
-    const allBiliVideos: BilibiliVideo[] = [];
-    if (gameRanking.status === 'fulfilled') allBiliVideos.push(...gameRanking.value);
-    if (animeRanking.status === 'fulfilled') allBiliVideos.push(...animeRanking.value);
-    if (popular.status === 'fulfilled') allBiliVideos.push(...popular.value);
+  const bilibiliFailures = [gameRanking, animeRanking, popular]
+    .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+    .map(result => result.reason instanceof Error ? result.reason.message : String(result.reason));
+
+  await collectSource('bilibili', bilibiliFailures, async () => {
+    const rankings = [gameRanking, animeRanking, popular]
+      .filter((result): result is PromiseFulfilledResult<BilibiliVideo[]> => result.status === 'fulfilled');
+    if (!rankings.length) {
+      throw new Error(`All Bilibili ranking requests failed: ${bilibiliFailures.join(' | ')}`);
+    }
+    const allBiliVideos: BilibiliVideo[] = rankings.flatMap(result => result.value);
 
     // Dedup by aid
     const seenAids = new Set<number>();
@@ -151,7 +192,14 @@ export async function aggregateCommunityTopics(options?: {
 
     // Only fetch comments + AI for NEW videos
     if (newVideos.length > 0) {
-      const commentResults = await fetchBilibiliComments(newVideos.map(v => v.aid), 4, 5);
+      let commentResults: BilibiliComment[][];
+      try {
+        commentResults = await fetchBilibiliComments(newVideos.map(v => v.aid), 4, 5);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        bilibiliFailures.push(`comments: ${message}`);
+        commentResults = newVideos.map(() => []);
+      }
       const allCommentTexts = commentResults.map(comments =>
         comments.slice(0, 3).map(c => c.content?.message || '').filter(Boolean).join('\n')
       );
@@ -195,7 +243,7 @@ export async function aggregateCommunityTopics(options?: {
           rawHeatTrend: [rawHeatScore],
           summary: topComment?.content?.message?.slice(0, 120) || video.desc?.slice(0, 120) || title,
           url: `https://www.bilibili.com/video/${video.bvid}`,
-          publishedAt: new Date(((video.pubdate || 0) > 0 ? video.pubdate! : Math.floor(Date.now() / 1000)) * 1000).toISOString()
+          publishedAt: new Date(video.pubdate * 1000).toISOString()
         });
       }
     }
@@ -223,14 +271,23 @@ export async function aggregateCommunityTopics(options?: {
         rawHeatTrend: [rawHeatScore],
         summary: video.desc?.slice(0, 120) || title,
         url: `https://www.bilibili.com/video/${video.bvid}`,
-        publishedAt: new Date(((video.pubdate || 0) > 0 ? video.pubdate! : Math.floor(Date.now() / 1000)) * 1000).toISOString()
+        publishedAt: new Date(video.pubdate * 1000).toISOString()
       });
     }
-  }
+  });
 
   // === NGA topics ===
-  if (ngaResults.status === 'fulfilled') {
-    const ngaTopics = ngaResults.value;
+  const ngaFailures: string[] = [];
+  if (ngaResults.status === 'rejected') {
+    ngaFailures.push(ngaResults.reason instanceof Error ? ngaResults.reason.message : String(ngaResults.reason));
+  } else if (ngaResults.value.error) {
+    ngaFailures.push(ngaResults.value.error);
+  }
+
+  await collectSource('nga', ngaFailures, async () => {
+    if (ngaResults.status === 'rejected') throw ngaResults.reason;
+
+    const ngaTopics = ngaResults.value.posts;
     console.log(`[Community] NGA posts: ${ngaTopics.length}`);
 
     // Filter duplicates first
@@ -255,7 +312,14 @@ export async function aggregateCommunityTopics(options?: {
 
     // Only fetch comments + AI for NEW posts
     if (newPosts.length > 0) {
-      const ngaCommentResults = await fetchNgaComments(newPosts.map(p => p.tid), 5);
+      let ngaCommentResults: NgaPostContent[][];
+      try {
+        ngaCommentResults = await fetchNgaComments(newPosts.map(p => p.tid), 5);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        ngaFailures.push(`comments: ${message}`);
+        ngaCommentResults = newPosts.map(() => []);
+      }
       const ngaTexts = newPosts.map((post, i) => {
         const comments = ngaCommentResults[i];
         if (comments.length > 0) {
@@ -291,7 +355,7 @@ export async function aggregateCommunityTopics(options?: {
             ? comments[0].content.slice(0, 100)
             : `${post.replies} 条回复 · ${post.author}`,
           url: `https://nga.178.com/read.php?tid=${post.tid}`,
-          publishedAt: new Date((post.postdate > 0 ? post.postdate : Math.floor(Date.now() / 1000)) * 1000).toISOString()
+          publishedAt: new Date(post.postdate * 1000).toISOString()
         });
       }
     }
@@ -315,10 +379,16 @@ export async function aggregateCommunityTopics(options?: {
         publishedAt: new Date(post.postdate * 1000).toISOString()
       });
     }
-  }
+  });
 
   // === Xiaoheihe topics ===
-  if (xhhResults.status === 'fulfilled') {
+  const xhhFailures: string[] = xhhResults.status === 'rejected'
+    ? [xhhResults.reason instanceof Error ? xhhResults.reason.message : String(xhhResults.reason)]
+    : [];
+
+  await collectSource('xiaoheihe', xhhFailures, async () => {
+    if (xhhResults.status === 'rejected') throw xhhResults.reason;
+
     const xhhTopics = xhhResults.value;
     console.log(`[Community] Xiaoheihe news: ${xhhTopics.length}`);
 
@@ -346,9 +416,7 @@ export async function aggregateCommunityTopics(options?: {
       for (let i = 0; i < validNewXhh.length; i++) {
         const item = validNewXhh[i];
         const sentiment = xhhSentiments[i];
-        const ts = typeof item.modify_at === 'number' && item.modify_at > 0
-          ? item.modify_at
-          : Math.floor(Date.now() / 1000);
+        const ts = item.modify_at;
         const rawHeatScore = calculateXiaoheiheHeat(item);
 
         topics.push({
@@ -376,9 +444,7 @@ export async function aggregateCommunityTopics(options?: {
 
     // Existing items: just keep heat score
     for (const item of existingXhh) {
-      const ts = typeof item.modify_at === 'number' && item.modify_at > 0
-        ? item.modify_at
-        : Math.floor(Date.now() / 1000);
+      const ts = item.modify_at;
       const existing = existingTopics!.get(`xhh-${item.linkid}`)!;
       const rawHeatScore = calculateXiaoheiheHeat(item);
       topics.push({
@@ -396,7 +462,7 @@ export async function aggregateCommunityTopics(options?: {
         publishedAt: new Date(ts * 1000).toISOString()
       });
     }
-  }
+  });
 
   // Sort by heat score
   normalizeHeatBySource(topics);
@@ -407,5 +473,5 @@ export async function aggregateCommunityTopics(options?: {
 
   const skipped = existingTopics ? seenExistingIds.size : 0;
   console.log(`[Community] Total topics: ${topics.length} (skipped AI for ${skipped} existing)`);
-  return topics;
+  return { topics, sources };
 }

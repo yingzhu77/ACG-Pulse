@@ -169,7 +169,7 @@ export class BilibiliVideoAdapter implements SourceAdapter {
 
     if (!shouldUseDirectApiFallback(config.directApiFallback)) {
       throw new AdapterError(
-        `Bilibili RSSHub fallback failed and direct API fallback is disabled. ${rssHubErrors.join(' | ')}`,
+        `Bilibili RSSHub collection failed and direct API fallback is disabled. ${rssHubErrors.join(' | ')}`,
         source.type
       );
     }
@@ -234,7 +234,7 @@ async function fetchDirectBilibiliVideos(
 
   if (response.data.code !== 0) {
     throw new AdapterError(
-      `Bilibili RSSHub fallback failed (${rssHubErrors.join(' | ')}); direct API error: ${response.data.message || response.data.code}`,
+      `Bilibili RSSHub collection failed (${rssHubErrors.join(' | ')}); direct API error: ${response.data.message || response.data.code}`,
       source.type
     );
   }
@@ -310,7 +310,6 @@ function getBilibiliRssHubRoutes(source: Source, uid: string): string[] {
 
 function shouldUseDirectApiFallback(sourceSetting?: boolean): boolean {
   if (typeof sourceSetting === 'boolean') return sourceSetting;
-  if (process.env.BILIBILI_COOKIE?.trim()) return true;
   return parseBoolean(process.env.BILIBILI_DIRECT_API_FALLBACK, false);
 }
 

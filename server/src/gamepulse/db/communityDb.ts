@@ -5,11 +5,20 @@
 
 import { prisma } from '../../db.js';
 import type { Prisma } from '@prisma/client';
-import type { CommunityTopic } from '../community/types.js';
+import { z } from 'zod';
+import { COMMUNITY_REFRESH_INTERVAL_MS, COMMUNITY_SOURCES, type CommunitySource, type CommunitySourceHealth, type CommunitySourceResult, type CommunityTopic } from '../community/types.js';
 import { normalizeCommunityTopicUrl } from '../communityUrls.js';
 
-const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
 const VALID_SENTIMENTS = new Set(['positive', 'negative', 'neutral', 'unknown']);
+const SOURCE_HEALTH_KEY = 'COMMUNITY_SOURCE_HEALTH';
+const SourceHealthSchema = z.array(z.object({
+  source: z.enum(COMMUNITY_SOURCES),
+  status: z.enum(['healthy', 'degraded', 'failed']),
+  error: z.string().optional(),
+  checkedAt: z.number().nonnegative(),
+  lastSuccessAt: z.number().nonnegative().nullable()
+}));
+type CommunityPersistenceClient = Pick<Prisma.TransactionClient, 'communityTopic' | 'setting'>;
 
 function safeParseTrend(raw: string, id: string): number[] {
   try {
@@ -91,13 +100,13 @@ export async function loadAllTopics(): Promise<CommunityTopic[]> {
 }
 
 /** Upsert topics: insert new ones, update existing ones' trend/heat */
-export async function upsertTopics(topics: CommunityTopic[]): Promise<void> {
+export async function upsertTopics(topics: CommunityTopic[], client: CommunityPersistenceClient = prisma): Promise<void> {
   if (topics.length === 0) return;
   const now = new Date();
 
   // Batch fetch existing topics (1 query instead of N)
   const topicIds = topics.map(t => t.id);
-  const existingRows = await prisma.communityTopic.findMany({
+  const existingRows = await client.communityTopic.findMany({
     where: { id: { in: topicIds } },
     select: {
       id: true,
@@ -129,19 +138,20 @@ export async function upsertTopics(topics: CommunityTopic[]): Promise<void> {
   // Batch insert new topics
   if (toCreate.length > 0) {
     try {
-      await prisma.communityTopic.createMany({
+      await client.communityTopic.createMany({
         data: toCreate.map(topic => topicCreateData(topic, now))
       });
     } catch (err) {
-      console.warn('[CommunityDB] Batch create failed; retrying topics individually:', err);
+      if (!isUniqueConstraintError(err)) throw err;
+      console.warn('[CommunityDB] Concurrent topic insert; retrying topics individually');
       for (const topic of toCreate) {
         try {
-          await prisma.communityTopic.create({
+          await client.communityTopic.create({
             data: topicCreateData(topic, now)
           });
         } catch (itemError) {
           if (isUniqueConstraintError(itemError)) continue;
-          console.error(`[CommunityDB] Failed to create topic ${topic.id}:`, itemError);
+          throw itemError;
         }
       }
     }
@@ -149,39 +159,35 @@ export async function upsertTopics(topics: CommunityTopic[]): Promise<void> {
 
   // Update existing topics (individual updates needed for trend merge)
   for (const { topic, existing } of toUpdate) {
-    try {
-      const oldTrend = safeParseTrend(existing.trend, topic.id);
-      const oldRawHeatTrend = safeParseTrend(existing.rawHeatTrend, topic.id);
-      const mergedTrend = [...oldTrend, topic.heatScore].slice(-24);
-      const mergedRawHeatTrend = [...oldRawHeatTrend, topic.rawHeatScore].slice(-24);
+    const oldTrend = safeParseTrend(existing.trend, topic.id);
+    const oldRawHeatTrend = safeParseTrend(existing.rawHeatTrend, topic.id);
+    const mergedTrend = [...oldTrend, topic.heatScore].slice(-24);
+    const mergedRawHeatTrend = [...oldRawHeatTrend, topic.rawHeatScore].slice(-24);
 
-      const updateData: Record<string, unknown> = {
-        heatScore: topic.heatScore,
-        rawHeatScore: topic.rawHeatScore,
-        trend: JSON.stringify(mergedTrend),
-        rawHeatTrend: JSON.stringify(mergedRawHeatTrend),
-        summary: topic.summary,
-        url: topic.url,
-        fetchedAt: now,
-        lastSeenAt: now
-      };
-      updateData.sentiment = topic.sentiment;
-      updateData.sentimentScore = topic.sentimentScore;
-      updateData.sentimentStatus = topic.sentimentStatus;
-      updateData.sentimentMethod = topic.sentimentMethod;
-      updateData.sentimentConfidence = topic.sentimentConfidence;
-      updateData.sentimentVersion = topic.sentimentVersion;
-      updateData.sentimentAnalyzedAt = topic.sentimentAnalyzedAt
-        ? new Date(topic.sentimentAnalyzedAt)
-        : null;
+    const updateData: Record<string, unknown> = {
+      heatScore: topic.heatScore,
+      rawHeatScore: topic.rawHeatScore,
+      trend: JSON.stringify(mergedTrend),
+      rawHeatTrend: JSON.stringify(mergedRawHeatTrend),
+      summary: topic.summary,
+      url: topic.url,
+      fetchedAt: now,
+      lastSeenAt: now
+    };
+    updateData.sentiment = topic.sentiment;
+    updateData.sentimentScore = topic.sentimentScore;
+    updateData.sentimentStatus = topic.sentimentStatus;
+    updateData.sentimentMethod = topic.sentimentMethod;
+    updateData.sentimentConfidence = topic.sentimentConfidence;
+    updateData.sentimentVersion = topic.sentimentVersion;
+    updateData.sentimentAnalyzedAt = topic.sentimentAnalyzedAt
+      ? new Date(topic.sentimentAnalyzedAt)
+      : null;
 
-      await prisma.communityTopic.update({
-        where: { id: topic.id },
-        data: updateData
-      });
-    } catch (err) {
-      console.error(`[CommunityDB] Failed to update topic ${topic.id}:`, err);
-    }
+    await client.communityTopic.update({
+      where: { id: topic.id },
+      data: updateData
+    });
   }
 }
 
@@ -218,39 +224,85 @@ function isUniqueConstraintError(error: unknown): boolean {
 }
 
 /** Delete topics not seen in the last N hours */
-export async function cleanupStale(maxAgeHours = 48): Promise<number> {
+export async function cleanupStale(maxAgeHours = 48, sources?: CommunitySource[]): Promise<number> {
+  if (sources?.length === 0) return 0;
   const cutoff = new Date(Date.now() - maxAgeHours * 60 * 60 * 1000);
   const result = await prisma.communityTopic.deleteMany({
-    where: { lastSeenAt: { lt: cutoff } }
+    where: { lastSeenAt: { lt: cutoff }, ...(sources ? { source: { in: sources } } : {}) }
   });
   return result.count;
 }
 
 /** Get the latest fetchedAt timestamp */
 export async function getLastFetchTime(): Promise<number> {
-  const latest = await prisma.communityTopic.findFirst({
-    orderBy: { fetchedAt: 'desc' },
-    select: { fetchedAt: true }
+  return (await getStalenessInfo()).lastFetchTime;
+}
+
+async function loadSourceHealth(client: CommunityPersistenceClient = prisma): Promise<CommunitySourceHealth[] | null> {
+  const setting = await client.setting.findUnique({ where: { key: SOURCE_HEALTH_KEY } });
+  return setting ? SourceHealthSchema.parse(JSON.parse(setting.value)) : null;
+}
+
+/** Successful empty responses also advance freshness; failed sources keep their last success. */
+export async function recordCommunitySourceResults(results: CommunitySourceResult[], client: CommunityPersistenceClient = prisma): Promise<void> {
+  const previous = await loadSourceHealth(client);
+  const now = Date.now();
+  const health: CommunitySourceHealth[] = [];
+  for (const result of results) {
+    let lastSuccessAt = previous?.find(source => source.source === result.source)?.lastSuccessAt ?? null;
+    if (result.status !== 'failed') {
+      lastSuccessAt = now;
+    } else if (!previous) {
+      const legacy = await client.communityTopic.findFirst({
+        where: { source: result.source }, orderBy: { fetchedAt: 'desc' }, select: { fetchedAt: true }
+      });
+      lastSuccessAt = legacy?.fetchedAt.getTime() ?? null;
+    }
+    health.push({ ...result, checkedAt: now, lastSuccessAt });
+  }
+  const value = JSON.stringify(health);
+  await client.setting.upsert({
+    where: { key: SOURCE_HEALTH_KEY }, create: { key: SOURCE_HEALTH_KEY, value }, update: { value }
   });
-  return latest?.fetchedAt.getTime() ?? 0;
+}
+
+/** Keep topic timestamps and source health in the same commit. Fetching/AI happens before this transaction. */
+export async function persistCommunityRefresh(topics: CommunityTopic[], sources: CommunitySourceResult[]): Promise<void> {
+  await prisma.$transaction(async tx => {
+    await upsertTopics(topics, tx);
+    await recordCommunitySourceResults(sources, tx);
+  });
 }
 
 export interface StalenessInfo {
   hasData: boolean;
   isStale: boolean;
+  refreshDue: boolean;
   lastFetchTime: number;
 }
 
 /** Check if data exists and whether it is stale (beyond TTL) */
-export async function getStalenessInfo(): Promise<StalenessInfo> {
-  const latest = await prisma.communityTopic.findFirst({
-    orderBy: { fetchedAt: 'desc' },
-    select: { fetchedAt: true }
-  });
-  if (!latest) return { hasData: false, isStale: true, lastFetchTime: 0 };
+export async function getStalenessInfo(source?: CommunitySource): Promise<StalenessInfo> {
+  const [latest, health] = await Promise.all([
+    prisma.communityTopic.findFirst({
+      ...(source ? { where: { source } } : {}),
+      orderBy: { fetchedAt: 'desc' }, select: { fetchedAt: true }
+    }),
+    loadSourceHealth()
+  ]);
+  if (health) {
+    const relevant = (source ? [source] : COMMUNITY_SOURCES).map(name => health.find(result => result.source === name));
+    const lastFetchTime = Math.min(...relevant.map(result => result?.lastSuccessAt ?? 0));
+    const isStale = relevant.some(result => !result || result.status === 'failed')
+      || !lastFetchTime || Date.now() - lastFetchTime >= COMMUNITY_REFRESH_INTERVAL_MS;
+    const refreshDue = relevant.some(result => !result || Date.now() - result.checkedAt >= COMMUNITY_REFRESH_INTERVAL_MS);
+    return { hasData: Boolean(latest), isStale: Boolean(isStale), refreshDue, lastFetchTime };
+  }
+  // Existing installations keep their topic-derived timestamp until their first recorded refresh.
+  if (!latest) return { hasData: false, isStale: true, refreshDue: true, lastFetchTime: 0 };
   const lastFetchTime = latest.fetchedAt.getTime();
-  const isStale = Date.now() - lastFetchTime >= CACHE_TTL_MS;
-  return { hasData: true, isStale, lastFetchTime };
+  const isStale = Date.now() - lastFetchTime >= COMMUNITY_REFRESH_INTERVAL_MS;
+  return { hasData: true, isStale, refreshDue: isStale, lastFetchTime };
 }
 
 /** Get IDs of topics already in DB (for incremental update) */

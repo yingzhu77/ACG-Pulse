@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { CreateSourceSchema, PublicStoriesQuerySchema, SourcePreviewSchema, UpdateSourceSchema } from '../validation.js';
+import { CreateSourceSchema, PublicStoriesQuerySchema, SourcePreviewSchema, UpdateSettingsSchema, UpdateSourceSchema } from '../validation.js';
 
 describe('source validation', () => {
   test('parses boolean-like source fields on create', () => {
@@ -38,6 +38,27 @@ describe('source validation', () => {
 
     expect(parsed.limit).toBe(10);
     expect(() => SourcePreviewSchema.parse({ ...parsed, limit: 11 })).toThrow();
+  });
+
+  test('allows preview drafts without a game while create keeps requiring one', () => {
+    expect(() => CreateSourceSchema.parse({
+      name: 'Followed Source',
+      type: 'bilibili_video',
+      uid: '15319615'
+    })).toThrow();
+
+    expect(SourcePreviewSchema.parse({
+      name: 'Followed Source',
+      type: 'bilibili_video',
+      uid: '15319615'
+    }).game).toBe('');
+
+    expect(SourcePreviewSchema.parse({
+      name: 'Followed Source',
+      type: 'bilibili_video',
+      uid: '15319615',
+      game: '   '
+    }).game).toBe('');
   });
 
   test('rejects unsupported source types', () => {
@@ -83,6 +104,25 @@ describe('source validation', () => {
       game: 'Test Game',
       config: { itemKind: 'unknown_kind' }
     })).toThrow();
+  });
+
+  test('validates official article selectors and the URL allowlist', () => {
+    const input = { name: '示例官网', type: 'official_site', game: '示例游戏' };
+    const config = { articleSelector: '.entry', titleSelector: 'h2', linkSelector: 'a', dateSelector: 'time', urlPattern: '/news/\\d+$' };
+    expect(JSON.parse(CreateSourceSchema.parse({ ...input, config }).config!)).toEqual(config);
+    expect(CreateSourceSchema.safeParse({ ...input, config: { articleSelector: 123 } }).success).toBe(false);
+    expect(CreateSourceSchema.safeParse({ ...input, config: { urlPattern: '[' } }).success).toBe(false);
+  });
+});
+
+describe('settings validation', () => {
+  test('allows only editable keys and rejects internal settings', () => {
+    expect(UpdateSettingsSchema.parse({ BILIBILI_COOKIE: 'SESSDATA=anonymous' }))
+      .toEqual({ BILIBILI_COOKIE: 'SESSDATA=anonymous' });
+
+    expect(UpdateSettingsSchema.safeParse({ COMMUNITY_SOURCE_HEALTH: '[]' }).success).toBe(false);
+    expect(UpdateSettingsSchema.safeParse({ BILIBILI_COOKIE: 'SESSDATA=anonymous', COMMUNITY_SOURCE_HEALTH: '[]' }).success).toBe(false);
+    expect(UpdateSettingsSchema.safeParse({ BILIBILI_COOKIE: 123 }).success).toBe(false);
   });
 });
 

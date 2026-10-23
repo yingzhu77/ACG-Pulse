@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../db.js';
 import { requireAdmin } from '../gamepulse/auth.js';
+import { EDITABLE_SETTING_KEYS, isEditableSettingKey, UpdateSettingsSchema } from '../gamepulse/validation.js';
 
 const router = Router();
 router.use(requireAdmin);
@@ -8,7 +9,9 @@ router.use(requireAdmin);
 // 获取所有设置
 router.get('/', async (req, res) => {
   try {
-    const settings = await prisma.setting.findMany();
+    const settings = await prisma.setting.findMany({
+      where: { key: { in: [...EDITABLE_SETTING_KEYS] } }
+    });
     const settingsMap = settings.reduce((acc: Record<string, string>, item: { key: string; value: string }) => {
       acc[item.key] = item.value;
       return acc;
@@ -24,17 +27,16 @@ router.get('/', async (req, res) => {
 // 更新设置
 router.put('/', async (req, res) => {
   try {
-    const settings = req.body;
-
-    if (typeof settings !== 'object') {
-      return res.status(400).json({ error: 'Invalid settings format' });
+    const parsed = UpdateSettingsSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Invalid settings format or unsupported key' });
     }
 
-    const updates = Object.entries(settings).map(([key, value]) => 
+    const updates = Object.entries(parsed.data).map(([key, value]) =>
       prisma.setting.upsert({
         where: { key },
-        update: { value: String(value) },
-        create: { key, value: String(value) }
+        update: { value },
+        create: { key, value }
       })
     );
 
@@ -50,6 +52,10 @@ router.put('/', async (req, res) => {
 // 获取单个设置
 router.get('/:key', async (req, res) => {
   try {
+    if (!isEditableSettingKey(req.params.key)) {
+      return res.status(404).json({ error: 'Setting not found' });
+    }
+
     const setting = await prisma.setting.findUnique({
       where: { key: req.params.key }
     });
@@ -68,10 +74,14 @@ router.get('/:key', async (req, res) => {
 // 更新单个设置
 router.put('/:key', async (req, res) => {
   try {
+    if (!isEditableSettingKey(req.params.key)) {
+      return res.status(404).json({ error: 'Setting not found' });
+    }
+
     const { value } = req.body;
 
-    if (value === undefined) {
-      return res.status(400).json({ error: 'Value is required' });
+    if (typeof value !== 'string') {
+      return res.status(400).json({ error: 'Value must be a string' });
     }
 
     const setting = await prisma.setting.upsert({

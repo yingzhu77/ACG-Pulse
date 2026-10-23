@@ -5,7 +5,7 @@ import type { RawFeedItem } from '../types.js';
 import { absoluteUrl, getUserAgent, parseSourceConfig, stripHtml } from '../utils.js';
 import type { SourceAdapter } from './base.js';
 import { AdapterError } from './base.js';
-import { fetchRss } from './rss.js';
+import { parseRss } from './rss.js';
 
 export class OfficialSiteAdapter implements SourceAdapter {
   type = 'official_site' as const;
@@ -24,28 +24,38 @@ export class OfficialSiteAdapter implements SourceAdapter {
     });
 
     const body = String(response.data);
-    if (/^\s*<\?xml|<rss|<feed/i.test(body.slice(0, 500))) {
-      return fetchRss(source, source.url);
+    if (/<(?:rss|feed|rdf:RDF)(\s|>)/i.test(body.slice(0, 2000))) {
+      return parseRss(source, body, source.url);
     }
 
     const $ = cheerio.load(body);
     const config = parseSourceConfig(source);
     const seen = new Set<string>();
     const items: RawFeedItem[] = [];
+    const urlPattern = config.urlPattern ? new RegExp(config.urlPattern) : null;
+    const linkSelector = config.linkSelector || 'a[href]';
 
-    $('article a[href], .news a[href], .post a[href], a[href]').each((_, element) => {
-      if (items.length >= 20) return;
-      const link = $(element);
-      const rawTitle = link.text().trim() || link.attr('title') || '';
+    $(config.articleSelector || 'article a[href], .news a[href], .post a[href]').each((_, element) => {
+      if (items.length >= 20) return false;
+      const article = $(element);
+      const link = article.is(linkSelector) ? article : article.find(linkSelector).first();
+      const titleNode = config.titleSelector
+        ? (article.is(config.titleSelector) ? article : article.find(config.titleSelector).first())
+        : link;
+      const rawTitle = titleNode.text().trim() || titleNode.attr('title') || '';
       const title = rawTitle.replace(/\s+/g, ' ').trim();
       const href = link.attr('href');
-      if (!title || !href || title.length < 6) return;
+      if (!title || !href || href.startsWith('#') || (!config.articleSelector && title.length < 6)) return;
 
       const url = absoluteUrl(source.url!, href);
-      if (seen.has(url) || !/^https?:\/\//.test(url)) return;
+      if (seen.has(url) || !/^https?:\/\//.test(url) || (urlPattern && !urlPattern.test(url))) return;
       seen.add(url);
 
-      const parentText = link.closest('article, li, .news, .post, div').text().trim();
+      const scope = config.articleSelector ? article : link.closest('article, li, .news, .post, div');
+      const date = scope.find(config.dateSelector || 'time').first();
+      const dateText = date.attr('datetime') || date.text().trim();
+      const timestamp = dateText ? Date.parse(dateText) : NaN;
+      const parentText = scope.text().trim();
       items.push({
         externalId: url,
         itemKind: config.itemKind ?? 'official_post',
@@ -53,7 +63,8 @@ export class OfficialSiteAdapter implements SourceAdapter {
         content: stripHtml(parentText || title),
         url,
         authorName: source.name,
-        authorUrl: source.url || undefined
+        authorUrl: source.url || undefined,
+        publishedAt: Number.isNaN(timestamp) ? undefined : new Date(timestamp)
       });
     });
 

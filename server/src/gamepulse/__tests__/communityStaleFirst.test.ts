@@ -12,6 +12,7 @@ let batchCreateShouldFail = false;
 
 vi.mock('../../db.js', () => ({
   prisma: {
+    setting: { findUnique: vi.fn(async () => null) },
     communityTopic: {
       findFirst: vi.fn(async () => {
         if (mockTopics.length === 0) return null;
@@ -35,7 +36,7 @@ vi.mock('../../db.js', () => ({
         return topic;
       }),
       createMany: vi.fn(async ({ data }: { data: Array<Record<string, unknown>> }) => {
-        if (batchCreateShouldFail) throw new Error('simulated batch failure');
+        if (batchCreateShouldFail) throw Object.assign(new Error('simulated concurrent create'), { code: 'P2002' });
         mockTopics.push(...data as typeof mockTopics);
         return { count: data.length };
       }),
@@ -117,7 +118,7 @@ describe('Community topic persistence', () => {
     vi.clearAllMocks();
   });
 
-  test('falls back to individual creates when a batch insert fails', async () => {
+  test('retries individual creates after a known concurrent insert conflict', async () => {
     batchCreateShouldFail = true;
     const publishedAt = new Date().toISOString();
 

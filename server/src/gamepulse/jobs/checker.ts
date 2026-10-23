@@ -1,6 +1,6 @@
 import type { Server } from 'socket.io';
 import { prisma } from '../../db.js';
-import { enqueueAnalysisTask } from '../ai/analysisQueue.js';
+import { createAnalysisTaskIfAbsent, wakeAnalysisQueue } from '../ai/analysisQueue.js';
 import { getAdapter } from '../adapters/registry.js';
 import { contentHash, normalizeUrl, truncate } from '../utils.js';
 import { fetchBilibiliAvatar } from '../adapters/bilibiliVideo.js';
@@ -152,61 +152,83 @@ async function checkSource(
           || existing.publishedAt?.getTime() !== publishedAt?.getTime();
 
         if (needsUpdate) {
-          await prisma.feedItem.update({
-            where: { id: existing.id },
-            data: {
-              identityKey,
-              externalId: raw.externalId || raw.url,
-              itemKind: raw.itemKind,
-              title,
-              content,
-              url: normalizedUrl,
-              authorName,
-              authorUrl,
-              coverUrl,
-              sourceType: source.type,
-              contentHash: hash,
-              publishedAt,
-              fetchedAt: new Date()
+          await prisma.$transaction(async tx => {
+            await tx.feedItem.update({
+              where: { id: existing.id },
+              data: {
+                identityKey,
+                externalId: raw.externalId || raw.url,
+                itemKind: raw.itemKind,
+                title,
+                content,
+                url: normalizedUrl,
+                authorName,
+                authorUrl,
+                coverUrl,
+                sourceType: source.type,
+                contentHash: hash,
+                publishedAt,
+                fetchedAt: new Date()
+              }
+            });
+            if (contentChanged) {
+              await tx.analysis.updateMany({
+                where: { feedItemId: existing.id },
+                data: {
+                  status: 'pending', category: null, importance: 'low', visibility: 'public', confidence: 0,
+                  summary: null, reason: null, dedupKeywords: null, provider: null, model: null,
+                  analyzedAt: null, error: null
+                }
+              });
+              await createAnalysisTaskIfAbsent(existing.id, tx);
             }
           });
-          if (contentChanged) await enqueueAnalysisTask(existing.id, io);
+          if (contentChanged) wakeAnalysisQueue(io);
         }
         continue;
       }
 
-      const item = await prisma.feedItem.create({
-        data: {
-          sourceId: source.id,
-          externalId: raw.externalId || raw.url,
-          itemKind: raw.itemKind,
-          game: source.game,
-          title,
-          content,
-          url: normalizedUrl,
-          authorName,
-          authorUrl,
-          coverUrl,
-          sourceType: source.type,
-          identityKey,
-          contentHash: hash,
-          publishedAt: raw.publishedAt || null
-        },
-        include: {
-          source: true
-        }
+      const item = await prisma.$transaction(async tx => {
+        const created = await tx.feedItem.create({
+          data: {
+            sourceId: source.id,
+            externalId: raw.externalId || raw.url,
+            itemKind: raw.itemKind,
+            game: source.game,
+            title,
+            content,
+            url: normalizedUrl,
+            authorName,
+            authorUrl,
+            coverUrl,
+            sourceType: source.type,
+            identityKey,
+            contentHash: hash,
+            publishedAt: raw.publishedAt || null
+          },
+          include: {
+            source: true
+          }
+        });
+        await createAnalysisTaskIfAbsent(created.id, tx);
+        return created;
       });
 
       sourceNewCount++;
+      wakeAnalysisQueue(io);
 
-      await prisma.notification.create({
-        data: {
-          type: 'feed_item',
-          title: `发现新情报：${item.title.slice(0, 60)}`,
-          content: item.content.slice(0, 120),
-          feedItemId: item.id
-        }
-      });
+      try {
+        await prisma.notification.create({
+          data: {
+            type: 'feed_item',
+            title: `发现新情报：${item.title.slice(0, 60)}`,
+            content: item.content.slice(0, 120),
+            feedItemId: item.id
+          }
+        });
+      } catch (error) {
+        console.warn(`[GamePulse] Notification write failed for item ${item.id}:`, error);
+      }
 
       io?.to(`game:${item.game}`).emit('item:new', item);
       io?.emit('notification', {
@@ -216,8 +238,6 @@ async function checkSource(
         feedItemId: item.id,
         importance: 'pending'
       });
-
-      await enqueueAnalysisTask(item.id, io);
     }
 
     // 获取 B站用户头像（如果还没有）

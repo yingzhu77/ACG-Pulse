@@ -1,9 +1,30 @@
 import axios from 'axios';
-import { providerHeaders, resolveProviderConfig } from '../ai/providerConfig.js';
+import { providerHeaders, resolveProviderConfig, type ProviderConfig } from '../ai/providerConfig.js';
 import type { SentimentLabel, SentimentMethod, SentimentStatus } from './types.js';
 
 export const COMMUNITY_SENTIMENT_VERSION = '2026-06-24-v1';
 const REANALYZE_AFTER_MS = 30 * 24 * 60 * 60 * 1000;
+const FAILED_RETRY_COOLDOWN_MS = 6 * 60 * 60 * 1000;
+const AI_SENTIMENT_BATCH_SIZE = 5;
+const AI_SENTIMENT_MAX_TOKENS = 4096;
+const AI_SENTIMENT_TIMEOUT_MS = 60_000;
+const AI_SENTIMENT_MAX_SPLIT_DEPTH = 2;
+const AI_SENTIMENT_SYSTEM_PROMPT = `你是游戏社区情绪分析专家。判断每段文本的整体情感倾向。
+需要考虑反讽、阴阳怪气、社区黑话和上下文。无法可靠判断时输出 neutral 且降低 confidence。
+
+每条输出一行：序号:label:score:confidence
+label 只能是 positive、negative、neutral。
+score 范围 -1 到 1；confidence 范围 0 到 1。
+必须为每个序号输出一行，不要省略或合并。只输出结果，不要解释。`;
+
+interface ChatCompletionResponse {
+  choices?: Array<{
+    finish_reason?: string;
+    message?: {
+      content?: string;
+    };
+  }>;
+}
 
 export interface SentimentResult {
   label: SentimentLabel;
@@ -80,12 +101,23 @@ export function shouldReanalyzeSentiment(existing: {
   sentimentVersion: string | null;
   sentimentAnalyzedAt: string | null;
 }): boolean {
-  if (existing.sentimentStatus !== 'completed') return true;
-  if (existing.sentimentVersion !== COMMUNITY_SENTIMENT_VERSION) return true;
-  if (!existing.sentimentAnalyzedAt) return true;
-  const analyzedAt = Date.parse(existing.sentimentAnalyzedAt);
-  if (!Number.isFinite(analyzedAt)) return true;
-  return Date.now() - analyzedAt >= REANALYZE_AFTER_MS;
+  if (existing.sentimentStatus === 'completed') {
+    if (existing.sentimentVersion !== COMMUNITY_SENTIMENT_VERSION) return true;
+    if (!existing.sentimentAnalyzedAt) return true;
+    const analyzedAt = Date.parse(existing.sentimentAnalyzedAt);
+    if (!Number.isFinite(analyzedAt)) return true;
+    return Date.now() - analyzedAt >= REANALYZE_AFTER_MS;
+  }
+
+  // A failed AI attempt is retried only after a cooldown, not on every 30-minute refresh.
+  if (existing.sentimentStatus === 'failed' && existing.sentimentAnalyzedAt) {
+    const analyzedAt = Date.parse(existing.sentimentAnalyzedAt);
+    if (Number.isFinite(analyzedAt) && Date.now() - analyzedAt < FAILED_RETRY_COOLDOWN_MS) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 export async function analyzeSentimentBatch(texts: string[]): Promise<SentimentResult[]> {
@@ -115,38 +147,91 @@ async function aiSentimentBatch(texts: string[]): Promise<SentimentResult[]> {
     return texts.map(() => result('unknown', 0, 'unavailable', 'none', 0));
   }
 
-  const joined = texts.map((text, index) => `[${index}] ${text.slice(0, 400)}`).join('\n');
-  const systemPrompt = `你是游戏社区情绪分析专家。判断每段文本的整体情感倾向。
-需要考虑反讽、阴阳怪气、社区黑话和上下文。无法可靠判断时输出 neutral 且降低 confidence。
+  const results: SentimentResult[] = [];
+  for (let start = 0; start < texts.length; start += AI_SENTIMENT_BATCH_SIZE) {
+    const chunk = texts.slice(start, start + AI_SENTIMENT_BATCH_SIZE);
+    results.push(...await requestSentimentChunk(config, chunk, 0));
+  }
+  return results;
+}
 
-每条输出一行：序号:label:score:confidence
-label 只能是 positive、negative、neutral。
-score 范围 -1 到 1；confidence 范围 0 到 1。
-只输出结果，不要解释。`;
+async function requestSentimentChunk(
+  config: ProviderConfig,
+  texts: string[],
+  splitDepth: number
+): Promise<SentimentResult[]> {
+  const outcome = await requestSentimentOnce(config, texts);
+  const failedIndices = outcome.results
+    .map((item, index) => (item.status === 'completed' ? -1 : index))
+    .filter(index => index >= 0);
+
+  if (!outcome.retryable
+    || failedIndices.length === 0
+    || texts.length <= 1
+    || splitDepth >= AI_SENTIMENT_MAX_SPLIT_DEPTH) {
+    return outcome.results;
+  }
+
+  const results = [...outcome.results];
+  for (const group of splitRetryIndices(failedIndices)) {
+    const retried = await requestSentimentChunk(
+      config,
+      group.map(index => texts[index]),
+      splitDepth + 1
+    );
+    group.forEach((originalIndex, index) => {
+      results[originalIndex] = retried[index];
+    });
+  }
+  return results;
+}
+
+function splitRetryIndices(indices: number[]): number[][] {
+  if (indices.length <= 1) return [indices];
+  const midpoint = Math.ceil(indices.length / 2);
+  return [indices.slice(0, midpoint), indices.slice(midpoint)];
+}
+
+async function requestSentimentOnce(
+  config: ProviderConfig,
+  texts: string[]
+): Promise<{ results: SentimentResult[]; retryable: boolean }> {
+  const joined = texts.map((text, index) => `[${index}] ${text.slice(0, 400)}`).join('\n');
 
   try {
-    const response = await axios.post(
+    const response = await axios.post<ChatCompletionResponse>(
       `${config.baseUrl.replace(/\/$/, '')}/chat/completions`,
       {
         model: config.model,
         messages: [
-          { role: 'system', content: systemPrompt },
+          { role: 'system', content: AI_SENTIMENT_SYSTEM_PROMPT },
           { role: 'user', content: joined }
         ],
         temperature: 0.1,
-        max_tokens: 1200
+        max_tokens: AI_SENTIMENT_MAX_TOKENS
       },
       {
         headers: providerHeaders(config),
-        timeout: 25_000
+        timeout: AI_SENTIMENT_TIMEOUT_MS
       }
     );
 
-    const content = response.data?.choices?.[0]?.message?.content || '';
-    return parseAiSentimentResponse(content, texts.length);
+    const choice = response.data?.choices?.[0];
+    const results = parseAiSentimentResponse(choice?.message?.content || '', texts.length);
+    const failed = results.filter(item => item.status !== 'completed').length;
+    if (failed > 0) {
+      console.warn(
+        `[Community] AI sentiment response incomplete: ${failed}/${texts.length}`
+        + ` (finish_reason=${choice?.finish_reason || 'unknown'})`
+      );
+    }
+    return { results, retryable: true };
   } catch (error) {
     console.error('[Community] AI sentiment error:', (error as Error).message);
-    return texts.map(() => result('unknown', 0, 'failed', 'ai', 0));
+    return {
+      results: texts.map(() => result('unknown', 0, 'failed', 'ai', 0)),
+      retryable: false
+    };
   }
 }
 

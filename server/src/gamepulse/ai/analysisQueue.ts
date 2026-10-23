@@ -1,4 +1,5 @@
 import type { Server } from 'socket.io';
+import type { Prisma } from '@prisma/client';
 import { prisma } from '../../db.js';
 import { sendFeedItemEmail } from '../../services/email.js';
 import { ensureAnalysis } from './analyzer.js';
@@ -10,6 +11,8 @@ import {
 const DEFAULT_ANALYSIS_BATCH_DELAY_MS = 5000;
 const DEFAULT_MAX_RETRIES = 3;
 const TERMINAL_NEXT_RUN_AT = new Date('9999-12-31T00:00:00.000Z');
+const MAX_TIMER_DELAY_MS = 2_147_483_647;
+const UNEXPECTED_ERROR_RETRY_MS = 30_000;
 
 let processing = false;
 let currentIo: Server | undefined;
@@ -23,13 +26,19 @@ let cleanupSnapshot = {
 export async function enqueueAnalysisTask(feedItemId: string, io?: Server): Promise<void> {
   currentIo = io || currentIo;
   await createAnalysisTaskIfAbsent(feedItemId);
-  void processAnalysisQueue(currentIo);
+  wakeAnalysisQueue(currentIo);
+}
+
+export function wakeAnalysisQueue(io?: Server): void {
+  void processAnalysisQueue(io).catch(error => {
+    console.error('[AnalysisQueue] Worker failed:', error);
+  });
 }
 
 export async function reanalyzeItem(feedItemId: string, io?: Server): Promise<void> {
   currentIo = io || currentIo;
   await createAnalysisTaskIfAbsent(feedItemId);
-  void processAnalysisQueue(currentIo);
+  wakeAnalysisQueue(currentIo);
 }
 
 export async function reanalyzeAll(limit: number, io?: Server): Promise<number> {
@@ -58,7 +67,7 @@ export async function reanalyzeAll(limit: number, io?: Server): Promise<number> 
     if (await createAnalysisTaskIfAbsent(item.id)) created++;
   }
 
-  if (created > 0) void processAnalysisQueue(currentIo);
+  if (created > 0) wakeAnalysisQueue(currentIo);
   return created;
 }
 
@@ -73,6 +82,7 @@ export function startAnalysisQueueWorker(io: Server): void {
     try {
       await backfillAnalysisTaskDedupeKeys();
       await recoverStaleRunningTasks();
+      await reconcileMissingAnalysisTasks();
       await processAnalysisQueue(io);
     } catch (error) {
       console.error('[AnalysisQueue] Worker startup failed:', error);
@@ -123,6 +133,7 @@ export async function processAnalysisQueue(io?: Server): Promise<void> {
   if (processing) return;
   processing = true;
   clearRetryTimer();
+  let finishedNormally = false;
 
   try {
     while (true) {
@@ -136,10 +147,30 @@ export async function processAnalysisQueue(io?: Server): Promise<void> {
         await new Promise(resolve => setTimeout(resolve, getBatchDelayMs()));
       }
     }
+    finishedNormally = true;
   } finally {
     processing = false;
-    await scheduleNextRun(currentIo);
+    try {
+      if (finishedNormally) {
+        await scheduleNextRun(currentIo);
+      } else {
+        // Provider failures have explicit bounded task retries. An unexpected database
+        // failure stays visible, but pending tasks must still be picked up later.
+        scheduleRecoveryRun();
+      }
+    } catch (error) {
+      console.error('[AnalysisQueue] Failed to schedule the next run; retrying later:', error);
+      scheduleRecoveryRun();
+    }
   }
+}
+
+function scheduleRecoveryRun(): void {
+  retryTimer = setTimeout(() => {
+    retryTimer = undefined;
+    wakeAnalysisQueue(currentIo);
+  }, UNEXPECTED_ERROR_RETRY_MS);
+  retryTimer.unref?.();
 }
 
 export async function getAnalysisQueueOverview() {
@@ -179,7 +210,7 @@ export async function getAnalysisQueueOverview() {
 export async function retryAnalysisTask(taskId: string, io?: Server): Promise<void> {
   currentIo = io || currentIo;
   await resetTaskForRetry(taskId);
-  void processAnalysisQueue(currentIo);
+  wakeAnalysisQueue(currentIo);
 }
 
 async function resetTaskForRetry(taskId: string): Promise<void> {
@@ -221,7 +252,7 @@ export async function retryFailedAnalysisTasks(io?: Server): Promise<number> {
     }
   }
 
-  void processAnalysisQueue(currentIo);
+  wakeAnalysisQueue(currentIo);
   return retried;
 }
 
@@ -245,33 +276,28 @@ async function claimNextTask(): Promise<{ id: string; feedItemId: string } | nul
 
   // Atomic claim: only succeeds if the task is still in a claimable state.
   // Prevents concurrent workers from double-claiming the same task.
-  try {
-    const claimed = await prisma.analysisTask.updateMany({
-      where: {
-        id: candidate.id,
-        OR: [
-          { status: 'pending' },
-          { status: 'failed', retryCount: { lt: maxRetries } }
-        ]
-      },
-      data: {
-        status: 'running',
-        startedAt: now,
-        completedAt: null,
-        failedAt: null
-      }
-    });
+  const claimed = await prisma.analysisTask.updateMany({
+    where: {
+      id: candidate.id,
+      OR: [
+        { status: 'pending' },
+        { status: 'failed', retryCount: { lt: maxRetries } }
+      ]
+    },
+    data: {
+      status: 'running',
+      startedAt: now,
+      completedAt: null,
+      failedAt: null
+    }
+  });
 
-    if (claimed.count === 0) return null;
+  if (claimed.count === 0) return null;
 
-    const task = await prisma.analysisTask.findUnique({
-      where: { id: candidate.id },
-      select: { id: true, feedItemId: true }
-    });
-    return task;
-  } catch {
-    return null;
-  }
+  return prisma.analysisTask.findUnique({
+    where: { id: candidate.id },
+    select: { id: true, feedItemId: true }
+  });
 }
 
 async function runTask(taskId: string, feedItemId: string, io?: Server): Promise<void> {
@@ -287,36 +313,63 @@ async function runTask(taskId: string, feedItemId: string, io?: Server): Promise
   }
 
   const result = await ensureAnalysis(item, { force: true });
-  if (result.status === 'failed') {
-    await markTaskFailed(taskId, result.error || 'Unknown AI analysis error', started);
-    return;
-  }
+  const completed = await prisma.$transaction(async tx => {
+    const latest = await tx.feedItem.findUnique({ where: { id: feedItemId }, select: { contentHash: true } });
+    if (!latest) return false;
 
-  await prisma.analysisTask.update({
-    where: { id: taskId },
-    data: {
-      dedupeKey: null,
-      status: 'completed',
-      provider: result.provider,
-      model: result.model,
-      lastError: null,
-      durationMs: Date.now() - started,
-      completedAt: new Date()
+    // This check and releasing dedupeKey must be atomic with respect to collection.
+    // Otherwise an update after result persistence can still lose its follow-up task.
+    if (result.status === 'superseded' || latest.contentHash !== item.contentHash) {
+      await tx.analysisTask.update({
+        where: { id: taskId },
+        data: {
+          status: 'pending',
+          nextRunAt: new Date(),
+          startedAt: null,
+          completedAt: null,
+          failedAt: null
+        }
+      });
+      return false;
     }
+
+    if (result.status === 'failed') {
+      await markTaskFailed(taskId, result.error || 'Unknown AI analysis error', started, tx);
+      return false;
+    }
+
+    await tx.analysisTask.update({
+      where: { id: taskId },
+      data: {
+        dedupeKey: null,
+        status: 'completed',
+        provider: result.provider,
+        model: result.model,
+        lastError: null,
+        durationMs: Date.now() - started,
+        completedAt: new Date()
+      }
+    });
+    return true;
   });
 
-  await notifyAnalyzedItem(feedItemId, io);
+  if (completed) await notifyAnalyzedItem(feedItemId, item.contentHash, io);
 }
 
-async function markTaskFailed(taskId: string, message: string, started: number): Promise<void> {
-  const task = await prisma.analysisTask.findUnique({
+async function markTaskFailed(
+  taskId: string,
+  message: string,
+  started: number,
+  db: Pick<Prisma.TransactionClient, 'analysisTask'> = prisma
+): Promise<void> {
+  const task = await db.analysisTask.findUnique({
     where: { id: taskId },
     select: { retryCount: true, maxRetries: true }
   });
   const retryCount = (task?.retryCount || 0) + 1;
   const maxRetries = task?.maxRetries || getMaxRetries();
 
-  await prisma.analysisTask.update({
+  await db.analysisTask.update({
     where: { id: taskId },
     data: {
       status: 'failed',
@@ -332,12 +385,12 @@ async function markTaskFailed(taskId: string, message: string, started: number):
   });
 }
 
-async function notifyAnalyzedItem(feedItemId: string, io?: Server): Promise<void> {
+async function notifyAnalyzedItem(feedItemId: string, expectedContentHash: string, io?: Server): Promise<void> {
   const withAnalysis = await prisma.feedItem.findUnique({
     where: { id: feedItemId },
     include: { source: true, analysis: true }
   });
-  if (!withAnalysis) return;
+  if (!withAnalysis || withAnalysis.contentHash !== expectedContentHash || withAnalysis.analysis?.status !== 'completed') return;
 
   io?.to(`game:${withAnalysis.game}`).emit('item:analyzed', withAnalysis);
   io?.emit('notification', {
@@ -369,6 +422,8 @@ async function hasRunnableTask(): Promise<boolean> {
 async function scheduleNextRun(io?: Server): Promise<void> {
   const nextTask = await prisma.analysisTask.findFirst({
     where: {
+      // Terminal tasks are parked at year 9999; scheduling them overflows setTimeout and spins.
+      nextRunAt: { lt: TERMINAL_NEXT_RUN_AT },
       OR: [
         { status: 'pending' },
         { status: 'failed', retryCount: { lt: getMaxRetries() } }
@@ -380,10 +435,13 @@ async function scheduleNextRun(io?: Server): Promise<void> {
 
   if (!nextTask) return;
 
-  const delay = Math.max(0, nextTask.nextRunAt.getTime() - Date.now());
+  const delay = Math.min(
+    Math.max(0, nextTask.nextRunAt.getTime() - Date.now()),
+    MAX_TIMER_DELAY_MS
+  );
   retryTimer = setTimeout(() => {
     retryTimer = undefined;
-    void processAnalysisQueue(io);
+    wakeAnalysisQueue(io);
   }, delay);
   retryTimer.unref?.();
 }
@@ -411,6 +469,17 @@ async function recoverStaleRunningTasks(): Promise<void> {
       nextRunAt: new Date()
     }
   });
+}
+
+async function reconcileMissingAnalysisTasks(): Promise<void> {
+  const items = await prisma.feedItem.findMany({
+    where: {
+      analysisTasks: { none: {} },
+      OR: [{ analysis: null }, { analysis: { status: 'pending' } }]
+    },
+    select: { id: true }
+  });
+  for (const item of items) await createAnalysisTaskIfAbsent(item.id);
 }
 
 async function backfillAnalysisTaskDedupeKeys(): Promise<void> {
@@ -463,9 +532,12 @@ async function markDuplicateOpenTaskSuperseded(taskId: string): Promise<void> {
   });
 }
 
-async function createAnalysisTaskIfAbsent(feedItemId: string): Promise<boolean> {
+export async function createAnalysisTaskIfAbsent(
+  feedItemId: string,
+  db: Pick<Prisma.TransactionClient, 'analysisTask'> = prisma
+): Promise<boolean> {
   try {
-    await prisma.analysisTask.create({
+    await db.analysisTask.create({
       data: {
         feedItemId,
         dedupeKey: feedItemId,

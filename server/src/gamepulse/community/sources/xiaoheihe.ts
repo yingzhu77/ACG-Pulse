@@ -1,12 +1,12 @@
 import axios from 'axios';
 import crypto from 'node:crypto';
-import { getRandomUserAgent } from './common.js';
+import { filterValidItems, getRandomUserAgent } from './common.js';
 
 export interface XiaoheiheNewsItem {
   linkid: number;
   title: string;
   description: string;
-  modify_at?: number;
+  modify_at: number;
   comment_num?: number;
   link_award_num?: number;
   down?: number;
@@ -65,22 +65,25 @@ function signedUrl(url: string, timestamp = Math.trunc(Date.now() / 1000)): stri
 }
 
 export async function fetchXiaoheiheNews(limit = 20): Promise<XiaoheiheNewsItem[]> {
-  try {
-    const url = signedUrl(
-      `https://api.xiaoheihe.cn/bbs/app/feeds/news?os_type=web&app=heybox&client_type=mobile&version=999.0.3&x_client_type=web&x_os_type=Mac&x_app=heybox&heybox_id=-1&appid=900018355&offset=0&limit=${limit}`
-    );
-    const response = await axios.get(url, {
-      headers: { 'User-Agent': getRandomUserAgent() },
-      timeout: 10_000
-    });
-    if (response.data.status !== 'ok') {
-      console.error('[Community] Xiaoheihe API failed:', response.data.msg);
-      return [];
-    }
-    return (response.data.result?.links || response.data.result?.list || [])
-      .filter((item: XiaoheiheNewsItem) => item.linkid !== undefined);
-  } catch (error) {
-    console.error('[Community] Xiaoheihe error:', (error as Error).message);
-    return [];
+  const url = signedUrl(
+    `https://api.xiaoheihe.cn/bbs/app/feeds/news?os_type=web&app=heybox&client_type=mobile&version=999.0.3&x_client_type=web&x_os_type=Mac&x_app=heybox&heybox_id=-1&appid=900018355&offset=0&limit=${limit}`
+  );
+  const response = await axios.get(url, {
+    headers: { 'User-Agent': getRandomUserAgent() },
+    timeout: 10_000
+  });
+  const body = response.data;
+  const list: XiaoheiheNewsItem[] = body?.result?.links ?? body?.result?.list;
+  if (body?.status !== 'ok' || !Array.isArray(list)) {
+    throw new Error(`Xiaoheihe failed or missing list (status=${body?.status}, message=${body?.msg || ''})`);
   }
+  return filterValidItems(
+    list,
+    item => Boolean(item?.linkid)
+      && typeof item.title === 'string'
+      && item.title.trim().length > 0
+      && Number.isFinite(item.modify_at)
+      && item.modify_at > 0,
+    'Xiaoheihe'
+  );
 }

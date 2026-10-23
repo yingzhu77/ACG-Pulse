@@ -32,6 +32,11 @@ export interface SourceConfig {
   includeDynamic?: boolean;
   tags?: string[];
   authorUrl?: string;
+  articleSelector?: string;
+  titleSelector?: string;
+  linkSelector?: string;
+  dateSelector?: string;
+  urlPattern?: string;
 }
 
 export interface RawFeedItem {

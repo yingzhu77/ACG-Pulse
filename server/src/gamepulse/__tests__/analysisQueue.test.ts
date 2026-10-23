@@ -1,4 +1,8 @@
-import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+
+vi.mock('@prisma/client', () => ({
+  PrismaClient: class { constructor() { throw new Error('Real Prisma is forbidden in anonymous analysis tests'); } }
+}));
 
 type MockTask = {
   id: string;
@@ -21,6 +25,8 @@ type MockTask = {
 
 const tasks: MockTask[] = [];
 const analysisRecords = new Map<string, Record<string, unknown>>();
+const silentIo = { to: () => ({ emit() {} }), emit() {} };
+let updateBeforeAnalysisNotification = false;
 
 const source = {
   id: 'source-1',
@@ -66,6 +72,7 @@ const feedItem = {
   updatedAt: new Date(),
   source
 };
+const originalInput = { title: feedItem.title, content: feedItem.content, contentHash: feedItem.contentHash };
 
 function applyTaskUpdate(task: MockTask, data: Partial<MockTask>): MockTask {
   Object.assign(task, data, { updatedAt: new Date() });
@@ -124,8 +131,11 @@ function matchesWhere(task: MockTask, where: Record<string, unknown>): boolean {
   return true;
 }
 
-vi.mock('../../db.js', () => ({
-  prisma: {
+vi.mock('../../db.js', () => {
+  const mockPrisma = {
+    $transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) => {
+      return callback(mockPrisma);
+    }),
     analysisTask: {
       findFirst: vi.fn(async ({ where, select }: { where?: Record<string, unknown>; select?: Record<string, boolean> } = {}) => {
         const found = where ? tasks.find(task => matchesWhere(task, where)) : tasks[0];
@@ -237,14 +247,24 @@ vi.mock('../../db.js', () => ({
       })
     },
     feedItem: {
-      findUnique: vi.fn(async () => ({
-        ...feedItem,
-        analysis: analysisRecords.get(feedItem.id) || {
-          summary: '测试摘要',
-          importance: 'medium'
+      findUnique: vi.fn(async ({ include }: { include?: { analysis?: boolean } } = {}) => {
+        if (include?.analysis && updateBeforeAnalysisNotification) {
+          Object.assign(feedItem, { content: '终态之后采集到的新版匿名正文。', contentHash: 'anonymous-v2' });
+          analysisRecords.set(feedItem.id, { status: 'pending', summary: null, importance: 'low' });
         }
-      })),
+        return {
+          ...feedItem,
+          analysis: analysisRecords.get(feedItem.id) || { summary: '测试摘要', importance: 'medium' }
+        };
+      }),
       findMany: vi.fn(async ({ where, select, take }: { where?: Record<string, unknown>; select?: Record<string, boolean>; take?: number }) => {
+        if (where?.analysisTasks) {
+          const analysis = analysisRecords.get(feedItem.id);
+          const matchesAnalysis = (where.OR as Array<{ analysis: { status: string } | null }>).some(branch =>
+            branch.analysis === null ? !analysis : analysis?.status === branch.analysis.status
+          );
+          return !tasks.some(task => task.feedItemId === feedItem.id) && matchesAnalysis ? [{ id: feedItem.id }] : [];
+        }
         const items = [{ id: 'item-1' }, { id: 'item-2' }, { id: 'item-3' }];
         const filtered = where?.hidden === false ? items : items;
         const result = take ? filtered.slice(0, take) : filtered;
@@ -263,8 +283,9 @@ vi.mock('../../db.js', () => ({
         analysisRecords.set(where.feedItemId, { ...(analysisRecords.get(where.feedItemId) || {}), ...data });
       })
     }
-  }
-}));
+  };
+  return { prisma: mockPrisma };
+});
 
 vi.mock('../ai/provider.js', () => ({
   analyzeWithProvider: vi.fn(async () => ({
@@ -296,10 +317,17 @@ vi.mock('../../services/email.js', () => ({
 }));
 
 describe('analysis queue', () => {
+  afterEach(async () => {
+    const queue = await import('../ai/analysisQueue.js');
+    await vi.waitFor(async () => expect((await queue.getAnalysisQueueOverview()).processing).toBe(false));
+    queue.clearRetryTimerForTest();
+  });
   beforeEach(async () => {
     process.env.ANALYSIS_BATCH_DELAY_MS = '0';
     tasks.length = 0;
     analysisRecords.clear();
+    Object.assign(feedItem, originalInput);
+    updateBeforeAnalysisNotification = false;
     // Use mockReset to clear queued values (mockResolvedValueOnce) and restore implementation
     const { prisma } = await import('../../db.js');
     vi.mocked(prisma.analysisTask.updateMany).mockReset();
@@ -509,6 +537,101 @@ describe('analysis queue', () => {
     });
   });
 
+  test('reanalyzes the latest body when content changes while the provider is running', async () => {
+    const provider = await import('../ai/provider.js');
+    let releaseProvider!: (result: Awaited<ReturnType<typeof provider.analyzeWithProvider>>) => void;
+    vi.mocked(provider.analyzeWithProvider).mockImplementationOnce(() => new Promise(resolve => { releaseProvider = resolve; }));
+    const { enqueueAnalysisTask, getAnalysisQueueOverview } = await import('../ai/analysisQueue.js');
+
+    await enqueueAnalysisTask(feedItem.id);
+    await vi.waitFor(() => expect(provider.analyzeWithProvider).toHaveBeenCalledTimes(1));
+    Object.assign(feedItem, { content: '更新后的匿名正文，需要生成与新版内容对应的摘要。', contentHash: 'anonymous-v2' });
+    await enqueueAnalysisTask(feedItem.id);
+    releaseProvider({
+      analysis: { category: 'announcement', importance: 'low', visibility: 'public', confidence: 80, summary: '原始匿名正文的旧摘要', reason: '匿名样本', dedupKeywords: [] },
+      provider: 'anonymous-provider',
+      model: 'anonymous-model'
+    });
+    await vi.waitFor(async () => expect((await getAnalysisQueueOverview()).processing).toBe(false));
+
+    expect(provider.analyzeWithProvider).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(provider.analyzeWithProvider).mock.calls[1][0].content).toBe(feedItem.content);
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0]).toMatchObject({ status: 'completed', retryCount: 0 });
+    expect(analysisRecords.get(feedItem.id)?.summary).toBe('版本更新');
+  });
+
+  test('does not lose a body update between result persistence and task completion', async () => {
+    const analyzer = await import('../ai/analyzer.js');
+    const originalEnsureAnalysis = analyzer.ensureAnalysis;
+    let releaseCompletion!: () => void;
+    let signalPersisted!: () => void;
+    const persisted = new Promise<void>(resolve => { signalPersisted = resolve; });
+    const canComplete = new Promise<void>(resolve => { releaseCompletion = resolve; });
+    const execution = vi.spyOn(analyzer, 'ensureAnalysis').mockImplementationOnce(async (...args) => {
+      const result = await originalEnsureAnalysis(...args);
+      signalPersisted();
+      await canComplete;
+      return result;
+    });
+    const provider = await import('../ai/provider.js');
+    const { enqueueAnalysisTask, getAnalysisQueueOverview } = await import('../ai/analysisQueue.js');
+    try {
+      await enqueueAnalysisTask(feedItem.id);
+      await persisted;
+      expect(analysisRecords.get(feedItem.id)?.status).toBe('completed');
+      Object.assign(feedItem, { content: '分析结果写入后的新版匿名正文，需要再次分析。', contentHash: 'anonymous-v2' });
+      await enqueueAnalysisTask(feedItem.id);
+      releaseCompletion();
+      await vi.waitFor(async () => expect((await getAnalysisQueueOverview()).processing).toBe(false));
+
+      expect(provider.analyzeWithProvider).toHaveBeenCalledTimes(2);
+      expect(vi.mocked(provider.analyzeWithProvider).mock.calls[1][0].content).toBe(feedItem.content);
+      expect(tasks).toHaveLength(1);
+      expect(tasks[0]).toMatchObject({ status: 'completed', retryCount: 0 });
+    } finally {
+      releaseCompletion();
+      execution.mockRestore();
+    }
+  });
+
+  test.each([null, 'pending'])('startup recovers an item with no task and analysis %s', async status => {
+    if (status) analysisRecords.set(feedItem.id, { status });
+    const { startAnalysisQueueWorker } = await import('../ai/analysisQueue.js');
+    startAnalysisQueueWorker(silentIo as never);
+
+    await vi.waitFor(() => expect(tasks[0]?.status).toBe('completed'));
+    expect(tasks).toHaveLength(1);
+    expect(analysisRecords.get(feedItem.id)?.status).toBe('completed');
+  });
+
+  test.each(['completed', 'failed'])('startup does not requeue analysis %s after task history is removed', async status => {
+    analysisRecords.set(feedItem.id, { status });
+    const { prisma } = await import('../../db.js');
+    const { startAnalysisQueueWorker } = await import('../ai/analysisQueue.js');
+    const provider = await import('../ai/provider.js');
+    startAnalysisQueueWorker(silentIo as never);
+
+    await vi.waitFor(() => expect(prisma.analysisTask.findFirst).toHaveBeenCalled());
+    expect(tasks).toHaveLength(0);
+    expect(provider.analyzeWithProvider).not.toHaveBeenCalled();
+  });
+
+  test('does not notify a newer pending version after completing the previous version', async () => {
+    updateBeforeAnalysisNotification = true;
+    const io = { to: vi.fn(() => ({ emit: vi.fn() })), emit: vi.fn() };
+    const email = await import('../../services/email.js');
+    const { enqueueAnalysisTask, getAnalysisQueueOverview } = await import('../ai/analysisQueue.js');
+    await enqueueAnalysisTask(feedItem.id, io as never);
+    await vi.waitFor(async () => expect((await getAnalysisQueueOverview()).processing).toBe(false));
+
+    expect(tasks[0].status).toBe('completed');
+    expect(analysisRecords.get(feedItem.id)?.status).toBe('pending');
+    expect(io.to).not.toHaveBeenCalled();
+    expect(io.emit).not.toHaveBeenCalled();
+    expect(email.sendFeedItemEmail).not.toHaveBeenCalled();
+  });
+
   test('reanalyzeAll skips items with open tasks', async () => {
     tasks.push({
       id: 'task-open',
@@ -582,6 +705,27 @@ describe('analysis queue', () => {
     expect(tasks[0].status).toBe('pending');
   });
 
+  test('preserves a database claim failure and schedules a delayed recovery', async () => {
+    const { prisma } = await import('../../db.js');
+    await prisma.analysisTask.create({ data: { feedItemId: feedItem.id, dedupeKey: feedItem.id } });
+    const error = new Error('anonymous database write failure');
+    vi.mocked(prisma.analysisTask.updateMany).mockRejectedValueOnce(error);
+    const { processAnalysisQueue } = await import('../ai/analysisQueue.js');
+
+    vi.useFakeTimers();
+    try {
+      await expect(processAnalysisQueue()).rejects.toBe(error);
+      expect(tasks[0].status).toBe('pending');
+      expect(prisma.analysisTask.findFirst).toHaveBeenCalledTimes(1);
+
+      vi.advanceTimersByTime(30_000);
+    } finally {
+      vi.useRealTimers();
+    }
+
+    await vi.waitFor(() => expect(tasks[0].status).toBe('completed'));
+  });
+
   test('retryFailedAnalysisTasks resets all failed tasks to pending', async () => {
     const { retryFailedAnalysisTasks } = await import('../ai/analysisQueue.js');
 
@@ -625,7 +769,7 @@ describe('analysis queue', () => {
 
     const count = await retryFailedAnalysisTasks();
     expect(count).toBe(2);
-    expect(tasks.filter(t => t.status === 'pending').length).toBe(2);
+    await vi.waitFor(() => expect(tasks.every(task => task.status === 'completed')).toBe(true));
     expect(tasks[0].lastError).toBeNull();
     expect(tasks[1].lastError).toBeNull();
   });

@@ -23,6 +23,7 @@ import {
   HideItemSchema,
   LoginSchema,
   UpdateSettingsSchema,
+  EDITABLE_SETTING_KEYS,
   validateOrThrow
 } from '../validation.js';
 import { previewSource, SourcePreviewError, sanitizeErrorMessage } from '../services/sourcePreview.js';
@@ -316,7 +317,9 @@ export function createAdminRouter(io: Server): Router {
   });
 
   router.get('/settings', async (_req, res) => {
-    const settings = await prisma.setting.findMany();
+    const settings = await prisma.setting.findMany({
+      where: { key: { in: [...EDITABLE_SETTING_KEYS] } }
+    });
     res.json(Object.fromEntries(settings.map(item => [item.key, item.value])));
   });
 
