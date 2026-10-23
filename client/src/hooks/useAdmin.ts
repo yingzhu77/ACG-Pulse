@@ -254,7 +254,7 @@ export function useAdmin(showToast: ShowToast, loadPublicData: () => Promise<voi
     if (!adminToken) return;
     try {
       await adminApi.updateSettings({ BILIBILI_COOKIE: bilibiliCookie });
-      showToast('success', 'Cookie 已保存，重启服务后生效');
+      showToast('success', '备用 Cookie 已保存');
     } catch (error) {
       handleAdminError(error, '保存失败');
     }

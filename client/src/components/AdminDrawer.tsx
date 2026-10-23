@@ -62,7 +62,7 @@ function SourcePreviewPanel({
   if (loading) {
     return (
       <div className="source-preview-message" role="status" aria-live="polite">
-        正在试抓取数据源，通常需要几秒钟。
+        正在试抓取数据源，通常需要几秒钟；上游较慢时可能需要等待数十秒。
       </div>
     );
   }
@@ -291,9 +291,9 @@ export function AdminDrawer(props: AdminDrawerProps) {
                 </form>
 
                 <div className="drawer-card">
-                  <h3>B站 Cookie 配置</h3>
+                  <h3>B站备用 Cookie（可选）</h3>
                   <p style={{ color: 'var(--text-soft)', fontSize: 13, margin: '0 0 10px' }}>
-                    填入 B站 Cookie 可稳定采集视频源。获取方法：F12 → Application → Cookies → 复制 SESSDATA、bili_jct、DedeUserID
+                    主采集由自建 RSSHub 使用服务器根目录 .env 中的 BILIBILI_COOKIE。此处仅用于直连备用（默认关闭）和头像获取；获取方法：F12 → Application → Cookies → 复制 SESSDATA、bili_jct、DedeUserID
                   </p>
                   <textarea
                     value={props.bilibiliCookie}
@@ -304,7 +304,7 @@ export function AdminDrawer(props: AdminDrawerProps) {
                     style={{ fontFamily: 'monospace', fontSize: 12 }}
                   />
                   <button onClick={props.onSaveCookie} className="action-button primary" style={{ marginTop: 8 }}>
-                    保存 Cookie
+                    保存备用 Cookie
                   </button>
                 </div>
 
