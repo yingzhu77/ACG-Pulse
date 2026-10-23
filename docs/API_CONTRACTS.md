@@ -127,6 +127,8 @@ query：
 约束：
 
 - 接口采用 stale-first：总是先返回数据库快照，过期时后台刷新。
+- `lastUpdated` 取所选来源最近一次完整成功刷新时间；查询全部来源时取三者最旧的成功时间，尚无成功记录时为 `null`。任一所选来源失败时 `isStale=true`，成功返回空列表仍记录成功时间。失败来源保留旧话题和原成功时间，其他来源成功不会将其标为新鲜。首次启用来源状态记录前，兼容已有话题的 `fetchedAt`。
+- 失败不触发每次公开读取的立即重试；懒刷新沿用 30 分钟间隔，`isRefreshing` 表示本次确实触发了后台刷新，冷却期间仍以 `isStale=true` 返回旧快照。
 - AI 未配置、超时或解析失败时情感为 `unknown`，不计入正/负/中性。
 - 低置信度只表达为“判断不确定”或弱化标签，不展示小数分数。
 - `heatScore` 是展示排名分：同来源、本轮候选集合内的 0-100 相对百分位，不是平台原始互动量；热度环、列表排序和主 UI 继续只使用该字段。
@@ -183,9 +185,12 @@ query：
 
 | 字段 | 语义 |
 | --- | --- |
-| `name` / `type` / `game` | 必填，和创建源一致 |
+| `name` / `type` | 必填，和创建源一致 |
+| `game` | 预览可选；空值在响应中以“通用”展示。创建/更新源时仍必填 |
 | `url` / `uid` / `route` / `isOfficial` / `followed` / `enabled` / `priority` / `config` | 可选，和创建源一致 |
 | `limit` | 可选，默认 5，最大 10 |
+
+预览默认超时 30s，由服务端 `SOURCE_PREVIEW_TIMEOUT_MS` 配置（最低 5000ms）；超时返回 422，超时不等于源不可用。
 
 成功响应 DTO：`SourcePreviewResponse`。
 
@@ -219,6 +224,20 @@ query：
 - 不写入 `Source`、`FeedItem`、`AnalysisTask`、`Notification`，不触发全量采集或 socket 广播。
 - 返回条目默认 5 条，最多 10 条；正文只返回 `contentSnippet`，服务端截断过长内容。
 - 响应、日志和前端提示不得回显完整 `config`、Cookie、token 或 Authorization header。
+
+官网源可通过现有 `config` 配置文章范围与字段（创建、更新、试抓使用同一校验）：
+
+```json
+{
+  "articleSelector": ".news-list .entry",
+  "titleSelector": "h2",
+  "linkSelector": "a.detail",
+  "dateSelector": "time",
+  "urlPattern": "^https://game\\.example/news/\\d+$"
+}
+```
+
+选择器相对于每个文章节点，标题/链接也可匹配节点自身；链接取 `href` 并相对源 URL 解析，`urlPattern` 在完整 URL 上做白名单过滤，然后去重并取最多 20 条。日期优先读取 `datetime`，其次读取文本；日期无法解析时保持缺失。未配置文章选择器时只查 `article`、`.news`、`.post` 内的链接，不再扫描全页链接。遇到 RSS/Atom 则直接解析已下载响应。该配置不包含浏览器执行或 JavaScript 页面渲染能力，需用试抓检查目标页面实际返回的 HTML。
 
 ### `/api/admin/items`
 

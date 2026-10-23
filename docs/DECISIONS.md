@@ -2,6 +2,68 @@
 
 本文档记录对长期维护有影响的项目决策。新增决策按时间倒序追加。
 
+## 2026-10-21：社区情绪 AI 按批控制推理预算，失败结果冷却重试
+
+**决策**：`community/sentiment.ts` 对歧义文本按每批最多 5 条调用 Provider，`max_tokens=4096`、超时 60s。解析响应后若存在缺失或非法序号（包括 `finish_reason=length`），仅把失败序号拆半重试，递归深度上限 2；单条文本不再重试，HTTP/传输错误也不在同一轮内重试。`shouldReanalyzeSentiment` 对 `failed` 结果增加 6 小时冷却；`unavailable` 不设冷却，因为没有产生付费调用。情绪版本保持不变，避免批量重算已有的成功结果。
+
+**原因**：`deepseek-v4-flash` 是推理模型，reasoning 与 content 共享 `max_tokens`。旧实现 11 条批次在 1200 下被 reasoning 占满（`finish_reason=length`），解析只能拿到 0–3 行，NGA 8 条落库 `unknown/failed`；失败状态又会在每次 30 分钟刷新时重试，持续消耗 token 并重复抓取评论。
+
+**验证（2026-10-21，隔离 SQLite + 真实三源 + 真实 `deepseek-v4-flash`）**：冷刷新 26 条（B站 5/NGA 15/小黑盒 6），NGA 15/15 `completed`、`unknown/failed=0`；5 次 AI 调用全部 `finish_reason=stop`，reasoning 325–1469，单次耗时 3.8–12.3s，总 58.1s、8,699 tokens。增量刷新 28 条，跳过 24 条已有话题，2 次调用均对应新增话题，NGA bad=0；8.8s。B站 game ranking `-400`、NGA `fid=694` 权限不足均按 `degraded` 保留可用话题，小黑盒 `healthy`。后端 243 项测试与 server build 通过。
+
+**边界**：6 小时冷却只约束 `failed`，持续失败的话题每天最多重试 4 次；模型长期异常时仍会产生少量重复调用。拆批以深度 2 为硬上限，单条失败不会无限递归。单次真实验收不代表上游长期稳定；未恢复部署、未启用付费采集源。
+
+## 2026-10-21：管理端请求封装必须保留默认 Content-Type
+
+**决策**：`client/src/services/api.ts` 的 `request()` 改为先展开 `options`，再合并默认 `Content-Type: application/json` 与调用方 headers。调用方 headers 仍可覆盖单个字段，但不能再把默认 JSON 类型整体丢掉。
+
+**原因**：浏览器验证 admin preview 时，带 `Authorization` 的请求返回 `Validation failed for source preview: : Invalid input: expected object, received undefined`。根因是原实现先设置 headers、后展开 `...options`，`options.headers`（鉴权头）覆盖了整个 headers 对象；Express 的 `express.json()` 因缺少 `Content-Type` 不解析 body，Zod 收到 `undefined`。该缺陷影响 preview 及所有带 body 的管理端写接口（建源、改源、关注、隐藏、设置等）。此前的验收脚本自行设置 Content-Type，绕过了客户端封装，因此单测和脚本验收未暴露。
+
+**验证**：修复后 client `lint`/`build` 通过；隔离管理端 UI 的空 `game` preview 成功返回 30 条、展示 5 条，无效 RSSHub route 显示 `role=alert` 的 503 错误与修正提示。审查边界：未逐一手工回归其他管理端写接口，但共享封装已修复；视觉与移动端仍未验证。
+
+## 2026-10-21：preview 只放宽预览层，超时与 check 语义分离
+
+**决策**：admin source preview 的超时改为 `SOURCE_PREVIEW_TIMEOUT_MS` 可配置，默认 30s、最低 5s，并由生产 Compose 透传。仅 `SourcePreviewSchema` 允许空或缺失 `game`，响应以“通用”展示占位；`CreateSourceSchema` 与 `UpdateSourceSchema` 仍要求非空 `game`。采集主路径、`SOURCE_CHECK_TIMEOUT_MS` 和 RSSHub 行为不变。
+
+**原因**：2026-10-20 的隔离验收中，preview 的 15s 硬超时让 `15319615`、`1265652806` 在冷启动时失败，而同一来源在实际 check（90s 窗口）中成功入库；另外 4 个已存在的关注 UP 源 `game=''`，原样 preview 会在进入采集前返回 400。预览是只读诊断入口，不应比实际采集更严格；放宽只影响预览，不掩盖上游失败，也不自动回填历史数据。
+
+**验证（2026-10-21 12:30–12:32）**：隔离临时 SQLite、匿名管理员、空 AI Key，RSSHub 仅经临时代理到自建实例；12 个 B站源 preview 首轮 10/12 成功（每源 30 条，3.5–9.1s），`15319615` 8.9s、`1265652806` 5.8s，4 个空 `game` 源返回“通用”，未出现 30s 超时。`1340190821`/`161775300` 首轮 422 路由失败，重试 37/73ms 成功，check 后路由 200/40。两轮 check 均 12/12 `healthy`，首轮新增 360/0 失败、次轮新增 0；隔离库 360 条、24 条 healthy 日志。
+
+**边界**：30s 仍短于 90s check 验收窗口，极慢源可能 preview 超时；preview 成功或失败都不能替代 check、`newItems` 和源健康记录，两个官方源首轮 preview 失败但 check 成功即为实例。空 `game` 只以展示占位返回，adapter 仍收到空值，不改数据库、种子源或采集字段。B站 API 空 JSON、浏览器回退与间歇 503 是独立问题；单一时间窗口结果不代表永久恢复。
+
+## 2026-10-20：B站主路径切换为自建 RSSHub，直连 API 改为显式备用
+
+**决策**：B站采集以生产 Compose 内置的 `rsshub` 服务为主路径。`RSSHUB_BASE_URLS` 默认自建实例优先，公共 `rsshub.app` 只作最后回退。应用容器不再接收 `BILIBILI_COOKIE`；登录 Cookie 只存在于根目录 `.env`，由 Compose 映射为 RSSHub 需要的 `BILIBILI_COOKIE_<uid>`。当前默认把同一登录 Cookie 映射到全部监控 UID，需要多账号时再按 UID 拆分。
+
+**直连边界**：`BILIBILI_DIRECT_API_FALLBACK` 默认 `false`，且不得因为 `BILIBILI_COOKIE` 存在而隐式开启。只有环境变量显式设为 `true`，或单个 Source 的 `config.directApiFallback=true`，才允许绕过 RSSHub 直连 B站。Cookie 是凭据，不是采集路径开关。
+
+**原因**：生产复盘中的 B站大面积失败由直连 API 412/风控和匿名 RSSHub 403 叠加造成。把 Cookie 同时放进应用容器会让两条路径共享凭据、扩大暴露面，并掩盖自建 RSSHub 的真实健康状态。自建 RSSHub 可以独立维护 Chromium、缓存和 per-uid Cookie，应用只消费 RSS。
+
+**运维约束**：RSSHub 的 B站 Cookie 变量必须按 UID 命名；新增监控 UID 时必须同步补充映射。更换 Cookie 或 RSSHub 配置后重建 `rsshub`，再按需重建 `app`。直连备用仅用于短时排障，需观察 412/429；公共 RSSHub 不应作为稳定主路径。
+
+**验证边界**：后续已启动真实自建 RSSHub 并完成有限验收。`healthz` 返回 `ok`；`/bilibili/user/video/401742377` 返回 HTTP 200、RSS XML 和 40 个 `<item>`；隔离应用侧试抓 30 条，实际采集新增 30 条、0 失败，源健康变为 `healthy`，`lastSuccessAt` 在连续两次采集中推进。`rsshub/Dockerfile` 同时修复了基础镜像裁剪 Playwright CLI 导致的构建失败；两份 Compose 的 12 个 UID 映射已由 `bilibiliCookieMapping.test.ts` 锁定，开发 Compose 增加根 Cookie 回退。2026-10-20 晚些时候用轮换后的有效 Cookie 复核：容器内 nav 为 `code=0, isLogin=true`，12 个 per-UID Cookie 非空；重建后首次路由曾返回 503，约 10 秒后重试返回 HTTP 200/40 items；12 个默认 UID 中 11 个返回 HTTP 200/40 items，`15319615`（aki惊蛰）返回 503/0，日志为浏览器模式 45 秒未收到视频列表响应。B站 API 仍返回空 JSON 并回退浏览器模式，有效 Cookie 不等于 API 风控解除。随后在隔离临时 SQLite 中完成新 Cookie 下 12 源应用侧验收：两次 check 分别为新增 360/0 条、0 失败，12/12 源 `healthy`，`lastSuccessAt` 推进，隔离库 360 条条目与 24 条 healthy 健康日志；`15319615` 与 `1265652806` 均在 check 中成功，check 后 `15319615` 路由返回 200/40。preview 的 15s 硬超时仍会让个别源预览失败，实际 check 在 90s 内成功，预览窗口不足不代表采集失败；空 `game` 的关注 UP 源也无法原样 preview，这是预览层限制。该结果仍限于单一时间窗口，上游空响应与间歇 503 未消除，不能表述为永久恢复。未恢复部署；根 `.env` 的旧 `BILIBILI_COOKIE_401742377` 覆盖项已按用户确认删除，开发 Compose 复核为 12 个 per-UID Cookie 非空且同值（回退到新根 Cookie）。未读取或修改真实凭据、生产数据库与归档数据。头像补全 `fetchBilibiliAvatar` 仍直连 B站 `acc/info`，属非阻塞辅助请求，失败只记日志，不影响采集结果和源健康；如后续要求完全收敛直连，需单独评估头像来源。
+
+## 2026-10-20：独立验收使用真实临时 SQLite 库，终态任务不参与定时调度
+
+**验收层级**：事务回滚、任务唯一约束、版本竞争窗口和终态失败语义不能只用内存桩证明。测试运行时在操作系统临时目录创建唯一根目录和全新 `test.db`，复制 schema 与迁移后由 `prisma migrate deploy` 从临时工作目录应用；用例使用生产 `db.ts` 与真实事务，只 mock 适配器、Provider、邮件/通知等外部边界。新增 6 项验收覆盖：隔离证明、条目保存与任务写入整体回滚、正文更新与任务写入整体回滚、Provider 等待期间正文更新、结果已写入但任务未结束时的补分析、同条目去重与终态失败不自动重排。
+
+**隔离约束**：仅覆盖 `DATABASE_URL` 不能证明隔离，因为 Prisma Client 导入时仍会探测 `server/.env`。测试配置为 worker 固定传入临时库地址，临时根与临时 `prisma` 目录写入空 `.env` 并设置空 `DOTENV_CONFIG_PATH`；worker 启动前断言连接地址，安装 fs 守卫拦截 `server/` 下真实 `.env*` 探测和读取。验收先证明 `PRAGMA database_list` 只含临时库、匿名 canary 可写、守卫确有拦截，再运行事务用例。该方案不读取真实凭据、数据库或归档数据；临时目录清理为尽力而为。
+
+**调度修复**：终态失败任务以 `9999-12-31` 作为 `nextRunAt` 哨兵，但调度查询曾把它当作下一条待执行任务，产生超过 `setTimeout` 32 位上限的延时并被折算为约 1ms，导致队列空转。调度查询现排除终态哨兵，并将正常延时钳制在 2,147,483,647 ms 内。终态失败不自动重排、有限重试和人工重试入口保持不变。
+
+**边界**：任务写入失败由 SQLite 触发器注入，验证的是真实事务与约束，不等同于磁盘故障、锁冲突等全部数据库异常；Provider 结果为受控匿名输出，未调用付费 AI。未运行前端检查，未改动前端、共享 DTO 或 schema；未做真实源、真实 Provider、历史数据与线上业务验收，未恢复部署。
+
+## 2026-10-19：采集结果、来源时效与分析输入版本保持一致
+
+**官网采集**：复用既有 Source `config` 和只读试抓入口，增加文章、标题、链接、日期选择器及完整 URL 白名单。默认只在文章相关区域找链接；识别 RSS/Atom 后解析已下载响应，不再下载同一地址。未引入页面脚本渲染。
+
+**来源状态**：只在外部响应边界核验平台成功状态和必要列表结构。合法空列表是成功，HTTP/业务错误及缺失结构必须保留错误原因。社区采集按平台保留结果，失败平台撤回本轮候选及去重状态并保留原缓存；成功平台仍完整执行原有情绪分析及热度计算。
+
+**社区时效**：复用 Setting 保存各平台的检查时间、最后成功时间及错误。话题与来源结果共用短事务，失败不能留下假新鲜时间。来源筛选使用自身时间，全局使用三平台最旧成功时间；失败仍标过期，公开读取的懒刷新沿用 30 分钟间隔。原有无状态记录的安装在第一次刷新前兼容话题 `fetchedAt`。该状态为后端内部记录，不新增公开 DTO 或 schema 字段。
+
+**分析一致性**：FeedItem 新建/正文更新与任务持久化同事务，提交后唤醒既有单进程队列；站内通知失败不再影响任务保存。沿用 `contentHash` 检查输入版本：分析开始、结果落库与任务终态均在短事务核对，网络调用留在事务外。输入变化时丢弃旧结果，同一任务回 pending，保留 `dedupeKey` 且不消耗 Provider 失败重试次数；正文变化时清掉旧摘要和判断。任务终态后通知也须匹配输入版本及 completed 状态。
+
+**补偿与边界**：启动时补回无任何任务历史、且 Analysis 为 null/pending 的条目；completed/failed 不因任务历史清理而自动重排。现有唯一约束、有限 Provider 重试和人工重试入口继续生效。不新增数据库字段或外部队列，不回溯猜测历史摘要对应的输入版本。
+
 ## 2026-07-08：小黑盒 raw 热度使用列表互动信号
 
 **决策**：小黑盒社区话题的 `rawHeatScore` 不再只依赖 `modify_at` 时间衰减。适配器使用列表响应中已有的 `comment_num`、`link_award_num`、`forward_num`、`topics[].hot_value_v2`、`down` 和 `modify_at` 计算原始热度；评论、互动/奖励和转发提升分数，话题热度只做轻量 boost，负反馈只做轻量惩罚，最终仍乘 36 小时半衰期时间衰减。
@@ -185,7 +247,7 @@
 **决策**：
 1. `api.ts` 的 `request()` 函数在 401 响应时清除 token 并抛出 `UnauthorizedError`，前端 hook 统一捕获并回到登录态。
 2. 新增 `scripts/check-config.sh` 预检环境变量，`scripts/reset-admin-password.sh` 安全重置密码。
-3. `deployment-troubleshooting.md` 补充 .env 加载路径差异说明。
+3. 部署排障经验写入 `deployment-guide.md` 的“排障速查”章节（原独立 troubleshooting 文档已于 2026-10-20 合并删除）。
 
 **原因**：
 - 原实现各 catch 块独立处理错误，部分操作 token 过期只显示"保存失败"而非回到登录态。

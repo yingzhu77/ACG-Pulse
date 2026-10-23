@@ -18,10 +18,10 @@ curl -sL https://raw.githubusercontent.com/yingzhu77/ACG-Pulse/master/server-dep
 部署完成后：
 1. 访问 `.env` 中 `CLIENT_URL` 对应的地址
 2. 使用服务器 `.env` 中自行设置的 `ADMIN_PASSWORD` 登录管理后台
-3. 在「B站 Cookie 配置」中填入 Cookie
-4. 重启服务
+3. B站采集 Cookie 写在服务器根目录 `.env` 的 `BILIBILI_COOKIE`，由 Compose 传给自建 RSSHub
+4. 修改 Cookie 后执行 `docker compose up -d --force-recreate rsshub`；只有 app 的 `.env` 也变化时才重建 app
 
-> 不要在文档、命令历史或 Git 中记录真实管理员密码和 Cookie。
+> 后台「B站备用 Cookie」字段只用于显式开启的直连备用和头像获取，不再承担主采集路径。不要在文档、命令历史或 Git 中记录真实管理员密码和 Cookie。
 
 ## 手动部署
 
@@ -96,7 +96,18 @@ MAX_FEED_ITEMS=2000
 ANALYSIS_TASK_COMPLETED_RETENTION_DAYS=14
 ANALYSIS_TASK_FAILED_RETENTION_DAYS=30
 REPORT_TIMEZONE=Asia/Shanghai
+RSSHUB_BASE_URLS=http://rsshub:1200,https://rsshub.app
+BILIBILI_COOKIE=你的B站登录Cookie
+BILIBILI_DIRECT_API_FALLBACK=false
 ```
+
+#### B站采集路径
+
+- 主路径是 Compose 内置的 `rsshub` 服务，使用 `rsshub/Dockerfile` 构建并预装 Chromium；`RSSHUB_BASE_URLS` 默认自建实例优先，公共 `rsshub.app` 仅作最后回退。
+- 应用容器默认不接收 `BILIBILI_COOKIE`。根目录 `.env` 中的 Cookie 由 `docker-compose.yml` 映射为 RSSHub 需要的 `BILIBILI_COOKIE_<uid>`；当前默认把同一登录 Cookie 映射到全部监控 UID。
+- `BILIBILI_DIRECT_API_FALLBACK` 默认 `false`。只有显式设为 `true`，或单个 Source 的 `config.directApiFallback=true`，应用才会绕过 RSSHub 直连 B站；Cookie 存在本身不会开启直连。
+- 后台预览接口默认超时 30s，可用 `SOURCE_PREVIEW_TIMEOUT_MS` 调整（最低 5s）；预览允许空 `game` 并以“通用”展示，创建/更新源仍要求非空。预览失败不代表采集失败，以实际 check 和源健康为准。
+- 需要给不同 UID 使用不同账号时，在 `docker-compose.yml` 中把对应 `BILIBILI_COOKIE_<uid>` 改成独立环境变量，不要把真实值提交 Git。
 
 ### 6. 启动服务
 
@@ -112,7 +123,14 @@ docker compose ps
 
 # 访问测试
 curl http://localhost:3001/api/public/stats
+
+# 自建 RSSHub 健康与 B站路由
+docker exec game-pulse-rsshub curl -fsS http://localhost:1200/healthz && echo
+docker exec game-pulse-rsshub curl -fsS --max-time 20 \
+  http://localhost:1200/bilibili/user/video/401742377 | head -c 200
 ```
+
+最后一条命令应返回 RSS XML。若返回 503/403，先查 `docker compose logs rsshub --tail 120` 和根目录 `.env` 的 `BILIBILI_COOKIE`，不要直接打开直连备用掩盖主路径故障。
 
 ## 更新部署
 
@@ -183,8 +201,11 @@ cat /tmp/app-build.rc
 
 ### 4. 备份并替换 app
 
+如果本轮修改了 `docker-compose.yml` 的 `rsshub` 服务、`rsshub/Dockerfile` 或根目录 `BILIBILI_COOKIE`，先重建 RSSHub，再替换 app。首次构建需要下载 Chromium，耗时和磁盘占用明显高于 app，不要在低内存服务器上与 app 并行构建。
+
 ```bash
 cd /opt/personal-hot-monitor
+docker compose up -d --force-recreate rsshub
 bash scripts/pre-deploy-backup.sh
 docker compose up -d --no-deps app
 
@@ -340,35 +361,115 @@ docker compose ps
 
 分析任务历史会在启动时及每天凌晨自动清理。成功任务默认保留 14 天，已耗尽重试机会的失败任务默认保留 30 天，最近一次清理数量可在管理后台运行状态中查看。
 
-## 常见问题
+## 排障速查
 
-### 内存不足
+### 环境变量加载路径
+
+| 场景 | `.env` 位置 | 加载方式 |
+| --- | --- | --- |
+| 本地后端开发 | `server/.env` | 后端启动时由 dotenv 加载 |
+| Docker 部署 | 项目根目录 `.env` | `docker-compose.yml` 的 `${VAR}` 替换后传入容器 |
+
+Compose 只会把显式声明的变量传入容器；修改 `.env` 后 `docker compose restart` 不会重新读取，需要 `docker compose up -d --force-recreate <service>`。B站登录 Cookie 属于根目录 `.env`，由 RSSHub 服务消费，不需要复制到 `server/.env`。
+
+### B站来源全部失败
+
+先区分自建 RSSHub、Cookie 和直连备用：
+
 ```bash
-# 检查内存使用
-docker stats
+docker compose ps rsshub app
+docker exec game-pulse-rsshub curl -fsS http://localhost:1200/healthz
+docker exec game-pulse-rsshub curl -fsS --max-time 20 \
+  http://localhost:1200/bilibili/user/video/401742377 | head -c 200
+docker compose logs rsshub --tail 120
+```
 
-# 限制容器内存
-# 在 docker-compose.yml 中添加
-deploy:
-  resources:
-    limits:
-      memory: 512M
+- 返回 RSS XML：主路径正常，继续看应用侧源健康与具体错误。
+- `503 this route is empty` 或 Chromium 可执行文件缺失：检查自定义镜像、浏览器依赖和容器用户缓存路径，见 `LESSONS.md` 5.19。
+- `403` 或风控：确认根目录 `.env` 的 `BILIBILI_COOKIE` 已设置、变量名没有前导空格，然后重建 `rsshub`。
+- 单个来源（如 `15319615`）间歇 `503` 或约 45s 超时：先重试一次并查看 `rsshub` 日志；这是来源页面/上游风控，不要用直连 fallback 绕过。
+- 应用日志出现 `412` 且包含 `direct API`：说明环境变量或源配置显式开启了直连，确认是否真的需要，不要把它当成默认修复。
+
+```bash
+curl -fsS 'http://localhost:3001/api/public/source-health-history'
+curl -fsS 'http://localhost:3001/api/health'
 ```
 
 ### RSSHub 连接失败
-```bash
-# 检查 RSSHub 容器
-docker compose logs rsshub
 
-# 重启 RSSHub
+```bash
+docker compose logs rsshub --tail 120
 docker compose restart rsshub
+docker exec game-pulse-rsshub curl -fsS http://localhost:1200/healthz
 ```
 
-### 数据库锁定
-```bash
-# 检查数据库文件
-ls -la /app/server/data/
+主 Compose 只 `expose` 1200，不绑定公网。不要为排障把 1200 直接暴露到公网；临时使用 `docker-compose.rsshub.yml` 时也应限制来源 IP。
 
-# 如果锁定，重启应用
+### 生产 CORS 仍指向 localhost
+
+访问生产域名的 `/api/health` 时，如果 `Access-Control-Allow-Origin` 仍是 localhost，说明服务器根目录 `.env` 的 `CLIENT_URL` 没有更新。不要删除 `.env`，其中还保存管理员密码、Cookie 和 AI Key：
+
+```bash
+cd /opt/personal-hot-monitor
+PUBLIC_ORIGIN="https://your-domain.example"
+sed -i "s#^CLIENT_URL=.*#CLIENT_URL=${PUBLIC_ORIGIN}#" .env
+grep -q '^TRUST_PROXY_HOPS=' .env \
+  && sed -i 's#^TRUST_PROXY_HOPS=.*#TRUST_PROXY_HOPS=1#' .env \
+  || printf 'TRUST_PROXY_HOPS=1\n' >> .env
+bash scripts/check-config.sh .env
+docker compose up -d --force-recreate app
+```
+
+### Prisma 迁移失败或提示 drift
+
+生产库已从 `prisma db push` 切换到 Prisma Migrate。旧生产库第一次升级时会自动把 `20260706000000_baseline` 标记为已应用；之后任何 schema 变更都必须有对应的 `server/prisma/migrations/*/migration.sql`。
+
+```bash
+docker compose logs app --tail 200
+ls -la server/prisma/migrations
+docker exec game-pulse ls -la /app/server/data/pre-migrate-backups
+```
+
+不要在生产上改回 `prisma db push --accept-data-loss`，也不要手工改库。保留日志和 `pre-migrate-backups`，在本地生成并 review migration 后重新发布 app。
+
+### 新增唯一索引时迁移失败
+
+显式迁移不会像旧 `db push --accept-data-loss` 那样只给交互式警告。生产存在重复值时，唯一索引无法创建。不要删数据硬闯；先用备份库或只读查询定位重复记录，补一份带数据清理步骤的 migration，或先发布应用级回填/去重逻辑，确认重复值消失后再发布唯一索引迁移。
+
+### 忘记管理员密码
+
+推荐使用重置脚本（自动备份、不打印敏感值）：
+
+```bash
+cd /opt/personal-hot-monitor
+bash scripts/reset-admin-password.sh
+docker compose up -d --force-recreate app
+```
+
+手动修改时先备份 `.env`，再修改 `ADMIN_PASSWORD`；建议同时轮换 `ADMIN_JWT_SECRET`，让旧 token 全部失效。
+
+### 数据库损坏恢复
+
+```bash
+docker compose stop app
+docker exec game-pulse sqlite3 /app/server/data/prod.db ".recover" > /tmp/recovered.db
+docker cp /tmp/recovered.db game-pulse:/app/server/data/prod.db
+docker compose start app
+```
+
+如果修复失败，用 `bash scripts/restore-db.sh ./backups/prod_最新备份.db` 从备份恢复。
+
+### 内存不足
+
+```bash
+docker stats
+```
+
+1GB 内存不足同时运行 Node.js、Docker 和 RSSHub/Chromium；建议至少 2GB，并为构建配置 Swap。限制单个容器内存时，注意不要低于 Chromium 渲染所需。
+
+### 数据库锁定
+
+```bash
+ls -la /app/server/data/
 docker compose restart app
 ```

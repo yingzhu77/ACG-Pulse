@@ -79,3 +79,8 @@ docs/next-session-handoff.md
 deploy-package/
 acg-pulse-*.tar.gz
 save-cookie.sh
+
+# Local acceptance evidence and personal artifacts
+/tmp/
+/output/
+docs/interview-notes.md

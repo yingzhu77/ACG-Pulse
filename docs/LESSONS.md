@@ -327,6 +327,16 @@ Get-Content -Encoding UTF8 docs\LESSONS.md
 
 ---
 
+### 3.5 推理模型的 max_tokens 要按批预算
+
+**问题**：`deepseek-v4-flash` 等推理模型的 reasoning tokens 与最终 content 共用 `max_tokens`。11 条情绪文本在 `max_tokens=1200` 时 reasoning 占满预算，content 为空或只有前几行（`finish_reason=length`）；上层把缺失序号写成 failed，且每次刷新重试，形成持续 token 成本。
+
+**解决**：限制每批条数（≤5），把 `max_tokens` 提到 4096 并延长超时；解析后同时检测缺失/非法序号与 `finish_reason`，只对失败序号拆半重试并设深度硬上限；对 failed 结果做冷却，避免每次刷新重试。HTTP/传输错误不在同一轮反复重试。
+
+**规则**：接入推理模型时，用真实探针记录 `finish_reason`、`completion_tokens` 和 `reasoning_tokens`，按 reasoning 峰值而不是输出行数估算预算；批量接口必须有部分成功、截断拆批和重试上限。
+
+---
+
 ## 四、接口变更踩坑
 
 ### 4.1 改接口后遗漏使用处
@@ -863,37 +873,42 @@ END
 
 **解决**: 创建自定义 `rsshub/Dockerfile`：
 1. 安装 Chromium 系统依赖（含 `libxfixes3`，缺失会导致浏览器启动即崩溃）
-2. `npx playwright install chromium` 安装浏览器到 `/root/.cache/`
-3. 复制到 `/home/node/.cache/` 并设置 `node` 用户权限
+2. 基础镜像裁剪了 Playwright CLI，`npx playwright` 会报 `playwright: not found`（退出码 127）；先 `npm install -g playwright@1.60.0`，再执行 `playwright install chromium`
+3. 复制 `/root/.cache/ms-playwright` 到 `/home/node/.cache/` 并设置 `node` 用户权限
 
 **踩坑链**:
 - 标准镜像无 Chromium → 安装后仍 503
+- 基础镜像保留运行时 `playwright@1.60.0` 包但裁剪 CLI → `npx playwright` 127；必须安装匹配版本的全局 CLI
 - RSSHub 用 Patchright 非 Playwright → 浏览器缓存路径不同
 - 以 root 安装但以 node 运行 → 需要复制到 `/home/node/.cache/`
 - 缺少 `libxfixes3` → 浏览器启动即崩溃（`Target page, context or browser has been closed`）
 - RSSHub 的 `BILIBILI_COOKIE` 环境变量格式为 `BILIBILI_COOKIE_{uid}`（per-uid），通用 `BILIBILI_COOKIE` 无效
 
+**诊断注意**: 当前 RSSHub 容器缺少 `/etc/ssl/certs/ca-certificates.crt`，容器内 `curl` 访问 HTTPS 需要 `-k`。Node（145 个内置根）和 Chromium（自带 CA 存储）不一定受此影响；不能用容器内 `curl` 失败直接判断外网不可达。
+
 **规则**:
 - 上游 Docker 镜像的 breaking change 可能在 `latest` 标签更新时静默引入
 - 依赖浏览器渲染的路由需要自定义镜像，不能用标准标签
+- 先验证 CLI 是否存在，再执行 `playwright install`；不要假设 `npx` 能找到被裁剪的 CLI
 - Docker 容器以非 root 用户运行时，root 安装的浏览器需要复制到用户 home 目录
 - 自定义 Dockerfile 应纳入版本控制，确保可复现部署
 - RSSHub B站路由需要 per-uid cookie 环境变量（`BILIBILI_COOKIE_{uid}`），不认通用 `BILIBILI_COOKIE`
 
 ---
 
-### 5.20 环境变量传递陷阱：docker-compose.yml 显式列表 vs .env 自动注入
+### 5.20 环境变量传递陷阱：Compose 显式列表与 Cookie 归属
 
-**问题**: `.env` 中的 `BILIBILI_COOKIE` 无法传入容器，`printenv` 返回空。
+**问题**: `.env` 中的 B站 Cookie 没有进入需要它的容器，或进入 app 后误导了采集路径。
 
-**根因**: `docker-compose.yml` 的 `environment` 段显式列出了变量时，Docker Compose **不会**自动将 `.env` 中的其他变量注入容器。`.env` 仅用于 `${VAR}` 占位符替换。
+**根因**: `docker-compose.yml` 的 `environment` 段显式列出变量时，Docker Compose 不会自动将 `.env` 中的其他变量注入容器；`.env` 仅用于 `${VAR}` 占位符替换。另外，RSSHub B站路由只识别 `BILIBILI_COOKIE_<uid>`，不识别通用 `BILIBILI_COOKIE`。
 
-**解决**: 在 `docker-compose.yml` 的 `environment` 中显式添加 `- BILIBILI_COOKIE=${BILIBILI_COOKIE}`。
+**解决**: 根目录 `.env` 保留一个 `BILIBILI_COOKIE` 作为来源；在 `rsshub` 服务中把它映射为每个监控 UID 的 `BILIBILI_COOKIE_<uid>`。app 服务默认不接收该 Cookie；新增 UID 时同步补充映射。
 
 **规则**:
-- `docker-compose.yml` 中显式列出的 `environment` 变量会阻止 `.env` 自动注入
+- 凭据只传给实际使用它的组件，不为了“可能有用”扩散到 app
 - 需要传入容器的变量必须在 compose 文件中用 `${VAR}` 引用
-- `docker compose restart` 不重新读取 `.env`，需要 `down + up` 或 `--force-recreate`
+- `docker compose restart` 不重新读取 `.env`，需要 `up -d --force-recreate`
+- RSSHub B站变量必须 per-uid；通用变量名无效
 
 ---
 
@@ -942,10 +957,110 @@ END
 
 ---
 
+## 六、采集与分析一致性
+
+### 6.1 空列表必须来自成功响应
+
+RSSHub HTTP 错误页包含 `this route is empty`，不意味着源成功返回空列表；平台错误码或缺失列表结构也不能转成 `[]`。在外部响应边界验证成功状态与必要结构，内部直接使用验证后的契约。部分来源失败时，话题、去重状态、健康时间与缓存清理范围都要按来源处理；写入与成功时间应原子提交。失败状态与下一次刷新时间分别表达，避免公开读取变成连续即时重试。
+
+### 6.2 入队原子性和结果版本需要分别保证
+
+先保存条目再创建任务，会在通知失败或任务写入失败时留下永久遗漏。条目与任务使用同一短事务，外部通知在提交后处理。分析期间内容更新时，任务唯一键只能阻止重复任务，不能证明现有任务分析的是最新输入；结果写入与释放任务唯一键之前都要核对输入版本，变化后让既有任务重新处理最新正文。不能只在 Provider 返回时检查一次。
+
+### 6.3 测试数据库隔离要有可验证的连接目标与环境守卫
+
+事务 mock 的回调中动态导入数据库模块，可能绕过期望的 mock 并接入真实 Prisma。本轮曾出现匿名插入被真实 Prisma 外键拒绝的事故。事务回调必须固定使用 mock 工厂闭包中的客户端；匿名数据库测试应阻断真实 Prisma 构造。仅覆盖 `DATABASE_URL` 不足以证明隔离：Prisma Client 在导入时仍会探测 `server/.env`，dotenv 也可能自动加载环境文件。现在的做法是每次测试运行创建唯一临时目录和全新 SQLite 库，由 `prisma migrate deploy` 在临时工作目录应用迁移，并写入空 `.env`、设置空 `DOTENV_CONFIG_PATH`；worker 启动前断言 `DATABASE_URL` 等于该临时库，同时用 fs 守卫拦截 `server/` 下真实 `.env*` 的探测与读取。验收必须同时证明：连接目标唯一（`PRAGMA database_list`）、匿名 canary 可写、守卫实际拦截了环境文件探测，再运行事务用例。失败日志不能证明真实数据库完全未被触及，不读取真实库做未经授权的事后审计。
+
+### 6.4 终态任务的哨兵时间不能进入定时器调度
+
+用 `9999-12-31` 作为终态任务的 `nextRunAt` 可以阻止自动重排，但如果调度查询仍按 `nextRunAt` 升序取任务，就会选中它并计算出一个超过 `setTimeout` 32 位上限的延时。Node.js 会将溢出延时折算为约 1ms，导致队列空转并挤压后续任务。调度查询必须排除终态哨兵值，并对正常延时做上限钳制；同时用真实数据库验证“终态失败 + 后续待处理任务”的组合，而不是只观察单任务状态。
+
+### 6.5 Cookie 存在不能成为采集路径的隐式开关
+
+**问题**: `shouldUseDirectApiFallback` 在发现 `BILIBILI_COOKIE` 时自动返回 true，即使 `BILIBILI_DIRECT_API_FALLBACK=false`。运维为了稳定 RSSHub 而补 Cookie，反而让应用绕过 RSSHub 直连，主路径健康状态被掩盖。
+
+**规则**: 采集路径必须由显式配置决定（环境变量或 Source 的 `config.directApiFallback`）；凭据存在只说明“可以认证”，不能说明“应该走哪条路径”。回归测试必须覆盖“Cookie 存在 + fallback=false 仍只走 RSSHub”。本轮新增 `server/src/gamepulse/__tests__/bilibiliFallback.test.ts`。
+
+### 6.6 RSSHub 的 per-uid Cookie 映射必须覆盖全部监控 UID
+
+**问题**: Compose 只给 10 个 UID 映射了 Cookie，默认源里还有 2 个关注 UP（`224267770`、`15319615`）没有映射；它们会以匿名请求访问 RSSHub，容易出现 403 或空结果，而应用侧只表现为单个来源失败。
+
+**开发 Compose 的空值缺口**: `docker-compose.rsshub.yml` 虽然列出了 12 个 key，但只引用 `${BILIBILI_COOKIE_<uid>:-}`；根 `.env` 只有 `BILIBILI_COOKIE` 时，5 个值会为空。改为 `${BILIBILI_COOKIE_<uid>:-${BILIBILI_COOKIE}}`，既保留 per-UID 覆盖，又能回退根 Cookie。`docker compose config --format json` 只统计 key 数、非空数和是否同值，不打印值。
+
+**回归**: `server/src/gamepulse/__tests__/bilibiliCookieMapping.test.ts` 3 项：生产 Compose 覆盖全部默认 UID、开发 Compose 覆盖全部 UID 且回退根 Cookie、app 服务不接收 `BILIBILI_COOKIE`。
+
+**规则**: 新增或调整默认 B站源时，同步核对 `server/src/gamepulse/defaultSources.ts` 的 UID 列表与 `docker-compose.yml`、`docker-compose.rsshub.yml` 的 `BILIBILI_COOKIE_<uid>` 映射。用脚本或人工 diff 检查“默认源 UID 集合 = RSSHub Cookie UID 集合”；仅检查 key 数量不够，还要检查每个值是否非空。
+
+### 6.7 上游风控下的间歇成功不能当成覆盖恢复
+
+**问题**: 自建 RSSHub 容器健康、单条路由返回 RSS XML，不代表所有监控 UID 都已恢复。当前部署的 Cookie nav 探测为 `code=-101, isLogin=false`，直连探测为 `code=-352, message=风控校验失败`；RSSHub 浏览器回退间歇返回 `-352/-403` 或约 45 秒超时。重建容器丢失缓存后，UID `1340190821` 连续 10 次失败，随后 UID `401742377` 成功。
+
+**规则**:
+- 验收按 UID 记录 HTTP 状态、RSS item 数、应用入库数和 `healthStatus`；一条成功只能证明该窗口内该源可用，不能写成“B站源已全部恢复”。
+- `-352` 表示风控校验失败，`-403` 表示访问权限不足；先核对 Cookie 登录态和上游窗口，不要直接归因本地适配器。
+- 不要用直连 fallback 绕过风控；直连的 412/429 会混入主路径并掩盖 RSSHub 的真实健康状态。
+- `parseRss` 单次最多解析 30 条，路由返回 40 条不等于应用应入库 40 条；记录时区分路由 item 数与入库数。
+- 路由成功具有间歇性，容器重建和缓存状态会影响结果；结论必须注明测试时间窗口和重试次数。
+
+### 6.8 RSSHub healthz 通过不等于路由已就绪
+
+**问题**: 更换 Cookie 并 `--force-recreate` RSSHub 后，healthz 立即返回 `ok`，但第一条 `/bilibili/user/video/401742377` 返回 503；约 10 秒后重试返回 HTTP 200、39 个 `<item>`。此时 nav 为 `code=0, isLogin=true`，说明 Cookie 有效，503 来自冷启动/上游。Cookie 更新脚本的路由检查还把 URL 后的 `echo/grep` 拼成了 curl 的额外 URL，输出拼接状态码 `503000000000`，掩盖了真实状态。
+
+**规则**:
+- healthz 只证明进程启动，不证明路由缓存和浏览器会话已就绪；更换 Cookie 或重建容器后，路由检查应允许一次重试，并记录每次的 HTTP 状态与 item 数。
+- 通过 `docker exec sh -c` 拼接多步命令时，显式用 `;` 分隔；不要依赖字符串拼接产生命令边界。
+- `grep -c "<item>"` 统计的是匹配行数，不是元素个数；RSS XML 被压缩到一行时会把 40 条误报成 1 条。应使用 `grep -o "<item>" | wc -l` 统计出现次数。
+- RSSHub 日志中的 `SyntaxError: Unexpected end of JSON input` 表示 API 请求拿到空响应并转入浏览器模式；此时 503/超时是上游或冷启动问题，不是 Cookie 无效。先确认 nav，再看日志，最后重试路由。
+
+### 6.9 preview 超时与 check 超时语义不同
+
+**问题**: 新 Cookie 下 12 源应用侧验收中，`15319615` 和 `1265652806` 在 admin preview 当时的固定 15s 超时内失败，但同一窗口的实际 check（90s）均成功入库 30 条；`15319615` 之后单独请求路由返回 HTTP 200/40。若只看 preview，会误判这两个源不可采集。
+
+**规则**:
+- preview 与 check 使用不同超时：preview 现由 `SOURCE_PREVIEW_TIMEOUT_MS` 控制（默认 30s，最低 5s，生产 Compose 透传），check 使用 `SOURCE_CHECK_TIMEOUT_MS`；RSSHub 浏览器回退冷启动可能超过 15s。
+- 判断源可用性以实际 check、`newItems` 和源健康记录为准；preview 超时只说明预览窗口不足，不能替代采集验收。
+- 关注 UP 源在数据库中 `game=''`，而 `CreateSourceSchema` 要求非空 `game`；`SourcePreviewSchema` 现允许空值并以“通用”展示，创建/更新仍要求非空。预览占位不能当成采集失败，也不能自动回填历史数据。
+- 单一时间窗口的 12/12 成功仍不等于永久恢复；上游 API 空 JSON、浏览器回退和间歇 503 会反复出现。
+
+**修复（2026-10-21）**: 用户确认方案 A+B 后，preview 超时改为可配置默认 30s，空 `game` 只在预览层放宽。回归覆盖默认 30s、环境变量覆盖、空 game 显示占位和创建/预览校验差异；后端 33 文件、229 项测试与 build 通过。
+
+**隔离真实源复核（2026-10-21）**: 12 源 preview 首轮 10/12 成功（每源 30 条，3.5–9.1s）；`15319615`（8.9s）和 `1265652806`（5.8s）已在上次 15s 超时窗口外成功，4 个空 game 源返回“通用”，没有 preview 触发 30s。`1340190821`/`161775300` 首轮 422 路由失败，重试 37/73ms 成功，说明 preview 失败也可能来自上游瞬态而不是超时或源不可用。两轮 check 均 12/12 healthy，首轮 360 新增/0 失败、次轮 0 新增；隔离库 360 条、24 条 healthy 日志。30s 仍短于 90s check 窗口，单一时间窗口不能写成永久恢复。
+
+### 6.10 管理端写请求要过浏览器验收，验收脚本要显式数据源
+
+**问题**: 隔离环境用脚本直接请求 admin API 时 preview 正常，但第一次在浏览器 UI 点击“测试预览”返回 `Validation failed for source preview: : Invalid input: expected object, received undefined`。根因是 `client/src/services/api.ts` 的 `request()` 先把默认 headers 写入对象、再展开 `...options`，带 `Authorization` 时整个 headers 被 `authHeaders()` 覆盖，`Content-Type: application/json` 丢失，Express 不解析 body。影响所有带 body 的管理端写接口；脚本验收自行设置了 Content-Type，未覆盖客户端封装。
+
+**规则**:
+- 管理端写路径（preview、建源、改源、关注、隐藏、设置）至少用浏览器走一次成功和失败路径；API 脚本通过不能代表 UI 封装正确。
+- 合并 fetch 选项时先展开 `options`，再合并 headers；不要让 `options.headers` 整体覆盖默认 Content-Type。
+- 浏览器隐藏视口（0x0）只能做 DOM 结构断言；截图/移动端布局必须明确标为未验证，不能凭 DOM 推断视觉。
+- 隔离验收脚本创建的 PrismaClient 必须显式传 `datasourceUrl` 并断言 `PRAGMA database_list`；脚本进程没有 `DATABASE_URL` 时 Prisma 可能回退到真实 `server/.env`。本次辅助脚本因此执行了只读计数（无写入），已披露并修复。
+
+**证据（2026-10-21）**: 修复后 UI 空 game preview 返回 30 条/展示 5 条；无效 route 显示 `role=alert` 的 503；多窗口 check 65.0s/4.8s 均 12/12 healthy，说明单窗口和单次 preview 都不能代表长期稳定性。
+
+### 6.11 间歇 503 的失败 UID 会轮换，单轮不能归因固定源
+
+**问题**: 2026-10-22 P1-4 三轮隔离 12 源 check 中，轮次 A 为 12/12 `healthy`；轮次 B 只有 `1955897084` HTTP 503；轮次 C 变为 `401742377` 和 `1636034895` 503，而 B 失败的 `1955897084` 已恢复。`15319615`、`224267770` 三轮均成功；总耗时分别为 92.5s、32.0s、64.3s。只看单轮会误判固定源故障或“已全面恢复”。
+
+**规则**:
+- 单轮 503 只记录为该窗口失败，至少再跑一轮（最好间隔数小时）后再判断；失败 UID 轮换且下轮可恢复时，优先归因 RSSHub/上游间歇 503。
+- 逐源 `completionOffsetMs` 包含并发队列等待，不等于单源抓取耗时；同时记录实际 RSS 请求耗时和整体 check 时长。
+- 不要因单轮 503 改回 B站直连 fallback 或调整采集主路径；先复测并保留逐源证据。
+- 观察脚本使用新隔离库、阻断真实 `.env`、禁用直连 fallback、阻断 AI 调用，并保存每轮逐源 JSON。
+
 ## 更新日志
 
 | 日期 | 内容 |
 |------|------|
+| 2026-10-22 | 补充 P1-4 三轮观察与间歇 503 失败 UID 轮换的判读边界（6.11） |
+| 2026-10-21 | 补充管理端浏览器验收、Content-Type 合并顺序与验收脚本显式数据源（6.10） |
+| 2026-10-21 | preview 超时改为可配置 30s、空 game 仅预览层放宽，更新 6.9 |
+| 2026-10-20 | 补充 preview 15s 硬超时与 check 超时语义不同、空 game 预览限制（6.9） |
+| 2026-10-20 | 补充健康检查与路由就绪的边界、Cookie 更新脚本的命令拼接问题（6.8） |
+| 2026-10-20 | 补充 Playwright CLI 裁剪、RSSHub 容器 CA 诊断、开发 Compose Cookie 回退与上游风控间歇成功边界（5.19、6.6、6.7） |
+| 2026-10-20 | 补充 B站主路径切换、Cookie 归属、直连显式开关和 per-uid 映射覆盖（5.20、6.5、6.6） |
+| 2026-10-20 | 补充真实临时 SQLite 隔离与可验证守卫、终态哨兵时间不得进入定时器调度（6.3、6.4） |
+| 2026-10-19 | 补充采集空列表/失败语义、来源时效、入队与输入版本一致性、测试数据库隔离经验 |
 | 2026-06-09 | 初始版本：从三轮 code review + 部署 + AI 分类调试中提炼 |
 | 2026-06-09 | 重构为跨项目可复用格式，分离项目特定内容到 AGENTS.md |
 | 2026-06-12 | 补充 SQLite 备份恢复、源健康历史、定时任务互斥锁经验 |

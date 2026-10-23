@@ -96,6 +96,7 @@ ADMIN_PASSWORD=your_strong_password
 ADMIN_JWT_SECRET=your_random_secret_at_least_32_chars
 CLIENT_URL=https://your-domain.example
 TRUST_PROXY_HOPS=1
+BILIBILI_COOKIE=your_bilibili_login_cookie
 ```
 
 检查配置并启动：
@@ -105,15 +106,29 @@ bash scripts/check-config.sh .env
 docker compose up -d --build
 ```
 
-配置 Caddy 或其他 HTTPS 反向代理后，访问 `CLIENT_URL` 对应的地址。B站数据源建议在后台设置 Cookie，以降低匿名请求被限流的概率；仅做本地开发时使用下方的开发模式。
+`docker compose up` 会同时启动应用和自建 RSSHub。B站主路径由自建 RSSHub 承担；根目录 `.env` 中的 `BILIBILI_COOKIE` 会被 Compose 映射为 RSSHub 需要的 per-uid Cookie，应用容器默认不接收该 Cookie，直连 API 备用默认关闭。
+
+配置 Caddy 或其他 HTTPS 反向代理后，访问 `CLIENT_URL` 对应的地址。
+
+### B站采集路径
+
+- **主路径**：Compose 内置 `rsshub` 服务（自定义镜像，含 Chromium），`RSSHUB_BASE_URLS` 默认自建实例优先、公共实例最后回退。
+- **Cookie 归属**：登录 Cookie 只放在根目录 `.env` 的 `BILIBILI_COOKIE`；Compose 映射为 `BILIBILI_COOKIE_<uid>` 供 RSSHub 使用。
+- **直连备用**：`BILIBILI_DIRECT_API_FALLBACK=false` 默认关闭；仅在显式设为 `true` 或单个源配置 `directApiFallback=true` 时启用。
+- **辅助直连**：头像补全（`fetchBilibiliAvatar`）仍匿名请求 B站 `acc/info`，失败只记日志，不影响采集。
+- **快速验证**：`docker exec game-pulse-rsshub curl -fsS --max-time 20 http://localhost:1200/bilibili/user/video/401742377 | head -c 200` 应返回 RSS XML，而不是 503/403 错误页。
+- **后台预览**：`POST /api/admin/sources/preview` 默认超时 30s，可用 `SOURCE_PREVIEW_TIMEOUT_MS` 调整（最低 5s）；预览允许空 `game` 并以“通用”展示，但创建/更新源仍要求非空。预览失败不等于采集失败，以实际 check 和源健康为准。
+- **更新 Cookie**：在 Windows 上直接运行 `scripts\set-bilibili-cookie.cmd`（或先复制 Cookie 再运行 `scripts\set-bilibili-cookie.cmd --from-clipboard`）。脚本会隐藏输入或读取剪贴板，先调用 B站 nav 接口校验登录态，再原子更新根目录 `.env`、重建 RSSHub，并检查容器内登录态和一条 B站路由；Cookie 不会打印到终端。建议先退出 B站账号重新登录，确保拿到的是新鲜 Cookie。
 
 ### 本地开发
 
-先启动 RSSHub：
+先启动本地 RSSHub（独立开发 Compose，发布 1200 端口）：
 
 ```bash
-docker compose up -d rsshub
+docker compose -f docker-compose.rsshub.yml up -d rsshub
 ```
+
+该文件使用根目录 `.env` 中的 `BILIBILI_COOKIE`，也允许用 `BILIBILI_COOKIE_<uid>` 覆盖单个 UID；`server/.env` 只配置 `RSSHUB_BASE_URLS`，不要把 Cookie 复制到后端环境文件。
 
 分别启动后端和前端：
 
@@ -141,7 +156,9 @@ npm run dev
 | `ADMIN_PASSWORD` | 是 | 管理后台登录密码 |
 | `ADMIN_JWT_SECRET` | 是 | 管理令牌签名密钥，至少 32 字符 |
 | `CLIENT_URL` | 是 | 允许访问 API 的前端 Origin |
-| `BILIBILI_COOKIE` | 否 | 提升 B站采集稳定性 |
+| `BILIBILI_COOKIE` | 建议 | 根目录 `.env` 中的 B站登录 Cookie，供自建 RSSHub 使用 |
+| `BILIBILI_DIRECT_API_FALLBACK` | 否 | 是否启用直连 API 备用，默认 `false` |
+| `RSSHUB_BASE_URLS` | 否 | RSSHub 实例列表，默认自建实例优先 |
 | `MAX_FEED_ITEMS` | 否 | 情报保留上限，默认 2000 |
 | `ANALYSIS_TASK_COMPLETED_RETENTION_DAYS` | 否 | 成功分析任务历史保留天数，默认 14 |
 | `ANALYSIS_TASK_FAILED_RETENTION_DAYS` | 否 | 终态失败分析任务历史保留天数，默认 30 |
@@ -162,14 +179,15 @@ CI 会在推送和 Pull Request 时运行项目验证。
 
 | 文档 | 用途 |
 | --- | --- |
-| [部署指南](docs/deployment-guide.md) | 生产部署、反向代理与更新流程 |
-| [部署排障](docs/deployment-troubleshooting.md) | 构建、容器、配置与数据迁移问题 |
+| [部署指南](docs/deployment-guide.md) | 生产部署、反向代理、更新流程与排障速查 |
 | [API 契约](docs/API_CONTRACTS.md) | 接口语义、共享 DTO 与变更检查清单 |
 | [Agent 协作手册](docs/AGENT_WORKFLOW.md) | 任务输入、开发流程、验证与提交规范 |
 | [路线图](docs/ROADMAP.md) | 当前阶段和后续方向 |
+| [跨窗口交接](docs/NEXT_WINDOW_PROMPTS.md) | 当前事实、剩余任务和下个窗口提示词 |
 | [踩坑记录](docs/LESSONS.md) | 已验证的问题模式、根因和处理规则 |
 | [架构决策](docs/DECISIONS.md) | 长期技术选择及变更入口 |
-| [生产部署复盘](docs/deployment-retrospective-2026-08-17.md) | 实例到期归档、故障归因与迁移恢复记录 |
+| [采集优化与验收记录](docs/collection-optimization-2026-10-19.md) | 2026-10-19/20 采集修复、真实源验收与 B站主路径切换 |
+| [生产部署复盘（历史归档）](docs/deployment-retrospective-2026-08-17.md) | 实例到期、故障归因与迁移恢复记录 |
 | [项目案例与简历素材](docs/resume-project-case-study.md) | 简历条目、面试表达与可验证项目指标 |
 
 ## 项目结构
