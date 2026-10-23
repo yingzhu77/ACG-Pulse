@@ -4,9 +4,10 @@
 #
 # 部署前必须设置环境变量:
 #   export ADMIN_PASSWORD=your_secure_password
-#   export MIMO_API_KEY=your_mimo_key
+#   export DEEPSEEK_API_KEY=your_deepseek_key
 #   export ADMIN_JWT_SECRET=your_random_secret_at_least_32_chars
 #   export CLIENT_URL=https://your-domain.example
+#   export BILIBILI_COOKIE='SESSDATA=...; bili_jct=...; DedeUserID=...'
 
 set -e
 
@@ -15,7 +16,7 @@ echo "  ACG Pulse 一键自动部署"
 echo "=========================================="
 
 # 校验必需环境变量
-for var in ADMIN_PASSWORD MIMO_API_KEY ADMIN_JWT_SECRET CLIENT_URL; do
+for var in ADMIN_PASSWORD DEEPSEEK_API_KEY ADMIN_JWT_SECRET CLIENT_URL BILIBILI_COOKIE; do
   if [ -z "${!var}" ]; then
     echo "❌ 缺少环境变量: $var"
     echo "   请先运行: export $var=your_value"
@@ -38,10 +39,10 @@ fi
 # 3. 创建 .env
 echo "[3/7] 配置环境变量..."
 sudo tee .env > /dev/null << EOF
-AI_PROVIDER=mimo
-MIMO_API_KEY=${MIMO_API_KEY}
-MIMO_BASE_URL=https://token-plan-cn.xiaomimimo.com/v1
-MIMO_MODEL=mimo-v2.5
+AI_PROVIDER=deepseek
+DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+DEEPSEEK_MODEL=deepseek-v4-flash
 ADMIN_PASSWORD=${ADMIN_PASSWORD}
 ADMIN_JWT_SECRET=${ADMIN_JWT_SECRET}
 MAX_FEED_ITEMS=2000
@@ -53,9 +54,11 @@ RSSHUB_BASE_URLS=http://rsshub:1200
 RSS_FETCH_TIMEOUT_MS=30000
 SOURCE_CHECK_TIMEOUT_MS=35000
 SOURCE_CHECK_CONCURRENCY=5
-BILIBILI_DIRECT_API_FALLBACK=true
+BILIBILI_DIRECT_API_FALLBACK=false
 BILIBILI_DIRECT_API_TIMEOUT_MS=30000
-BILIBILI_REQUEST_INTERVAL_MS=10000
+BILIBILI_REQUEST_INTERVAL_MS=6000
+# 自建 RSSHub 的 B站登录 Cookie；compose 会映射为各 UID 的 per-uid 变量。
+BILIBILI_COOKIE=${BILIBILI_COOKIE}
 EOF
 sudo chmod 600 .env
 
@@ -97,6 +100,6 @@ echo ""
 echo "  下一步："
 echo "  1. 访问前端页面"
 echo "  2. 登录管理后台"
-echo "  3. 在 'B站 Cookie 配置' 中填入 Cookie"
-echo "  4. 点击 '保存 Cookie' 后重启服务"
+echo "  3. B站采集由自建 RSSHub 使用 .env 中的 BILIBILI_COOKIE；更换后重建 rsshub 和 app"
+echo "  4. 后台不再需要填写采集 Cookie；该字段仅保留给直连备用和头像获取"
 echo ""

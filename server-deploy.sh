@@ -69,11 +69,11 @@ if [ ! -f .env ]; then
     cat > .env << 'ENVEOF'
 # === ACG Pulse 环境配置 ===
 
-# AI Provider (mimo / openrouter / deepseek)
-AI_PROVIDER=mimo
-MIMO_API_KEY=你的mimo-api-key
-MIMO_BASE_URL=https://token-plan-cn.xiaomimimo.com/v1
-MIMO_MODEL=mimo-v2.5
+# AI Provider (deepseek / openrouter / mimo)
+AI_PROVIDER=deepseek
+DEEPSEEK_API_KEY=你的deepseek-api-key
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+DEEPSEEK_MODEL=deepseek-v4-flash
 
 # 管理员（必须修改！）
 ADMIN_PASSWORD=你的管理员密码
@@ -90,8 +90,9 @@ SOURCE_CHECK_CONCURRENCY=5
 CLIENT_URL=https://your-domain.example
 TRUST_PROXY_HOPS=1
 
-# Bilibili
-BILIBILI_DIRECT_API_FALLBACK=true
+# Bilibili：自建 RSSHub 主路径；Cookie 由 compose 映射为 per-uid 变量。
+BILIBILI_COOKIE=你的B站登录Cookie
+BILIBILI_DIRECT_API_FALLBACK=false
 BILIBILI_DIRECT_API_TIMEOUT_MS=30000
 BILIBILI_REQUEST_INTERVAL_MS=6000
 ENVEOF
@@ -100,9 +101,10 @@ ENVEOF
     echo "    nano ${APP_DIR}/.env"
     echo ""
     echo "  必填项："
-    echo "    MIMO_API_KEY=你的key"
+    echo "    DEEPSEEK_API_KEY=你的key"
     echo "    ADMIN_PASSWORD=你的密码"
     echo "    ADMIN_JWT_SECRET=随机字符串"
+    echo "    BILIBILI_COOKIE=自建 RSSHub 使用的B站登录Cookie"
     echo ""
     read -r -p "  配置完成后按回车继续..."
 fi
@@ -134,6 +136,8 @@ if curl -s http://localhost:${APP_PORT}/api/public/stats | grep -q '"total"'; th
     echo "  管理后台："
     echo "    1. 打开前端页面"
     echo "    2. 点击管理按钮登录"
+    echo "  B站采集："
+    echo "    自建 RSSHub 使用 .env 中的 BILIBILI_COOKIE；后台 Cookie 字段仅用于直连备用和头像获取"
     echo ""
     echo "  常用命令："
     echo "    docker compose logs -f app    # 查看日志"

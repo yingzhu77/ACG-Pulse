@@ -121,6 +121,12 @@ case "$AI_PROVIDER_VALUE" in
     ;;
 esac
 
+# Bilibili primary path is the self-hosted RSSHub. Anonymous RSSHub requests are often rate-limited.
+BILIBILI_COOKIE_VALUE="$(get_env_value "BILIBILI_COOKIE")"
+if [ -z "$BILIBILI_COOKIE_VALUE" ]; then
+  echo "WARNING: BILIBILI_COOKIE is not set. Self-hosted RSSHub Bilibili routes may be rate-limited."
+fi
+
 echo ""
 if [ "$ERRORS" -gt 0 ]; then
   echo "Result: $ERRORS issue(s) found. Fix them before running docker compose up."

@@ -69,10 +69,11 @@ if [ ! -f .env ]; then
     echo "    nano /opt/personal-hot-monitor/.env"
     echo ""
     echo "  必填项："
-    echo "    AI_PROVIDER=mimo"
-    echo "    MIMO_API_KEY=你的key"
+    echo "    AI_PROVIDER=deepseek"
+    echo "    DEEPSEEK_API_KEY=你的key"
     echo "    ADMIN_PASSWORD=你的密码"
     echo "    ADMIN_JWT_SECRET=随机字符串"
+    echo "    BILIBILI_COOKIE=自建 RSSHub 使用的B站登录Cookie"
     echo ""
 else
     echo "  ✅ .env 已存在"
