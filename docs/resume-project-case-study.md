@@ -201,7 +201,7 @@ B站播放量、NGA 回复数和小黑盒互动量没有统一量纲。系统先
 
 ## 相关资料
 
-- `docs/deployment-retrospective-2026-08-17.md`：生产到期与故障复盘。
+- `docs/archive/deployment-retrospective-2026-08-17.md`：生产到期与故障复盘（历史归档）。
 - `docs/DECISIONS.md`：架构决策记录。
 - `docs/LESSONS.md`：开发和部署踩坑总结。
 - `docs/deployment-guide.md`：部署与恢复入口。

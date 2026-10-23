@@ -7,7 +7,7 @@
 
   从多源采集、故事聚合到社区风向与数据洞察，把分散资讯整理成可持续追踪的情报流。
 
-  [项目复盘](docs/deployment-retrospective-2026-08-17.md) · [快速部署](#快速开始) · [部署文档](docs/deployment-guide.md) · [问题反馈](https://github.com/yingzhu77/ACG-Pulse/issues)
+  [生产复盘（历史）](docs/archive/deployment-retrospective-2026-08-17.md) · [快速部署](#快速开始) · [部署文档](docs/deployment-guide.md) · [问题反馈](https://github.com/yingzhu77/ACG-Pulse/issues)
 
   [![CI](https://github.com/yingzhu77/ACG-Pulse/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/yingzhu77/ACG-Pulse/actions/workflows/ci.yml)
   ![React 19](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)
@@ -186,8 +186,8 @@ CI 会在推送和 Pull Request 时运行项目验证。
 | [跨窗口交接](docs/NEXT_WINDOW_PROMPTS.md) | 当前事实、剩余任务和下个窗口提示词 |
 | [踩坑记录](docs/LESSONS.md) | 已验证的问题模式、根因和处理规则 |
 | [架构决策](docs/DECISIONS.md) | 长期技术选择及变更入口 |
-| [采集优化与验收记录](docs/collection-optimization-2026-10-19.md) | 2026-10-19/20 采集修复、真实源验收与 B站主路径切换 |
-| [生产部署复盘（历史归档）](docs/deployment-retrospective-2026-08-17.md) | 实例到期、故障归因与迁移恢复记录 |
+| [P1-4 上游观察证据](docs/evidence/p1-4-upstream-observation.md) | 隔离 12 源三轮观察的脱敏结果、判读边界与复跑入口 |
+| [历史归档索引](docs/archive/README.md) | 旧路线图、采集优化记录与生产复盘（只读，不作为当前依据） |
 | [项目案例与简历素材](docs/resume-project-case-study.md) | 简历条目、面试表达与可验证项目指标 |
 
 ## 项目结构

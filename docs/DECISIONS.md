@@ -2,6 +2,14 @@
 
 本文档记录对长期维护有影响的项目决策。新增决策按时间倒序追加。
 
+## 2026-10-22：文档分层，P1-4 观察脚本与脱敏证据入库
+
+**决策**：当前事实保留在 `README`、`ROADMAP`、`NEXT_WINDOW_PROMPTS`、`AGENT_WORKFLOW`、`deployment-guide`、`API_CONTRACTS`、`DECISIONS`、`LESSONS`；2026-10-22 之前的详细路线图与验收快照移入 `docs/archive/`。P1-4 观察脚本放在 `scripts/observe-upstream.mts`，脱敏摘要放在 `docs/evidence/p1-4-upstream-observation.md`；原始 JSON 和隔离库保留在本地 `tmp/`，不进入 Git。
+
+**原因**：此前文档把本地 `tmp/` 当作唯一证据路径，新克隆仓库无法复现；历史计划与当前计划混在 `ROADMAP`/`NEXT_WINDOW_PROMPTS`，且“下一轮可恢复”等表述超出了实际复测范围。分层后，当前计划、可复用工具、脱敏证据和历史记录各有唯一入口。
+
+**边界**：归档文档只用于追溯，不作为当前操作依据；原始 JSON 不提交，避免把验收数据库和本机路径带入仓库；P1-4 结论仍受上游窗口限制，C 轮两个失败项尚未复测，不能写成全部恢复。
+
 ## 2026-10-21：社区情绪 AI 按批控制推理预算，失败结果冷却重试
 
 **决策**：`community/sentiment.ts` 对歧义文本按每批最多 5 条调用 Provider，`max_tokens=4096`、超时 60s。解析响应后若存在缺失或非法序号（包括 `finish_reason=length`），仅把失败序号拆半重试，递归深度上限 2；单条文本不再重试，HTTP/传输错误也不在同一轮内重试。`shouldReanalyzeSentiment` 对 `failed` 结果增加 6 小时冷却；`unavailable` 不设冷却，因为没有产生付费调用。情绪版本保持不变，避免批量重算已有的成功结果。
@@ -367,7 +375,7 @@
 
 **影响**：
 
-- 新 Agent 进入项目时优先读取 `README.md`、`docs/AGENT_WORKFLOW.md`、`docs/ROADMAP.md`、`docs/LESSONS.md`。
+- 新 Agent 进入项目时优先读取 `README.md`、`docs/AGENT_WORKFLOW.md`、`docs/ROADMAP.md`、`docs/NEXT_WINDOW_PROMPTS.md`、`docs/DECISIONS.md`、`docs/LESSONS.md`；历史材料只看 `docs/archive/`，P1-4 证据看 `docs/evidence/`。
 - 重大协作规则变化更新本文档。
 
 ## 2026-06-11：第一阶段先做基础治理

@@ -1,6 +1,8 @@
-# 2026-10-19 采集优化记录
+# 2026-10-19 采集优化记录（历史归档）
 
-> 历史记录：本文按日期记录采集优化过程，早期段落中的“未验收”“未重跑”等结论仅代表当时状态。当前事实以 [NEXT_WINDOW_PROMPTS.md](NEXT_WINDOW_PROMPTS.md)、[ROADMAP.md](ROADMAP.md) 和 [DECISIONS.md](DECISIONS.md) 为准。
+> 历史记录：本文按日期记录采集优化过程，早期段落中的“未验收”“未重跑”等结论仅代表当时状态。当前事实以 [NEXT_WINDOW_PROMPTS.md](../NEXT_WINDOW_PROMPTS.md)、[ROADMAP.md](../ROADMAP.md) 和 [DECISIONS.md](../DECISIONS.md) 为准。
+>
+> 后续说明（2026-10-22）：本文中的“未获提交/推送授权、改动留在工作区”状态已结束，相关改动已完成提交并推送。`tmp/`、`output/`、`docs/interview-notes.md` 保持本地忽略，不作为仓库事实来源；测试数量是当时快照，当前基线以 [ROADMAP](../ROADMAP.md) 为准。
 
 工程：`D:\111222333\personal-hot-monitor`（ACG Pulse）。基线提交：`0a40a1a`，分支 `master`。
 
@@ -183,4 +185,4 @@
 - 真实只读探测（2026-10-21）：NGA 40 条可用（过滤 18 条、1 个论坛失败，状态 `degraded`）；小黑盒 21 条可用（过滤 1 条）。B站 game ranking 仍 `code=-400`，anime/popular 各 20 条，聚合时应为 `degraded`。
 - 聚合器真实全链路未执行，以避免情绪分析触发付费 AI；米游社真实直连回退未探测。
 - 验证：后端 33 文件、238 项通过（含真实隔离 SQLite 的 degraded 健康持久化），`npm.cmd run build` 通过。
-- 本轮另修复队列异常恢复、测试临时目录隔离和设置接口白名单，详见 [ROADMAP](ROADMAP.md)。
+- 本轮另修复队列异常恢复、测试临时目录隔离和设置接口白名单，详见 [ROADMAP](../ROADMAP.md)。

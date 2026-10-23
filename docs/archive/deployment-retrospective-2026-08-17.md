@@ -1,6 +1,6 @@
-# ACG Pulse 生产部署复盘（2026-08-17）
+# ACG Pulse 生产部署复盘（2026-08-17，历史归档）
 
-> 历史归档：本文记录切换前的生产状态与故障归因，不描述当前采集架构。2026-10-20 起 B站主路径已改为自建 RSSHub，直连 API 默认关闭；见 [DECISIONS.md](DECISIONS.md) 的 2026-10-20 条目。
+> 历史归档：本文记录切换前的生产状态与故障归因，不描述当前采集架构。2026-10-20 起 B站主路径已改为自建 RSSHub，直连 API 默认关闭；见 [DECISIONS.md](../DECISIONS.md) 的 2026-10-20 条目。当前部署与排障以 [deployment-guide.md](../deployment-guide.md) 为准。
 
 ## 结论
 
