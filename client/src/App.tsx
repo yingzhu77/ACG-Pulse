@@ -8,6 +8,8 @@ import { usePublicData } from './hooks/usePublicData';
 import { useAdmin } from './hooks/useAdmin';
 import { useFavorites } from './hooks/useFavorites';
 import { useHotSearch } from './hooks/useHotSearch';
+import { useFeaturedGame } from './hooks/useFeaturedGame';
+import { useReadingHistory } from './hooks/useReadingHistory';
 import { readingRoute, viewPaths } from './lib/readingNavigation';
 import type { ViewMode } from './constants';
 import { EditionsPanel, EventPanel, FeaturedPanel } from './components/ReadingPanels';
@@ -25,33 +27,11 @@ const AdminDrawer = lazy(() => import('./components/AdminDrawer').then(m => ({ d
 function App() {
   const { toast, showToast } = useToast();
   const { theme, setTheme } = useTheme();
-  const [location, setLocation] = useState(() => ({
-    path: window.location.pathname,
-    back: window.history.state?.readingFrom as string | undefined
-  }));
+  const { location, mainRef, navigate, goBackToList } = useReadingHistory();
   const route = readingRoute(location.path);
   const view = route.view;
+  const readingView = view === 'today' || view === 'event' || view === 'daily';
   const [readingRefresh, setReadingRefresh] = useState(0);
-  const [featuredGame, setFeaturedGame] = useState('');
-  const navigate = useCallback((path: string) => {
-    if (window.location.pathname === path) return;
-    const readingFrom = window.location.pathname;
-    window.history.pushState({ readingFrom }, '', path);
-    setLocation({ path, back: readingFrom });
-    window.scrollTo({ top: 0, behavior: 'instant' });
-  }, []);
-  const goBackToList = useCallback((path: string) => {
-    if (window.history.state?.readingFrom === path && !path.startsWith('/events/')) window.history.back();
-    else navigate(path);
-  }, [navigate]);
-  useEffect(() => {
-    const handlePop = () => setLocation({
-      path: window.location.pathname,
-      back: window.history.state?.readingFrom
-    });
-    window.addEventListener('popstate', handlePop);
-    return () => window.removeEventListener('popstate', handlePop);
-  }, []);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
@@ -66,7 +46,8 @@ function App() {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  const publicData = usePublicData(showToast);
+  const publicData = usePublicData(showToast, !readingView);
+  const featured = useFeaturedGame(publicData.configuredGames);
   const admin = useAdmin(showToast, publicData.loadPublicData);
   const { favorites, toggleFavorite, resolveAliases } = useFavorites();
   const hotSearch = useHotSearch(showToast);
@@ -203,10 +184,10 @@ function App() {
         aria-hidden="true"
       />
       <div className="scene-scrim" />
-      <div className={`game-pulse-layout${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
+      <div className={cn('game-pulse-layout', readingView && 'reading-layout', !readingView && sidebarCollapsed && 'sidebar-collapsed')}>
         <div className="left-column" ref={leftColumnRef}>
           <LogoBrand />
-          <GameFilterPanel
+          {!readingView && <GameFilterPanel
           games={publicData.games}
           facets={publicData.facets}
           allFacets={publicData.allFacets}
@@ -229,10 +210,10 @@ function App() {
           onToggleHotPanel={handleToggleHotPanel}
           selectedHotTag={hotSearch.selectedTag}
           onSelectHotTag={tag => { hotSearch.selectTag(tag); setMobileDrawerOpen(false); }}
-        />
+        />}
         </div>
 
-        {!isMobile && sidebarCollapsed && (
+        {!readingView && !isMobile && sidebarCollapsed && (
           <button className="sidebar-expand-btn" onClick={toggleSidebar} aria-label="展开筛选" title="展开筛选">
             <Filter className="h-4 w-4" />
           </button>
@@ -250,9 +231,9 @@ function App() {
           onOpenAdmin={openAdmin}
         />
 
-        <section className="main-column">
+        <section className="main-column" ref={mainRef}>
           {route.view === 'today' ? (
-            <FeaturedPanel games={publicData.games} game={featuredGame} onGameChange={setFeaturedGame}
+            <FeaturedPanel games={featured.games} game={featured.game} onGameChange={featured.chooseGame}
               refresh={readingRefresh} navigate={navigate} onOpenFollowing={openFollowing} onOpenAll={() => changeView('feed')} />
           ) : route.view === 'daily' ? (
             <EditionsPanel date={route.date} refresh={readingRefresh} navigate={navigate} />
@@ -295,14 +276,14 @@ function App() {
           )}
         </section>
 
-        <SummaryColumn
+        {!readingView && <SummaryColumn
           stats={publicData.stats}
           sources={publicData.sources}
           health={publicData.health}
           stories={publicData.stories}
           hotStories={publicData.summaryStories}
           navigate={navigate}
-        />
+        />}
       </div>
 
       {/* Mobile Filter FAB */}

@@ -4,12 +4,15 @@ import { publicApi } from '../services/api';
 // Socket 订阅已移至 App.tsx，按需连接
 import { summarizeHealth } from '../utils/stats';
 
+const EMPTY_SOURCES: Source[] = [];
+
 type ShowToast = (type: 'success' | 'error', message: string) => void;
 
-export function usePublicData(showToast: ShowToast) {
+export function usePublicData(showToast: ShowToast, loadDashboard: boolean) {
   const [stories, setStories] = useState<Story[]>([]);
   const [summaryStories, setSummaryStories] = useState<Story[]>([]);
-  const [sources, setSources] = useState<Source[]>([]);
+  const [loadedSources, setSources] = useState<Source[] | null>(null);
+  const sources = loadedSources ?? EMPTY_SOURCES;
   const [stats, setStats] = useState<PublicStats | null>(null);
   const [facets, setFacets] = useState<StoryFacets>({ byGame: {}, byCategory: {}, byFollowCategory: {}, byImportance: {} });
   const [allFacets, setAllFacets] = useState<StoryFacets>({ byGame: {}, byCategory: {}, byFollowCategory: {}, byImportance: {} });
@@ -61,6 +64,13 @@ export function usePublicData(showToast: ShowToast) {
   const loadPublicData = useCallback(async () => {
     setLoading(true);
     try {
+      const loadSources = publicApi.getSources().then(setSources).catch(() => {
+        // A transient error is not proof that the last known configuration was removed.
+      });
+      if (!loadDashboard) {
+        await loadSources;
+        return;
+      }
       const apiFilters: Record<string, string | string[] | number | undefined> = { limit: 20, page };
       if (sourceFilter.length > 0) {
         const uids = sourceFilter.filter(s => /^\d+$/.test(s));
@@ -88,11 +98,11 @@ export function usePublicData(showToast: ShowToast) {
         summaryFilters.game = summaryGames.length === 1 ? summaryGames[0] : summaryGames.join(',');
       }
 
-      const [storiesData, summaryStoriesData, statsData, sourcesData] = await Promise.all([
+      const [storiesData, summaryStoriesData, statsData] = await Promise.all([
         publicApi.getStories(apiFilters),
         publicApi.getStories(summaryFilters),
         publicApi.getStats(),
-        publicApi.getSources()
+        loadSources
       ]);
       setStories(storiesData.data);
       setSummaryStories(summaryStoriesData.data);
@@ -102,7 +112,6 @@ export function usePublicData(showToast: ShowToast) {
       if (sourceFilter.length === 0 && !categoryGroup && !category && !filters.importance) {
         setAllFacets(storiesData.facets);
       }
-      setSources(sourcesData);
 
       // Scroll to top after data loads if requested
       if (scrollToTopRef.current) {
@@ -115,7 +124,7 @@ export function usePublicData(showToast: ShowToast) {
     } finally {
       setLoading(false);
     }
-  }, [sourceFilter, categoryGroup, category, filters, page, showToast]);
+  }, [sourceFilter, categoryGroup, category, filters, page, showToast, loadDashboard]);
 
   // Reset page to 1 when filters change
   useEffect(() => {
@@ -136,6 +145,10 @@ export function usePublicData(showToast: ShowToast) {
   }, [autoRefresh, loadPublicData]);
 
   const games = useMemo(() => Object.keys(allFacets.byGame || {}).filter(g => g.trim()).sort(), [allFacets]);
+  // /public/sources only returns enabled sources; quiet works remain selectable.
+  const configuredGames = useMemo(() => loadedSources === null ? null
+    : [...new Set(loadedSources.map(source => source.game.trim()).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b, 'zh-CN')), [loadedSources]);
   const health = useMemo(() => summarizeHealth(sources), [sources]);
   const recentNotices = useMemo(() => stories.slice(0, 4), [stories]);
 
@@ -144,6 +157,7 @@ export function usePublicData(showToast: ShowToast) {
     summaryStories,
     sources,
     stats,
+    configuredGames,
     facets,
     allFacets,
     pagination,

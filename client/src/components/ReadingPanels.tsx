@@ -5,7 +5,7 @@ import { ApiError, publicApi } from '../services/api';
 import type { EditionEntry, EditionIndex, EditionResponse, FeedItem } from '../services/api';
 import { editionPath, eventPath, followInApp, originalUrl } from '../lib/readingNavigation';
 import { cn } from '../lib/utils';
-import { importanceLabel } from '../utils/format';
+import { distinctImpact } from '../lib/readingCopy';
 
 type Navigate = (path: string) => void;
 const shanghaiTime = new Intl.DateTimeFormat('zh-CN', {
@@ -62,32 +62,37 @@ const summaryLabels: Record<EditionEntry['editorial']['summaryStatus'], string> 
   unavailable: '未启用模型分析，请查看原文。'
 };
 
-function EntryCard({ story, index, navigate }: { story: EditionEntry; index: number; navigate: Navigate }) {
+function EntryCard({ story, navigate }: { story: EditionEntry; navigate: Navigate }) {
   const { editorial } = story;
   const source = story.sources[0];
+  const impact = editorial.summaryStatus === 'available' ? distinctImpact(editorial.impact, story.summary, story.canonicalTitle) : null;
+  const hasBadge = editorial.kind === 'update' || editorial.late || editorial.correctedAt;
   return (
     <article className="reading-entry">
-      <div className="reading-entry-number" aria-hidden="true">{String(index + 1).padStart(2, '0')}</div>
       <div className="reading-entry-body">
-        <div className="reading-kicker">
-          <span className="reading-kind">{editorial.kind === 'update' ? '新进展' : '新事件'}</span>
-          {story.game && <span>{story.game}</span>}
-          <span>重要性：{importanceLabel(story.importance)}</span>
-          {editorial.late && <span>迟到收录</span>}
-          {editorial.correctedAt && <span>已更正 {displayTime(editorial.correctedAt)}</span>}
-        </div>
+        {hasBadge && <div className="reading-kicker">
+          {editorial.kind === 'update' && <span className="reading-kind">新进展</span>}
+          {editorial.late && <span className="reading-kind">迟到收录</span>}
+          {editorial.correctedAt && <span className="reading-kind">已更正</span>}
+        </div>}
         <h3><ReadingLink to={eventPath(story.id)} navigate={navigate} className="reading-title-link">{story.canonicalTitle}</ReadingLink></h3>
-        <p>{editorial.summaryStatus === 'available' && story.summary ? story.summary : summaryLabels[editorial.summaryStatus]}</p>
-        {editorial.summaryStatus === 'available' && editorial.impact && (
-          <p className="reading-impact"><b>为什么关注</b>{editorial.impact}</p>
-        )}
+        <p className={editorial.summaryStatus === 'available' ? undefined : 'reading-summary-note'}>
+          {editorial.summaryStatus === 'available' && story.summary ? story.summary : summaryLabels[editorial.summaryStatus]}
+        </p>
+        {impact && <p className="reading-impact"><b>为什么重要</b>{impact}</p>}
         <div className="reading-entry-foot">
-          {source && <Original url={source.url}>{source.sourceName} · 原文</Original>}
-          {story.sourceCount > 1 && <span>另有 {story.sourceCount - 1} 个来源</span>}
-          <span>原文发布 {displayTime(editorial.publishedAt)}</span>
-          <span>发现 {displayTime(editorial.discoveredAt)}</span>
-          <span>入选 {editorial.selectedAt ? displayTime(editorial.selectedAt) : '待出刊'}</span>
+          {source && (originalUrl(source.url) ? <Original url={source.url}>{source.sourceName} · 原文</Original> : <span>{source.sourceName}</span>)}
+          <time dateTime={editorial.publishedAt}>{editorial.kind === 'update' ? '进展发布' : '原文发布'} {displayTime(editorial.publishedAt)}</time>
         </div>
+        <details className="reading-minor-details">
+          <summary>收录详情</summary>
+          <div className="reading-detail-chips">
+            {story.game && <span>{story.game}</span>}
+            <span>发现 {displayTime(editorial.discoveredAt)}</span>
+            <span>{editorial.selectedAt ? `入选 ${displayTime(editorial.selectedAt)}` : '当前精选 · 尚未出刊'}</span>
+            {editorial.correctedAt && <span>更正 {displayTime(editorial.correctedAt)}</span>}
+          </div>
+        </details>
       </div>
     </article>
   );
@@ -95,26 +100,46 @@ function EntryCard({ story, index, navigate }: { story: EditionEntry; index: num
 
 function EditionContent({ data, navigate }: { data: EditionResponse; navigate: Navigate }) {
   const { health } = data;
+  const noSources = health.configuredSources === 0;
   const notes = [
+    noSources ? '未配置可用的采集来源' : '',
     health.failedSources ? `${health.failedSources} 个来源采集失败` : '',
-    health.uncheckedSources ? `${health.uncheckedSources} 个来源尚无本期采集记录` : '',
+    health.uncheckedSources ? `${health.uncheckedSources} 个来源无本期采集记录` : '',
     health.degradedSources ? `${health.degradedSources} 个来源仅部分采集成功` : '',
+    health.staleSources ? `${health.staleSources} 个来源更新延迟` : '',
     health.pendingAnalysis ? `${health.pendingAnalysis} 条待分析` : '',
     health.failedAnalysis ? `${health.failedAnalysis} 条分析失败` : '',
     health.unavailableAnalysis ? `${health.unavailableAnalysis} 条未启用模型分析` : ''
   ].filter(Boolean);
+  const uncertain = notes.length > 0 || !health.configuredSources;
+  const coverageLabel = noSources ? '暂无可用来源'
+    : health.failedSources ? '来源采集失败'
+    : health.staleSources ? '采集更新延迟'
+    : health.degradedSources ? '部分采集未完成'
+    : health.uncheckedSources ? '部分来源尚未采集'
+    : '部分内容尚未处理';
   const emptyMessage = data.status === 'failed' ? '采集或处理未完成，本期无法出刊。'
     : data.status === 'pending' ? '这一期尚未出刊。'
     : data.withdrawnCount ? '本期可见内容已撤回。'
+    : noSources ? '暂无可用来源，还不能判断是否有新动态。'
+    : data.status === 'empty' && health.configuredSources === undefined && !notes.length ? '本期没有记录入选内容。'
+    : uncertain ? '暂未发现可呈现的精选，采集覆盖或内容处理尚不完整。'
     : data.status === 'empty' ? '本期没有达到精选标准的新内容。'
-    : notes.length ? '暂时没有可展示的精选。部分内容还未能采集或处理。'
-    : '今天还没有达到精选标准的新内容。';
+    : '今天暂无值得精选的新内容。';
   return <>
-    {notes.length > 0 && <RequestNotice>{notes.join(' · ')}{data.stories.length ? '。已有内容仍可阅读。' : '。'}</RequestNotice>}
-    {data.withdrawnCount > 0 && <p className="reading-muted">本期有 {data.withdrawnCount} 项内容已撤回或更正，以当前公开状态为准。</p>}
+    {(data.status === 'live' || notes.length > 0) && <div className="reading-health">
+      {data.status === 'live' && <span>最近更新 {health.lastSuccessAt ? displayTime(health.lastSuccessAt) : '暂无记录'}</span>}
+      {notes.length > 0 && <details className="reading-minor-details">
+        <summary>{coverageLabel}</summary>
+        <ul>{notes.map(note => <li key={note}>{note}</li>)}</ul>
+        {health.lastCheckedAt && <p>最近检查 {displayTime(health.lastCheckedAt)}</p>}
+        {health.configuredSources ? <p>已配置 {health.configuredSources} 个来源</p> : null}
+      </details>}
+    </div>}
+    {data.withdrawnCount > 0 && <p className="reading-muted">本期有内容已撤回，以当前公开状态为准。</p>}
     {data.stories.length === 0
       ? <p className="reading-empty" role="status">{emptyMessage}</p>
-      : <div className="reading-entries">{data.stories.map((entry, index) => <EntryCard key={entry.id} story={entry} index={index} navigate={navigate} />)}</div>}
+      : <div className="reading-entries">{data.stories.map(entry => <EntryCard key={entry.id} story={entry} navigate={navigate} />)}</div>}
   </>;
 }
 
@@ -125,16 +150,18 @@ export function FeaturedPanel({ games, game, onGameChange, refresh, navigate, on
     <section className="reading-panel glass-panel">
       <header className="reading-header">
         <div>
-          <p className="reading-eyebrow">ACG PULSE / DAILY BRIEF</p>
           <h1>今日精选</h1>
-          <p>聚焦作品的重要消息和实质进展。时间均为北京时间。</p>
+          <p>重要消息与实质进展 · 北京时间</p>
         </div>
-        {games.length > 0 && <label className="reading-filter">作品
-          <select value={game} onChange={e => onGameChange(e.target.value)}>
-            <option value="">全部作品</option>
-            {games.map(item => <option key={item}>{item}</option>)}
-          </select>
-        </label>}
+        {games.length > 0 && <div className="reading-filter-area">
+          <label className="reading-filter"><span className="sr-only">作品</span>
+            <select value={game} onChange={e => onGameChange(e.target.value)}>
+              <option value="">全部作品</option>
+              {games.map(item => <option key={item}>{item}</option>)}
+            </select>
+          </label>
+          {game && <button type="button" className="reading-link reading-reset" onClick={() => onGameChange('')}>查看全部作品</button>}
+        </div>}
       </header>
       <nav className="reading-quick-nav" aria-label="更多内容">
         <ReadingLink to="/all" navigate={onOpenAll}>全部动态</ReadingLink>
@@ -154,7 +181,7 @@ function FeaturedEntries({ game, refresh, navigate }: { game: string; refresh: n
     {Boolean(result.error) && <RequestNotice retry={result.retry}>{result.data ? '刷新精选失败，显示上次加载的内容。' : '精选暂时无法加载。'}</RequestNotice>}
     {result.loading && !result.data && <p className="reading-empty" role="status">正在加载今日精选…</p>}
     {result.data && <>
-      <div className="reading-list-head"><time dateTime={result.data.date}>{result.data.date}</time><span>{result.data.stories.length} 件</span></div>
+      <div className="reading-list-head"><time dateTime={result.data.date}>{result.data.date}</time></div>
       <EditionContent data={result.data} navigate={navigate} />
     </>}
   </>;
@@ -170,9 +197,8 @@ export function EditionsPanel({ date, refresh, navigate }: { date?: string; refr
     <section className="reading-panel glass-panel">
       <header className="reading-header">
         <div>
-          <p className="reading-eyebrow">ACG PULSE / ARCHIVE</p>
           <h1>日报存档</h1>
-          <p>按北京时间出刊，可回看已保存各期与原文出处。</p>
+          <p>按北京时间出刊，保留各期与原文出处。</p>
         </div>
         <label className="reading-filter">刊期
           <input type="date" value={selectedDate} max={shanghaiDay(0)} onChange={event => { if (event.target.value) navigate(editionPath(event.target.value)); }} />
@@ -246,6 +272,10 @@ export function EventPanel({ id, back, refresh, navigate, favorites, onToggleFav
   const missing = result.error instanceof ApiError && result.error.status === 404;
   // Do not show stale event content if a refresh confirms withdrawal or deletion.
   const visible = event && !missing;
+  const latestProgress = event?.progress[0];
+  const primary = event?.sources[0];
+  const primaryUrl = latestProgress?.url || primary?.url;
+  const primaryName = latestProgress?.source.name || primary?.sourceName;
   return (
     <section className="reading-panel glass-panel">
       <nav className="reading-back" aria-label="返回列表">
@@ -259,7 +289,7 @@ export function EventPanel({ id, back, refresh, navigate, favorites, onToggleFav
       {visible && <>
         <header className="reading-header reading-event-header">
           <div>
-            <p className="reading-eyebrow">{event.game || '事件详情'} / 重要性：{importanceLabel(event.importance)}</p>
+            <p className="reading-eyebrow">{event.game || '事件详情'}</p>
             <h1>{event.canonicalTitle}</h1>
             <p>{event.summary || '暂无可靠摘要，详情以原文为准。'}</p>
           </div>
@@ -267,25 +297,28 @@ export function EventPanel({ id, back, refresh, navigate, favorites, onToggleFav
             <Bookmark aria-hidden="true" />{favorites.includes(event.id) ? '已收藏' : '收藏事件'}
           </button>
         </header>
-        <dl className="reading-event-times">
-          <div><dt>首报时间</dt><dd>{displayTime(event.firstPublishedAt)}</dd></div>
-          <div><dt>首次发现</dt><dd>{displayTime(event.firstDiscoveredAt)}</dd></div>
-          <div><dt>最近进展</dt><dd>{event.lastProgressAt ? displayTime(event.lastProgressAt) : '暂无进展'}</dd></div>
-        </dl>
-        <section className="reading-detail-section">
+        <div className="reading-entry-foot reading-event-primary">
+          {primaryName && (originalUrl(primaryUrl) ? <Original url={primaryUrl}>{primaryName} · 原文</Original> : <span>{primaryName}</span>)}
+          {event.lastProgressAt ? <time dateTime={event.lastProgressAt}>最近进展 {displayTime(event.lastProgressAt)}</time>
+            : <time dateTime={event.firstPublishedAt ?? undefined}>首报 {displayTime(event.firstPublishedAt)}</time>}
+        </div>
+        {event.progress.length > 0 && <section className="reading-detail-section">
           <h2>实质进展</h2>
-          {event.progress.length ? <ul className="reading-source-list">{event.progress.map(item => <FeedItemLink item={item} key={item.id} />)}</ul>
-            : <p className="reading-muted">暂无后续进展。重复报道收在下方。</p>}
-        </section>
-        <section className="reading-detail-section">
-          <h2>相关报道与原文</h2>
+          <ul className="reading-source-list">{event.progress.map(item => <FeedItemLink item={item} key={item.id} />)}</ul>
+        </section>}
+        <details className="reading-minor-details reading-event-reports">
+          <summary>相关报道与原文（{event.sources.length}）</summary>
+          <dl className="reading-event-times">
+            <div><dt>首报时间</dt><dd>{displayTime(event.firstPublishedAt)}</dd></div>
+            <div><dt>首次发现</dt><dd>{displayTime(event.firstDiscoveredAt)}</dd></div>
+          </dl>
           <ul className="reading-source-list">
             {event.sources.map(source => <li key={source.itemId}>
               <p>{source.sourceName} · 原文发布 {displayTime(source.publishedAt)}</p>
               {originalUrl(source.url) ? <Original url={source.url}>{source.title}</Original> : <span>{source.title}</span>}
             </li>)}
           </ul>
-        </section>
+        </details>
       </>}
     </section>
   );
