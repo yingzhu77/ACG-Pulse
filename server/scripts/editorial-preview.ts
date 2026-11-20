@@ -19,6 +19,9 @@ const { prisma } = await import('../src/db.js');
 const { publishDailyEdition, shanghaiDate, shiftEditionDate } = await import('../src/gamepulse/reports/editorial.js');
 
 const work = '雾港纪行（虚构作品）';
+const secondWork = '鸣砂邮局（虚构作品）';
+const quietWork = '林梢电台（虚构作品）';
+const staleWork = '古桥列岛（虚构作品）';
 const now = new Date();
 const today = shanghaiDate(now);
 const yesterday = shiftEditionDate(today, -1);
@@ -28,12 +31,19 @@ const elapsed = now.getTime() - beginning;
 const todayAt = (fraction: number) => new Date(beginning + Math.floor(elapsed * fraction));
 const yesterdayAt = (hhmm: string) => new Date(`${yesterday}T${hhmm}:00+08:00`);
 const yesterdayFirst = yesterdayAt('10:07');
-const fixtureTime = todayAt(0.03);
+// A recent source check remains recent even in an evening browser session.
+const fixtureTime = new Date(now.getTime() - 2 * 60_000);
+const staleTime = new Date(now.getTime() - 24 * 3_600_000);
 const sourceA = 'preview-studio';
 const sourceB = 'preview-press';
 const sourceC = 'preview-creator';
 const sourceD = 'preview-festival';
 const sourceE = 'preview-new-source';
+const sourceF = 'preview-offline';
+const sourceG = 'preview-post-office';
+const sourceH = 'preview-post-office-stale';
+const sourceI = 'preview-radio';
+const sourceJ = 'preview-islands';
 const reportedKeywords = ['丹潮协议', '雾钟码头', '港区通行证'];
 
 const items = [
@@ -51,7 +61,7 @@ const items = [
     publishedAt: yesterdayAt('10:15'), discoveredAt: yesterdayAt('10:20'), keywords: reportedKeywords, category: 'version'
   }, {
     slug: 'follow-up', sourceId: sourceA, title: '《丹潮协议》1.4 版本维护结束时间推迟：雾钟码头入口延后开放',
-    body: '丹潮协议 1.4 版本维护延长一小时，雾钟码头西侧入口开放时间相应推迟。港区通行证继续有效，昨日已领证的玩家无需再领。',
+    body: '丹潮协议 1.4 版本维护延长 1 小时，雾钟码头西侧入口开放时间从 20:00 推迟至 21:00。港区通行证继续有效，昨日已领证的玩家无需再领。',
     summary: '维护延长一小时，雾钟码头西侧入口延迟开放。',
     reason: '计划进入码头的玩家需要调整登录时间，通行证继续有效。',
     publishedAt: todayAt(0.10), discoveredAt: todayAt(0.13), keywords: reportedKeywords, category: 'version'
@@ -88,6 +98,52 @@ const items = [
     summary: '虚构创作者自制手绘航线，不是版本新闻。', reason: '可在关注投稿查看。',
     publishedAt: todayAt(0.61), discoveredAt: todayAt(0.63), keywords: ['北区夜航路线'],
     category: 'creator_video', kind: 'creator_video', importance: 'low'
+  }, {
+    slug: 'sand-post-office-yesterday', sourceId: sourceG, work: secondWork,
+    title: '「北门信使」路线明日开通：第一批夜班邮差可登记',
+    body: '鸣砂邮局将开通北门信使路线，第一批夜班邮差可登记领取任务。已完成寄件引导的玩家可在营地窗口登记，不需要重复完成新手教程。',
+    summary: '北门信使路线明日开通，完成寄件引导即可报名。',
+    reason: '想体验夜间配送的玩家可以提前完成寄件引导。',
+    publishedAt: yesterdayAt('13:00'), discoveredAt: yesterdayAt('13:03'),
+    keywords: ['北门信使', '夜班邮差', '寄件引导'], category: 'event'
+  }, {
+    slug: 'sand-post-office-long', sourceId: sourceG, work: secondWork,
+    title: '「沙丘手记」2.7 版本更新说明：跨区邮路开放、旧版纪念戳将在维护后停止兑换，已接取的长途委托可在新的驿站继续交付',
+    body: '沙丘手记 2.7 将开放跨区邮路，旧版纪念戳会在维护后停止兑换。已接取的长途委托可在新驿站继续交付，已有兑换记录不受影响。',
+    summary: '跨区邮路开放；旧纪念戳维护后停兑；旧委托可以继续。',
+    reason: '想兑换旧纪念戳的玩家应在维护前完成，进行中的委托无需取消。',
+    publishedAt: todayAt(0.64), discoveredAt: todayAt(0.66),
+    keywords: ['沙丘手记', '跨区邮路', '纪念戳'], category: 'version'
+  }, ...([
+    ['sand-post-office-collection', '「候鸟地图」实装：旅行记录支持标记附近驿站', '完成首条邮路后旅行记录可标记驿站；原有地图不变。', ['候鸟地图', '旅行记录', '驿站标记']],
+    ['sand-post-office-compensation', '「沙砾补寄」补偿方案：丢失凭据可在驿站重发', '因昨日断线丢失的寄件凭据将补发，领取入口为邮局柜台。', ['沙砾补寄', '凭据补发', '邮局柜台']],
+    ['sand-post-office-survey', '「南坡旧路」开放测试：预约用户今晚可提交试跑记录', '已登记南坡旧路试跑的玩家可提交运单，收到回执后即完成登记。', ['南坡旧路', '开放测试', '试跑运单']]
+  ] as const).map(([slug, title, summary, keywords], index) => ({
+    slug, sourceId: sourceG, work: secondWork, title, summary,
+    body: `${summary} 样本公告仅描述已登记玩家的处理方法，其他邮路及现有委托不受影响。`,
+    reason: '关注该项路线或委托的读者可提前核对邮局状态。',
+    publishedAt: todayAt(0.70 + 0.02 * index), discoveredAt: todayAt(0.71 + 0.02 * index),
+    keywords: [...keywords], category: 'event'
+  })), {
+    slug: 'sand-post-office-pending', sourceId: sourceG, work: secondWork,
+    title: '「玻璃候鸟」制作札记',
+    body: '制作札记介绍了新的候鸟路标原画和制作流程。这一条用于测试存在正文但 AI 分析还未完成时的提示，不应编造影响，也不应抢占精选。',
+    publishedAt: todayAt(0.75), discoveredAt: todayAt(0.76),
+    keywords: ['玻璃候鸟', '制作札记'], category: 'other', status: 'pending'
+  }, {
+    slug: 'radio-quiet', sourceId: sourceI, work: quietWork,
+    title: '林梢电台旧版收音手册',
+    body: '旧版收音手册说明如何查阅短波频段、保存既有频道。此旧文仅用于保证林梢电台作品可查看，而今日无值得入选事件。',
+    summary: '旧版收音手册。', reason: '已不具有时效性。',
+    publishedAt: new Date(`${twoDaysAgo}T09:00:00+08:00`), discoveredAt: new Date(`${twoDaysAgo}T10:00:00+08:00`),
+    keywords: ['林梢电台', '收音手册'], category: 'other', importance: 'low'
+  }, {
+    slug: 'islands-quiet-and-stale', sourceId: sourceJ, work: staleWork,
+    title: '古桥列岛旧版码头图册',
+    body: '旧版图册标注了几座古桥的通行方向，本条用于让来源陈旧的作品可以从筛选中选择。',
+    summary: '旧版码头图册。', reason: '已不具有时效性。',
+    publishedAt: new Date(`${twoDaysAgo}T09:00:00+08:00`), discoveredAt: new Date(`${twoDaysAgo}T10:00:00+08:00`),
+    keywords: ['古桥列岛', '码头图册'], category: 'other', importance: 'low'
   }
 ];
 
@@ -104,18 +160,26 @@ try {
     { id: sourceB, name: '样本 · 潮汐电台', isOfficial: false },
     { id: sourceC, name: '样本 · 夜航手作社', isOfficial: false, followed: true },
     { id: sourceD, name: '样本 · 档案馆', isOfficial: true, healthStatus: 'degraded' },
-    { id: sourceE, name: '样本 · 旧城记事簿', isOfficial: false }
+    { id: sourceE, name: '样本 · 旧城记事簿', isOfficial: false },
+    { id: sourceF, name: '样本 · 港口镜像', isOfficial: false, healthStatus: 'failed' },
+    { id: sourceG, name: '样本 · 鸣砂邮局公告台', isOfficial: true, game: secondWork },
+    { id: sourceH, name: '样本 · 沙丘档案镜像', isOfficial: false, game: secondWork, checkedAt: staleTime },
+    { id: sourceI, name: '样本 · 林梢电台公告台', isOfficial: true, game: quietWork },
+    { id: sourceJ, name: '样本 · 古桥列岛播报', isOfficial: true, game: staleWork, checkedAt: staleTime }
   ];
   for (const source of sources) {
+    const { checkedAt = fixtureTime, ...data } = source;
     await prisma.source.create({ data: {
-      game: work, type: 'rss', healthStatus: 'healthy', lastSuccessAt: yesterdayAt('10:20'),
-      lastCheckedAt: fixtureTime, firstIngestAt: source.id === sourceE ? fixtureTime : yesterdayFirst,
-      ...source,
-      ...(source.healthStatus ? { lastError: '合成样本：上游部分条目暂不可用' } : {})
+      game: work, type: 'rss', healthStatus: 'healthy',
+      lastSuccessAt: data.healthStatus ? yesterdayAt('10:20') : checkedAt,
+      lastCheckedAt: checkedAt, createdAt: source.id === sourceE ? fixtureTime : yesterdayFirst,
+      firstIngestAt: source.id === sourceE ? fixtureTime : yesterdayFirst,
+      ...data,
+      ...(data.healthStatus ? { lastError: '合成样本：上游部分条目暂不可用' } : {})
     } });
     await prisma.sourceHealthLog.createMany({ data: [
       { sourceId: source.id, status: 'healthy', checkedAt: yesterdayAt('10:20') },
-      { sourceId: source.id, status: source.healthStatus ?? 'healthy', checkedAt: fixtureTime }
+      { sourceId: source.id, status: data.healthStatus ?? 'healthy', checkedAt }
     ] });
   }
 
@@ -137,7 +201,7 @@ try {
     const status = item.status ?? 'completed';
     await prisma.feedItem.create({ data: {
       id: `fixture-${item.slug}`, identityKey: `fixture:${item.slug}`,
-      externalId: item.slug, sourceId: item.sourceId, sourceType: 'rss', game: work,
+      externalId: item.slug, sourceId: item.sourceId, sourceType: 'rss', game: item.work ?? work,
       title: item.title, content: item.body, url: `${origin}/preview-originals/${originalFile}`,
       itemKind: item.kind ?? 'official_post', publishedAt: item.publishedAt,
       createdAt: item.discoveredAt, fetchedAt: item.discoveredAt,
