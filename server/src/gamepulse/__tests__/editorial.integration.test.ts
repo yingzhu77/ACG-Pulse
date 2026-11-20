@@ -27,9 +27,12 @@ const secondClose = date('2026-11-20T16:10:00.000Z');
 const previously = '2026-11-19';
 const next = '2026-11-20';
 
-async function source(id: string, healthStatus = 'unknown') {
+async function source(id: string, healthStatus = 'unknown', options: {
+  type?: string; isOfficial?: boolean; checkedAt?: string; enabled?: boolean;
+} = {}) {
   return prisma.source.create({ data: {
-    id, name: `Fixture ${id}`, game: GAME, type: 'official_site', isOfficial: true,
+    id, name: `Fixture ${id}`, game: GAME, type: options.type ?? 'official_site', isOfficial: options.isOfficial ?? true,
+    lastCheckedAt: options.checkedAt ? date(options.checkedAt) : undefined, enabled: options.enabled,
     healthStatus, createdAt: date('2026-11-01T00:00:00Z')
   } });
 }
@@ -40,13 +43,13 @@ async function check(sourceId: string, status: string, time: string) {
 
 async function item(options: {
   id: string; title: string; discovered: string; published?: string | null; sourceId?: string;
-  text?: string; backfill?: boolean; status?: string; analyzedAt?: string; importance?: string; game?: string; provider?: string;
+  text?: string; backfill?: boolean; status?: string; analyzedAt?: string; importance?: string; game?: string; provider?: string; itemKind?: string; sourceType?: string;
 }) {
   const { id, title, discovered, published = discovered, sourceId = 'primary', text = body, backfill = false,
-    status = 'completed', analyzedAt = discovered, importance = 'high', game = GAME, provider } = options;
+    status = 'completed', analyzedAt = discovered, importance = 'high', game = GAME, provider, itemKind = 'official_post', sourceType = 'official_site' } = options;
   return prisma.feedItem.create({
     data: {
-      id, sourceId, title, game, sourceType: 'official_site', itemKind: 'official_post', content: text,
+      id, sourceId, title, game, sourceType, itemKind, content: text,
       url: `https://example.test/original/${id}`, contentHash: id, identityKey: id, isSourceBackfill: backfill,
       createdAt: date(discovered), fetchedAt: date(discovered), publishedAt: published ? date(published) : null,
       analysis: { create: {
@@ -242,6 +245,101 @@ describe('editorial reading cycle with isolated SQLite migrations', () => {
     }]);
     await item({ id: 'mirror-next', title: headline, sourceId: 'mirror', discovered: '2026-11-20T05:00:00Z' });
     expect((await readFeatured(date('2026-11-20T09:00:00Z'))).stories).toHaveLength(0);
+  });
+
+  test('does not promote unsupported creator, trend or forum headlines during analysis fallback', async () => {
+    await source('primary');
+    await source('creator', 'unknown', { type: 'bilibili', isOfficial: false });
+    await source('forum', 'unknown', { type: 'trend', isOfficial: false });
+    await item({ id: 'confirmed', title: '服务器紧急维护公告', discovered: '2026-11-19T05:00:00Z', status: 'failed', text: '' });
+    await item({ id: 'speculative', title: '要停服了？关于停服传闻的分析', discovered: '2026-11-19T06:00:00Z', status: 'failed', text: '' });
+    await item({ id: 'creator-unverified', title: '版本更新要来了！玩家整活', sourceId: 'creator',
+      sourceType: 'bilibili', itemKind: 'creator_video', status: 'pending', discovered: '2026-11-19T07:00:00Z' });
+    await item({ id: 'trend-unverified', title: '知名作品官宣定档', sourceId: 'forum',
+      sourceType: 'trend', itemKind: 'trend', provider: 'fallback', discovered: '2026-11-19T08:00:00Z' });
+    await item({ id: 'low-creator', title: '版本更新后随便聊两句', sourceId: 'creator',
+      sourceType: 'bilibili', itemKind: 'creator_video', importance: 'low', discovered: '2026-11-19T08:30:00Z' });
+    await item({ id: 'forum-unverified', title: '开服啦！讨论楼', sourceId: 'forum',
+      sourceType: 'trend', itemKind: 'forum_thread', status: 'failed', discovered: '2026-11-19T09:00:00Z' });
+    const live = await readFeatured(date('2026-11-19T10:00:00Z'));
+    expect(live.stories.map(entry => entry.sources[0].itemId)).toEqual(['confirmed']);
+    expect(live.stories[0]).toMatchObject({ summary: null, editorial: { summaryStatus: 'failed', impact: null } });
+    await publishDailyEdition(previously, firstClose);
+    expect((await readDailyEdition(previously)).stories.map(entry => entry.sources[0].itemId)).toEqual(['confirmed']);
+  });
+
+  test('distinguishes stale, unchecked, recently healthy and recently failed sources including across midnight', async () => {
+    await source('primary', 'healthy', { checkedAt: '2026-11-19T07:00:00Z' });
+    await check('primary', 'healthy', '2026-11-19T07:00:00Z');
+    await source('stale-prev', 'healthy', { checkedAt: '2026-11-18T16:01:00Z' });
+    await source('healthy', 'healthy', { checkedAt: '2026-11-19T15:58:00Z' });
+    await source('failed-recent', 'failed', { checkedAt: '2026-11-19T16:01:00Z' });
+    await source('unknown');
+    await source('disabled', 'failed', { checkedAt: '2026-11-19T16:01:00Z', enabled: false });
+    await prisma.source.update({ where: { id: 'primary' }, data: { lastSuccessAt: date('2026-11-19T06:59:00Z') } });
+    // Healthy current records from older versions may lack lastSuccessAt; their successful check is evidence.
+    await prisma.source.update({ where: { id: 'failed-recent' }, data: { lastSuccessAt: date('2026-11-19T08:00:00Z') } });
+    const live = await readFeatured(date('2026-11-19T16:02:00Z'));
+    expect(live.health).toMatchObject({
+      staleSources: 3, uncheckedSources: 1, failedSources: 1, degradedSources: 0, configuredSources: 5,
+      lastCheckedAt: '2026-11-19T16:01:00.000Z', lastSuccessAt: '2026-11-19T15:58:00.000Z'
+    });
+    await prisma.source.update({ where: { id: 'primary' }, data: {
+      lastCheckedAt: date('2026-11-19T16:04:00Z'), lastSuccessAt: date('2026-11-19T16:04:00Z')
+    } });
+    const recovered = await readFeatured(date('2026-11-19T16:05:00Z'));
+    expect(recovered.health).toMatchObject({
+      staleSources: 2, lastCheckedAt: '2026-11-19T16:04:00.000Z', lastSuccessAt: '2026-11-19T16:04:00.000Z'
+    });
+  });
+
+  test('does not claim quiet-day coverage without any enabled sources', async () => {
+    await source('primary', 'healthy', { checkedAt: '2026-11-19T09:55:00Z', enabled: false });
+    const live = await readFeatured(date('2026-11-19T10:00:00Z'));
+    expect(live.health).toMatchObject({ configuredSources: 0, staleSources: 0, lastSuccessAt: null, lastCheckedAt: null });
+    expect(live.stories).toEqual([]);
+    expect(await publishDailyEdition(previously, firstClose)).toBe('failed');
+  });
+
+  test('retains frozen coverage when a source later fails or is disabled', async () => {
+    await source('primary', 'healthy', { checkedAt: '2026-11-19T15:50:00Z' });
+    await check('primary', 'healthy', '2026-11-19T15:51:00Z');
+    expect(await publishDailyEdition(previously, firstClose)).toBe('empty');
+    const frozen = await readDailyEdition(previously);
+    expect(frozen.health).toMatchObject({
+      configuredSources: 1, staleSources: 0, failedSources: 0,
+      lastSuccessAt: '2026-11-19T15:51:00.000Z', lastCheckedAt: '2026-11-19T15:51:00.000Z'
+    });
+    await check('primary', 'failed', '2026-11-20T14:58:00Z');
+    const live = await readFeatured(date('2026-11-20T15:00:00Z'));
+    expect(live.health).toMatchObject({
+      failedSources: 1, staleSources: 1,
+      lastSuccessAt: '2026-11-19T15:51:00.000Z', lastCheckedAt: '2026-11-20T14:58:00.000Z'
+    });
+    await prisma.source.update({ where: { id: 'primary' }, data: { enabled: false } });
+    expect(await readDailyEdition(previously)).toEqual(frozen);
+  });
+
+  test('publishes a dated second official hotfix as real progress after the first fix shipped', async () => {
+    await source('primary');
+    await item({ id: 'hotfix-release', title: '1.3 版本《巡海》更新公告', discovered: '2026-11-19T05:00:00Z' });
+    await item({ id: 'hotfix-first', title: '1.3 版本《巡海》紧急修复：部分玩家无法进入潮汐港',
+      discovered: '2026-11-19T09:00:00Z',
+      text: '十一月十九日十七点，修复潮汐港入口在完成前置任务后仍然无法进入的问题，玩家可重新登录确认。' });
+    expect(await publishDailyEdition(previously, firstClose)).toBe('published');
+    const before = await readDailyEdition(previously);
+    expect(before.stories).toHaveLength(1);
+    expect(before.stories[0].sources[0].itemId).toBe('hotfix-first');
+    await item({ id: 'hotfix-next', title: '1.3 版本《巡海》紧急修复：结算异常导致奖励未到账',
+      discovered: '2026-11-20T08:00:00Z',
+      text: '十一月二十日十六点，修复了战利品结算失败导致奖励未到账的问题。符合条件的账号会通过游戏内邮件收到补发奖励。' });
+    const preview = await readFeatured(date('2026-11-20T10:00:00Z'));
+    expect(preview.stories).toMatchObject([{ id: before.stories[0].id, editorial: { kind: 'update' }, sources: [{ itemId: 'hotfix-next' }] }]);
+    expect(await publishDailyEdition(next, secondClose)).toBe('published');
+    expect((await readDailyEdition(next)).stories).toMatchObject([
+      { id: before.stories[0].id, editorial: { kind: 'update' }, sources: [{ itemId: 'hotfix-next' }] }
+    ]);
+    expect(await readDailyEdition(previously)).toEqual(before);
   });
 
   test('labels material follow-up as progress even when the older event was never in an issue', async () => {

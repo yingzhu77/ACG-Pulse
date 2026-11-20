@@ -34,11 +34,12 @@ let secondSourceId: string;
 let server: ReturnType<ReturnType<typeof express>['listen']>;
 let base: string;
 
-async function add(input: { n: string; title: string; hour: number; url?: string; source?: string; body?: string }) {
+async function add(input: { n: string; title: string; hour: number; url?: string; source?: string; body?: string; category?: string; itemKind?: string }) {
   return prisma.feedItem.create({ data: {
     sourceId: input.source || sourceId,
     game,
     sourceType: 'rss',
+    itemKind: input.itemKind || 'official_post',
     externalId: input.n,
     title: input.title,
     content: input.body || `测试材料：${input.title}。玩家需要完成序章后查看新增区域。`,
@@ -48,7 +49,7 @@ async function add(input: { n: string; title: string; hour: number; url?: string
     createdAt: at(input.hour + 0.01),
     fetchedAt: at(input.hour + 0.01),
     analysis: { create: {
-      status: 'completed', category: 'version', importance: 'high', visibility: 'public',
+      status: 'completed', category: input.category || 'version', importance: 'high', visibility: 'public',
       summary: '区域开放前需要完成序章。', reason: '影响玩家前往新区域',
       dedupKeywords: '["官方","公告","版本","更新"]'
     } }
@@ -140,4 +141,72 @@ describe('persistent events and archive', () => {
     await prisma.feedItem.update({ where: { id: primary.id }, data: { hidden: true } });
     expect((await fetch(`${base}/stories/${id}`)).status).toBe(404);
   });
+
+  it('keeps materially different official hotfix reports in one event without repeated bulletins', async () => {
+    const launch = await add({ n: 'hotfix-anchor', title: '《极昼》2.1 版本更新说明', hour: 40 });
+    await syncEvents();
+    const one = await add({ n: 'hotfix-first', title: '《极昼》2.1 版本热修公告', hour: 44,
+      body: '修复了在中继站接取护送任务时无法进入极昼港的问题。' });
+    const two = await add({ n: 'hotfix-second', title: '《极昼》2.1 版本热修公告', hour: 51,
+      body: '背景说明。'.repeat(65) + '修复了切换无障碍设置后无法打开仓库的问题，恢复领取补给奖励。' });
+    const copy = await add({ n: 'hotfix-copy', title: '《极昼》2.1 版本热修同步公告', hour: 55,
+      body: '修复了切换无障碍设置后无法打开仓库的问题，恢复领取补给奖励！' });
+    const vague = await add({ n: 'hotfix-vague', title: '《极昼》2.1 版本热修公告', hour: 59,
+      body: '请以官方公告为准，感谢您的支持。' });
+    const thirdParty = await add({ n: 'hotfix-not-official', title: '《极昼》2.1 热修小道消息', hour: 61,
+      body: '传闻今日还修复了边境地图坠落问题。', source: secondSourceId });
+    const sameOrigin = await add({ n: 'hotfix-retry', title: '《极昼》2.1 版本热修（标题调整）', hour: 63,
+      body: '修复了边境地图坠落问题。', url: `${two.url}?utm_source=retry` });
+    const generic = await add({ n: 'hotfix-generic', title: '《极昼》2.1 版本热修', hour: 65,
+      body: '这次我们修复了玩家们反馈的部分已知问题。' });
+    await syncEvents();
+    const id = (await prisma.feedItem.findUniqueOrThrow({ where: { id: launch.id } })).eventId!;
+    const reads = await Promise.all([one, two, copy, vague, thirdParty, sameOrigin, generic]
+      .map(row => prisma.feedItem.findUniqueOrThrow({ where: { id: row.id } })));
+    expect(reads.map(row => [row.eventId, row.eventProgress])).toEqual([
+      [id, true], [id, true], [id, false], [id, false], [id, false], [id, false], [id, false]
+    ]);
+    expect((await eventProjection(id))?.progress.map(item => item.id)).toEqual([two.id, one.id]);
+  });
+
+  it('links an explicit official version PV to launch but does not absorb character PV, creator campaigns or another version', async () => {
+    const pv = await add({ n: 'version-pv', title: '《星港》1.4 版本前瞻', category: 'pv', hour: 72 });
+    const launch = await add({ n: 'version-launch', title: '《星港》1.4 版本正式上线公告', hour: 98 });
+    const character = await add({ n: 'character-pv', title: '《星港》1.4 版本角色PV · 涟漪', category: 'pv', hour: 99 });
+    const creator = await add({ n: 'version-creator', title: '《星港》1.4 版本创作者征集活动', category: 'event', hour: 100 });
+    const otherVersion = await add({ n: 'other-version', title: '《星港》1.5 版本正式上线公告', hour: 101 });
+    const unofficial = await add({ n: 'unofficial-version-pv', title: '《星港》1.4 版本PV二次解析',
+      category: 'pv', source: secondSourceId, itemKind: 'creator_video', hour: 102 });
+    const vague = await add({ n: 'vague-pv', title: '终末地 · 特别PV', category: 'pv', hour: 103 });
+    const otherCampaign = await add({ n: 'other-campaign', title: '《回声》1.4 版本PV', category: 'pv', hour: 104 });
+    await syncEvents();
+    const id = (await prisma.feedItem.findUniqueOrThrow({ where: { id: pv.id } })).eventId!;
+    expect(await prisma.feedItem.findUniqueOrThrow({ where: { id: launch.id } }))
+      .toMatchObject({ eventId: id, eventProgress: true });
+    const unrelated = await Promise.all([character, creator, otherVersion, unofficial, vague, otherCampaign]
+      .map(row => prisma.feedItem.findUniqueOrThrow({ where: { id: row.id } })));
+    expect(unrelated.every(row => row.eventId && row.eventId !== id)).toBe(true);
+    expect((await eventProjection(id))?.progress.map(item => item.id)).toEqual([launch.id]);
+  });
+
+
+  it('compares concrete repeatable facts rather than date, wording or bulletin URLs', async () => {
+    const launch = await add({ n: 'land-anchor', title: '《风洞》4.1 版本更新说明', hour: 109 });
+    const notices = await Promise.all([
+      add({ n: 'land-refund', title: '《风洞》4.1 版本补偿公告', hour: 110, body: '给受影响玩家补偿 300 嵌晶玉。' }),
+      add({ n: 'land-refund-copy', title: '《风洞》4.1 版本补偿同步', hour: 111, body: '发放：嵌晶玉 × 300。' }),
+      add({ n: 'land-refund-addition', title: '《风洞》4.1 版本追加补偿', hour: 112, body: '对仍无法登录的玩家发放 500 嵌晶玉。' }),
+      add({ n: 'land-delay', title: '《风洞》4.1 版本延期公告', hour: 113, body: '将北门开放延期至11月20日14:00。' }),
+      add({ n: 'land-delay-copy', title: '《风洞》4.1 版本延期说明', hour: 114, body: '将北门开放推迟至 11月20日 14：00。' }),
+      add({ n: 'land-delay-again', title: '《风洞》4.1 版本延期调整', hour: 115, body: '将北门开放顺延至 11月21日 10:00。' }),
+      add({ n: 'land-correct', title: '《风洞》4.1 版本公告更正', hour: 116, body: '将仓库入口改为物资页。' }),
+      add({ n: 'land-correct-again', title: '《风洞》4.1 版本更正公告', hour: 117, body: '将故障补偿发放时间更正为11月22日 14:00。' })
+    ]);
+    await syncEvents();
+    const id = (await prisma.feedItem.findUniqueOrThrow({ where: { id: launch.id } })).eventId!;
+    const rows = await Promise.all(notices.map(row => prisma.feedItem.findUniqueOrThrow({ where: { id: row.id } })));
+    expect(rows.every(row => row.eventId === id)).toBe(true);
+    expect(rows.map(row => row.eventProgress)).toEqual([true, false, true, true, false, true, true, true]);
+  });
+
 });

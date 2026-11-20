@@ -3,11 +3,14 @@ import { prisma } from '../../db.js';
 import { getMaxFeedItems } from '../config.js';
 import { eventPublicWhere, projectEventMembers, syncEvents } from '../services/events.js';
 import { isLowValueNotice, normalizeImportance, toPublicFeedItem, type PublicStory } from '../storyAggregation.js';
+import { AnalysisCategoryEnum } from '../validation.js';
 
 const DAY = 86_400_000;
 const MAX_PUBLICATION_LAG = 2 * DAY;
 const MAX_CLOCK_SKEW = 10 * 60_000;
 const DAILY_LIMIT = 8;
+// Collector is scheduled every 30 minutes. Allow one missed cycle before flagging stale coverage.
+const LIVE_SOURCE_STALE_MS = 60 * 60_000;
 export const EDITION_TIMEZONE = 'Asia/Shanghai';
 const ISSUE_CALENDAR = new Intl.DateTimeFormat('sv-SE', {
   timeZone: EDITION_TIMEZONE, year: 'numeric', month: '2-digit', day: '2-digit'
@@ -37,6 +40,11 @@ export interface EditorialHealth {
   failedSources: number;
   degradedSources: number;
   uncheckedSources: number;
+  // Optional for reading editions sealed before freshness was added.
+  configuredSources?: number;
+  staleSources?: number;
+  lastCheckedAt?: string | null;
+  lastSuccessAt?: string | null;
   pendingAnalysis: number;
   failedAnalysis: number;
   unavailableAnalysis: number;
@@ -62,7 +70,8 @@ export type EditorialStory = Omit<PublicStory, 'publishedAt' | 'fetchedAt' | 'cr
 };
 
 const emptyHealth = (): EditorialHealth => ({
-  failedSources: 0, degradedSources: 0, uncheckedSources: 0, pendingAnalysis: 0, failedAnalysis: 0, unavailableAnalysis: 0
+  failedSources: 0, degradedSources: 0, uncheckedSources: 0, pendingAnalysis: 0, failedAnalysis: 0, unavailableAnalysis: 0,
+  configuredSources: 0, staleSources: 0, lastCheckedAt: null, lastSuccessAt: null
 });
 
 const include = {
@@ -79,7 +88,9 @@ type PickedEntry = {
   progress: boolean;
 };
 
-const NEWS_BEAT = /停服|无法登录|服务器(?:故障|异常|维护)|紧急(?:维护|修复)|重大(?:更新|调整)|大版本|版本(?:更新|上线|前瞻|公告|预告|维护)|更新(?:公告|说明)|(?:正式|公测)上线|运营终止|停止运营|实装|补偿方案|开服|定档/;
+const DIRECT_OPERATIONAL_NEWS = /停止运营|终止(?:游戏)?运营|运营终止|停服|关服|无法登录|登录(?:故障|异常)|(?:服务器|服务端)(?:紧急)?(?:故障|异常|维护)|紧急维护|(?:全服|开服)补偿/;
+const SPECULATION_OR_COMMENTARY = /[?？]|传闻|网传|据传|疑似|猜测|猜想|是否|会不会|可能|预测|解读|分析|讨论|随便聊|锐评|吐槽|整活|爆料|回顾/;
+const OFFICIAL_ANNOUNCEMENT_SOURCES = new Set(['official_site', 'rss', 'rsshub', 'bilibili_video']);
 const OCCASION = /生日|抽奖|有奖|投票|贺图|打卡|签到|征集|壁纸|周边|邀稿/;
 const substantiveCategories = new Set(['version', 'announcement', 'event', 'character', 'trailer', 'pv']);
 
@@ -99,6 +110,22 @@ function usesRulesFallback(item: CandidateItem) {
   return item.analysis?.provider === 'fallback';
 }
 
+function hasUsableAnalysis(item: CandidateItem): boolean {
+  const analysis = item.analysis;
+  return !!analysis && analysis.status === 'completed'
+    && !usesRulesFallback(item) && analysis.provider !== 'rules'
+    && ['low', 'medium', 'high', 'urgent'].includes(analysis.importance)
+    && AnalysisCategoryEnum.safeParse(analysis.category).success;
+}
+
+function directOperationalFallback(item: CandidateItem): boolean {
+  // Never upgrade a completed, usable judgement based on keywords. Headlines alone
+  // only qualify for direct, operational statements from an official publisher.
+  return !hasUsableAnalysis(item) && item.source.isOfficial && item.itemKind === 'official_post'
+    && OFFICIAL_ANNOUNCEMENT_SOURCES.has(item.source.type)
+    && DIRECT_OPERATIONAL_NEWS.test(item.title) && !SPECULATION_OR_COMMENTARY.test(item.title);
+}
+
 function editorialView(item: CandidateItem & { publishedAt: Date }, hasPrevious: boolean, start: Date, selectedAt: string | null) {
   if (!item.eventId) return null;
   const raw = toPublicFeedItem(item);
@@ -108,17 +135,18 @@ function editorialView(item: CandidateItem & { publishedAt: Date }, hasPrevious:
   try { sourceUrl = new URL(item.url); } catch { return null; }
   if (!['http:', 'https:'].includes(sourceUrl.protocol)) return null;
   const completed = item.analysis?.status === 'completed';
-  const headlineBeat = NEWS_BEAT.test(item.title);
+  const headlineBeat = directOperationalFallback(item);
   const importance = raw.analysis?.importance;
   const category = raw.analysis?.category || '';
   const unavailable = usesRulesFallback(item);
-  const strongAnalysis = completed && !unavailable && (importance === 'high' || (importance === 'medium' && substantiveCategories.has(category)));
+  const usableAnalysis = hasUsableAnalysis(item);
+  const strongAnalysis = usableAnalysis && (importance === 'high' || (importance === 'medium' && substantiveCategories.has(category)));
   // A known hard-news headline still belongs when the model is down; no synthetic summary/impact.
   if (!strongAnalysis && !headlineBeat) return null;
   const base = projectEventMembers(item.eventId, [item]);
   if (!base) return null;
   const publishDayLag = item.publishedAt < start;
-  const summary = completed && !unavailable && hasSourceBody(item) ? item.analysis?.summary?.trim().slice(0, 640) || null : null;
+  const summary = usableAnalysis && hasSourceBody(item) ? item.analysis?.summary?.trim().slice(0, 640) || null : null;
   const impact = summary ? item.analysis?.reason?.trim().slice(0, 240) || null : null;
   const summaryStatus = summary ? 'available' : unavailable ? 'unavailable' : completed ? 'insufficient'
     : item.analysis?.status === 'failed' ? 'failed' : 'pending';
@@ -153,32 +181,57 @@ function editorialView(item: CandidateItem & { publishedAt: Date }, hasPrevious:
     progress: item.eventProgress } satisfies PickedEntry;
 }
 
-async function getSourceCoverage(start: Date, end: Date, live: boolean) {
-  const [sources, logs] = await Promise.all([
-    prisma.source.findMany({
-      where: { enabled: true },
-      select: { id: true, createdAt: true, healthStatus: true, lastCheckedAt: true }
-    }),
-    prisma.$queryRaw<Array<{ sourceId: string; status: string }>>`
-      SELECT "sourceId", "status" FROM (
-        SELECT "sourceId", "status", ROW_NUMBER() OVER (PARTITION BY "sourceId" ORDER BY "checkedAt" DESC, "id" DESC) AS rn
-        FROM "SourceHealthLog" WHERE "checkedAt" >= ${start} AND "checkedAt" <= ${end}
-      ) WHERE rn = 1
-    `
-  ]);
-  const statusBySource = new Map(logs.map(log => [log.sourceId, log.status]));
-  const counters = emptyHealth();
-  let enabled = 0;
-  for (const source of sources) {
-    if (source.createdAt > end) continue;
-    enabled++;
-    const currentInRange = source.lastCheckedAt && (live || source.lastCheckedAt >= start) && source.lastCheckedAt <= end;
-    const status = statusBySource.get(source.id) ?? (currentInRange ? source.healthStatus : 'unknown');
-    if (status === 'failed') counters.failedSources++;
-    else if (status === 'degraded') counters.degradedSources++;
-    else if (status !== 'healthy') counters.uncheckedSources++;
+async function getSourceCoverage(start: Date, end: Date, live: boolean, game?: string) {
+  const sources = await prisma.source.findMany({
+    where: { enabled: true, createdAt: { lte: end }, ...(game ? { game: { in: [game, ''] } } : {}) },
+    select: { id: true, healthStatus: true, lastCheckedAt: true, lastSuccessAt: true }
+  });
+  const sourceIds = sources.map(source => source.id);
+  const logStart = live ? new Date(start.getTime() - DAY) : start;
+  const logs = sourceIds.length ? await prisma.sourceHealthLog.findMany({
+    where: { sourceId: { in: sourceIds }, checkedAt: { gte: logStart, lte: end } },
+    orderBy: [{ checkedAt: 'desc' }, { id: 'desc' }],
+    select: { sourceId: true, status: true, checkedAt: true }
+  }) : [];
+  const latestLog = new Map<string, typeof logs[number]>();
+  const lastSuccessfulLog = new Map<string, Date>();
+  for (const log of logs) {
+    if (!latestLog.has(log.sourceId)) latestLog.set(log.sourceId, log);
+    if (log.status === 'healthy' && !lastSuccessfulLog.has(log.sourceId)) lastSuccessfulLog.set(log.sourceId, log.checkedAt);
   }
-  return { health: counters, enabled };
+
+  const withinRange = (time: Date | null): time is Date => !!time && time <= end && (live || time >= start);
+  let lastChecked: Date | null = null;
+  let lastSuccess: Date | null = null;
+  let stale = 0;
+  const health = emptyHealth();
+  for (const source of sources) {
+    const log = latestLog.get(source.id);
+    const currentIsLatest = withinRange(source.lastCheckedAt) && (!log || source.lastCheckedAt >= log.checkedAt);
+    const checkedAt = currentIsLatest ? source.lastCheckedAt : log?.checkedAt ?? null;
+    const status = currentIsLatest ? source.healthStatus : log?.status;
+    // A healthy attempt is itself evidence of success, even when a legacy row lacks lastSuccessAt.
+    let successfulCheck = withinRange(source.lastSuccessAt) ? source.lastSuccessAt : null;
+    for (const timestamp of [lastSuccessfulLog.get(source.id), status === 'healthy' ? checkedAt : null]) {
+      if (timestamp && (!successfulCheck || timestamp > successfulCheck)) successfulCheck = timestamp;
+    }
+
+    if (checkedAt && (!lastChecked || checkedAt > lastChecked)) lastChecked = checkedAt;
+    if (successfulCheck && (!lastSuccess || successfulCheck > lastSuccess)) lastSuccess = successfulCheck;
+    // A fresh failed retry does not make cached data current. Failure/degradation and staleness
+    // are independent, but each source contributes at most once to the stale count.
+    const tooOld = (timestamp: Date | null) => timestamp && end.getTime() - timestamp.getTime() > LIVE_SOURCE_STALE_MS;
+    if (live && (tooOld(checkedAt) || tooOld(successfulCheck))) stale++;
+    if (status === 'failed') health.failedSources++;
+    else if (status === 'degraded') health.degradedSources++;
+    else if (status !== 'healthy') health.uncheckedSources++;
+  }
+  health.configuredSources = sources.length;
+  // Freshness is a live operational concern; archived coverage is based on the original issue window.
+  health.staleSources = stale;
+  health.lastCheckedAt = lastChecked?.toISOString() ?? null;
+  health.lastSuccessAt = lastSuccess?.toISOString() ?? null;
+  return { health, enabled: sources.length };
 }
 
 interface EditorialFilters { game?: string; category?: string; importance?: string }
@@ -207,7 +260,7 @@ async function buildSelection(date: string, now: Date, selectedAt: string | null
       take: getMaxFeedItems(),
       include
     }),
-    getSourceCoverage(start, cutoff, selectedAt === null)
+    getSourceCoverage(start, cutoff, selectedAt === null, filters.game)
   ]);
   const { health, enabled } = coverage;
   const candidates = rows.filter(knownPublication).filter(row => !isLowValueNotice(toPublicFeedItem(row)));
@@ -238,8 +291,8 @@ async function buildSelection(date: string, now: Date, selectedAt: string | null
     if (!item.eventProgress && (previousTime !== undefined || firstSeen === undefined || firstSeen < +start)) continue;
     // A report discovered late belongs to its discovery day. A previously unreported
     // item cleared by analysis only after midnight can enter that next unclosed day.
-    const analyzedAt = item.analysis?.status === 'completed' && !usesRulesFallback(item) ? item.analysis.analyzedAt : null;
-    const readyAt = analyzedAt && !NEWS_BEAT.test(item.title) && analyzedAt > item.createdAt ? analyzedAt : item.createdAt;
+    const analyzedAt = hasUsableAnalysis(item) ? item.analysis?.analyzedAt : null;
+    const readyAt = analyzedAt && analyzedAt > item.createdAt ? analyzedAt : item.createdAt;
     if (readyAt < start || readyAt > cutoff) continue;
     if (item.analysis?.status === 'failed') health.failedAnalysis++;
     else if (usesRulesFallback(item)) health.unavailableAnalysis++;

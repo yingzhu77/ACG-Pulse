@@ -282,7 +282,18 @@ export type EditionResponse = Omit<ReportResponse, 'stories'> & {
   status: EditionStatus;
   publishedAt: string | null;
   stories: EditionEntry[];
-  health: { failedSources: number; degradedSources: number; uncheckedSources?: number; pendingAnalysis: number; failedAnalysis: number; unavailableAnalysis?: number };
+  health: {
+    failedSources: number;
+    degradedSources: number;
+    uncheckedSources?: number;
+    configuredSources?: number;
+    staleSources?: number;
+    lastCheckedAt?: string | null;
+    lastSuccessAt?: string | null;
+    pendingAnalysis: number;
+    failedAnalysis: number;
+    unavailableAnalysis?: number;
+  };
   withdrawnCount: number;
 };
 export type EditionIndex = Array<Pick<EditionResponse, 'date' | 'publishedAt'> & {

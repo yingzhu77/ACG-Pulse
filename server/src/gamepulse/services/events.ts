@@ -40,15 +40,16 @@ function sameArticle(a: PublicFeedItem, b: PublicFeedItem): boolean {
 
 const LIFECYCLE_CATEGORY = new Set(['version', 'announcement', 'event', 'other']);
 const CAMPAIGN_STAGE = [
-  /延期|推迟|取消|调整.{0,5}时间|公告更正/,
+  /延期|推迟|取消|顺延|调整.{0,5}时间|更正|勘误/,
   /预下载|预载/,
-  /热修|紧急修复|补偿方案|恢复更新|故障修复/,
+  /热修|紧急修复|补偿|恢复更新|故障修复/,
   /更新说明|维护公告|正式上线|正式开启|更新公告|更新内容|patch notes|release notes/i,
   /前瞻|预告|预览|先导|直播|preview/i,
   /活动一览|活动说明|活动介绍|活动指南|玩法说明|版本介绍|版本指南|guide/i,
-  /结束|结束提醒|关闭/
+  /结束|结束提醒|关闭/,
+  /版本.{0,24}(?:PV|宣传片)|(?:PV|宣传片).{0,24}版本/i
 ];
-const UNRELATED_CAMPAIGN_CUE = /创作者|二创|征集|周边|抽奖|同人|同人创作|投稿激励|生日|角色演示|角色PV|联动|皮肤|商店/i;
+const UNRELATED_CAMPAIGN_CUE = /创作者|二创|征集|周边|抽奖|同人|同人创作|投稿激励|生日|角色演示|角色PV|角色宣传片|角色预告|干员PV|角色故事|角色介绍|联动|皮肤|商店/i;
 const GENERIC_MARKER = /^(?:版本(?:更新|说明|活动)?|官方(?:公告|消息)?|更新(?:公告|说明)?|全新版本|特别节目|前瞻(?:直播)?|活动(?:指南|预告)?|公告|维护(?:公告)?|更新|详情|新版本)$/;
 
 function explicitMarkers(item: PublicFeedItem): Set<string> {
@@ -67,19 +68,40 @@ function explicitMarkers(item: PublicFeedItem): Set<string> {
   return markers;
 }
 
+const VERSION_PV_TITLE = /版本.{0,24}(?:PV|宣传片)|(?:PV|宣传片).{0,24}版本/i;
+const VERSION_PREVIEW_TITLE = /版本.{0,16}(?:前瞻|预览|预告|先导)|(?:前瞻|预览|预告|先导).{0,16}版本/;
+const EXCLUDED_PV_CATEGORY = new Set(['creator_video', 'character', 'music', 'game_music', 'movie_trailer']);
+const CREATOR_PV_CUE = /解析|解说|混剪|reaction|饭制|粉丝作品|手书|同人|翻拍/i;
+const EXPLICIT_VERSION_HEADLINE = /版本[\s：:·-]*(?:正式(?:上线|开启|发布)|上线|前瞻|预告|指南|介绍|活动一览|更新说明|更新公告|维护公告)|(?:前瞻|更新说明|维护公告)\s*[：:]?\s*v?\d+\.\d/i;
+
+export function isOfficialVersionPV(item: PublicFeedItem): boolean {
+  if (!item.source.isOfficial || item.itemKind !== 'official_post'
+    || EXCLUDED_PV_CATEGORY.has(item.analysis?.category || '')
+    || UNRELATED_CAMPAIGN_CUE.test(item.title) || CREATOR_PV_CUE.test(item.title)
+    || !(VERSION_PV_TITLE.test(item.title)
+      || (item.analysis?.category === 'pv' && VERSION_PREVIEW_TITLE.test(item.title)))) return false;
+  return [...explicitMarkers(item)].some(marker => marker.startsWith('version:'));
+}
+
 function campaignStage(item: PublicFeedItem): number {
   if (UNRELATED_CAMPAIGN_CUE.test(item.title)) return -1;
+  // Official version PV is one distinct stage even if its title says "前瞻 PV".
+  if (isOfficialVersionPV(item)) return CAMPAIGN_STAGE.length - 1;
+  // Character/fan PV cannot gain a lifecycle stage just by carrying the version number.
+  if (VERSION_PV_TITLE.test(item.title) || item.analysis?.category === 'pv') return -1;
   return CAMPAIGN_STAGE.findIndex(pattern => pattern.test(item.title));
 }
 
 function isLifecycle(item: PublicFeedItem): boolean {
-  return item.itemKind !== 'creator_video'
-    && item.itemKind !== 'forum_thread'
-    && (!item.analysis?.category || LIFECYCLE_CATEGORY.has(item.analysis.category));
+  return isOfficialVersionPV(item) || (
+    item.itemKind !== 'creator_video' && item.itemKind !== 'forum_thread'
+    && (!item.analysis?.category || LIFECYCLE_CATEGORY.has(item.analysis.category))
+  );
 }
 
-function relatedCampaign(a: PublicFeedItem, b: PublicFeedItem): boolean {
-  if (!isLifecycle(a) || !isLifecycle(b) || campaignStage(a) === -1 || campaignStage(b) === -1) return false;
+export function matchEventCampaign(a: PublicFeedItem, b: PublicFeedItem): boolean {
+  if (a.game !== b.game || Math.abs(itemTime(a) - itemTime(b)) > MATCH_HORIZON
+    || !isLifecycle(a) || !isLifecycle(b) || campaignStage(a) < 0 || campaignStage(b) < 0) return false;
   const am = explicitMarkers(a);
   const bm = explicitMarkers(b);
   const av = [...am].filter(key => key.startsWith('version:'));
@@ -91,9 +113,16 @@ function relatedCampaign(a: PublicFeedItem, b: PublicFeedItem): boolean {
   if (an.length && bn.length && !an.some(key => bm.has(key))) return false;
   const sharedName = an.some(key => bm.has(key));
   const sharedVersion = av.some(key => bm.has(key));
-  const explicitVersionHeadline = /版本[\s：:·-]*(?:前瞻|预告|指南|介绍|活动一览|更新说明|更新公告|维护公告)|(?:前瞻|更新说明|维护公告)\s*[：:]?\s*v?\d+\.\d/i;
+  const aVersionPv = isOfficialVersionPV(a);
+  const bVersionPv = isOfficialVersionPV(b);
+  if (aVersionPv || bVersionPv) {
+    if (!a.source.isOfficial || !b.source.isOfficial || !sharedVersion) return false;
+    // Do not pick between two named campaigns merely because the game and version match.
+    if (an.length || bn.length) return sharedName;
+    return [a, b].every(item => isOfficialVersionPV(item) || EXPLICIT_VERSION_HEADLINE.test(item.title));
+  }
   return sharedName || (sharedVersion && !an.length && !bn.length
-    && explicitVersionHeadline.test(a.title) && explicitVersionHeadline.test(b.title));
+    && EXPLICIT_VERSION_HEADLINE.test(a.title) && EXPLICIT_VERSION_HEADLINE.test(b.title));
 }
 
 function eventMatch(a: PublicFeedItem, b: PublicFeedItem): 0 | 1 | 2 {
@@ -101,8 +130,11 @@ function eventMatch(a: PublicFeedItem, b: PublicFeedItem): 0 | 1 | 2 {
   const timeGap = Math.abs(itemTime(a) - itemTime(b));
   const aTitle = legacyComparableTitle(a.title);
   const bTitle = legacyComparableTitle(b.title);
+  const pvSide = [a, b].some(item => VERSION_PV_TITLE.test(item.title)
+    || (item.analysis?.category === 'pv' && VERSION_PREVIEW_TITLE.test(item.title)));
+  if (pvSide) return matchEventCampaign(a, b) ? 2 : 0;
   if (timeGap <= 48 * HOUR && aTitle === bTitle && aTitle.length >= 6 && !GENERIC_MARKER.test(aTitle)) return 2;
-  if (timeGap <= MATCH_HORIZON && relatedCampaign(a, b)) return 2;
+  if (matchEventCampaign(a, b)) return 2;
   // Require actual headline evidence in addition to the legacy AI-keyword rule.
   // A game name and generic news vocabulary alone have no identity value.
   if (timeGap <= 24 * HOUR && pairHasStrongLegacyOverlap(a, b)) {
@@ -117,16 +149,100 @@ function eventMatch(a: PublicFeedItem, b: PublicFeedItem): 0 | 1 | 2 {
   return 0;
 }
 
-function materialProgress(item: PublicFeedItem, existing: Candidate[]): boolean {
+type RepeatableStage = 'repair' | 'compensation' | 'schedule' | 'correction';
+
+function repeatableStage(item: PublicFeedItem): RepeatableStage | null {
+  if (/更正|勘误/.test(item.title)) return 'correction';
+  if (/延期|推迟|取消|顺延|调整.{0,5}时间/.test(item.title)) return 'schedule';
+  if (/补偿/.test(item.title)) return 'compensation';
+  if (/热修|紧急修复|恢复更新|故障修复/.test(item.title)) return 'repair';
+  return null;
+}
+
+const ACTION_FACT: Record<RepeatableStage, RegExp> = {
+  repair: /(?:修复|修正|修补|解决|恢复)(?:了|了在|在)?[：: ]*(.+)/,
+  compensation: /(?:补偿|补发|发放)(?:内容|奖励|道具|为|了)?[：: ]*(.+)/,
+  schedule: /(?:延期|推迟|取消|顺延|调整.{0,5}时间|改期|延长|提前)(?:至|到|为|了)?[：: ]*(.+)/,
+  correction: /(?:更正|勘误|校正|修改|改为)(?:为|了|成)?[：: ]*(.+)/
+};
+const GENERIC_FACT = /^(?:(?:若干|部分|一些|其他|多项|少量|多个)?(?:已知|近期|相关|游戏内|体验|系统|个别|异常|bug|问题|错误|故障|修复|优化|更新|说明|详情|公告|内容|请|为准|见下文|见公告|详见|待定|随后|另行|以官方|会尽快|处理|安排|如下|后续|通知|补偿|热修|敬请留意))+$/i;
+const CONCRETE_DEFECT = /无法|不能|未能|丢失|崩溃|闪退|黑屏|卡死|错误显示|错误触发|不生效|失败|不到账|扣除|重复|获取异常|重置|中断|穿模|卡顿|错位|异常|错误|不一致|进不去|收不到|领不到|打不开|进不了|拿不到/;
+const GENERIC_REPAIR_CONTEXT = /^(?:部分|一些|若干|用户|玩家|管理员|大家|们|反映的|反馈的|发现的|目前|近期|游戏内|此次|本次)+/;
+const REWARD_UNIT = '合成玉|嵌晶玉|石英|原石|星琼|晶石|水晶|体力|代币|补给券|抽卡券|积分';
+const AMOUNT = new RegExp(`(\\d+)\\s*(${REWARD_UNIT})|(${REWARD_UNIT})\\s*[×x*:]?\\s*(\\d+)`, 'i');
+const CONCRETE_VALUE = /\d+(?:[.:]\d+)?\s*(?:月|日|号|点|时|分|秒|周|天|小时|分钟|元|%|[份个张次枚]|合成玉|嵌晶玉|石英|原石|星琼|晶石|水晶|体力|代币|补给券|抽卡券|积分)|(?:20\d\d[-/.]\d{1,2}[-/.]\d{1,2}|\d{1,2}:\d{2})/;
+
+function normalizeFact(value: string): string {
+  return value.normalize('NFKC').toLowerCase()
+    .replace(/^(?:了|在|当|玩家|参与者|管理员|旅行者)+/, '')
+    .replace(/(?:问题|现象|错误|异常|的情况)+$/, '')
+    .replace(/[^\p{L}\p{N}]+/gu, '')
+    .replace(/(?:的)*(?:问题|现象|错误|异常|情况)+$/, '')
+    .replace(/不能|未能/g, '无法');
+}
+
+function concreteFacts(item: PublicFeedItem, kind: RepeatableStage): Set<string> {
+  const facts = new Set<string>();
+  // Source text only: a changed headline, model summary, boilerplate or raw
+  // URL cannot make a previous fact new. Strip layout before extracting clauses.
+  const text = item.content.normalize('NFKC').replace(/<(?:br|\/?p|\/?li)\b[^>]*>/gi, '\n').replace(/<[^>]+>/g, ' ');
+  if (normalizeFact(text) === normalizeFact(item.title)) return facts;
+  for (const clause of text.split(/[\n。！？!?；;，,]+/)) {
+    const match = clause.match(ACTION_FACT[kind]);
+    if (!match) continue;
+    // When the source gives an explicit correction target ("将…更正为"),
+    // distinguish the changed fact from another correction with the same value.
+    const beforeAction = clause.slice(0, match.index).trim();
+    const target = (kind === 'schedule' || kind === 'correction')
+      ? normalizeFact(beforeAction.match(/(?:将|把|《|「)([^《》「」：:]{2,30})[》」]?$/)?.[1] || '')
+      : '';
+    const normalized = normalizeFact(match[1]);
+    const fact = kind === 'repair' ? normalized.replace(GENERIC_REPAIR_CONTEXT, '') : normalized;
+    if ((target + fact).length < 4 || GENERIC_FACT.test(fact) || !fact) continue;
+    if (kind === 'repair' && !CONCRETE_DEFECT.test(match[1])) continue;
+    if (kind === 'compensation' && !CONCRETE_VALUE.test(match[1]) && !AMOUNT.test(match[1])) continue;
+    if (kind === 'schedule' && !CONCRETE_VALUE.test(match[1]) && !/取消/.test(clause)) continue;
+    if (kind === 'correction' && !CONCRETE_VALUE.test(match[1]) && !/改为|应为|正确|实际|更正为/.test(clause)) continue;
+
+    // 300 原石 and 原石 × 300 cite the same award, independent of formatting.
+    const amounts = kind === 'compensation'
+      ? [...match[1].matchAll(new RegExp(AMOUNT.source, 'gi'))]
+      : [];
+    if (amounts.length) {
+      for (const amount of amounts) facts.add(`${amount[2] || amount[3]}:${amount[1] || amount[4]}`);
+    } else {
+      facts.add(`${target}:${fact}`);
+    }
+  }
+  return facts;
+}
+
+export function toEventEvidenceItem(row: FeedItemWithRelations): PublicFeedItem {
+  // The public DTO may excerpt a source to 200 characters; use bounded original
+  // material for evaluation, never sending full article bodies to event readers.
+  const evidence = toPublicFeedItem(row);
+  return { ...evidence, content: row.content.slice(0, 5000) };
+}
+
+export function isMaterialEventProgress(
+  item: PublicFeedItem, existing: ReadonlyArray<{ item: PublicFeedItem; progress: boolean }>
+): boolean {
   if (!existing.length) return true;
   if (existing.some(row => sameArticle(row.item, item))) return false;
-  // A new statement from the publisher is evidence, whereas more coverage or a
-  // corrected title by itself is not. Only recognized, previously unseen stages qualify.
   const stage = campaignStage(item);
-  if (!item.source.isOfficial || !item.publishedAt || stage < 0) return false;
-  return existing.some(row => relatedCampaign(row.item, item))
-    && !existing.some(row => row.progress && (campaignStage(row.item) === stage
-      || (row.item.publishedAt && row.item.publishedAt >= item.publishedAt!)));
+  const published = item.publishedAt;
+  if (!item.source.isOfficial || !published || stage < 0) return false;
+  const related = existing.filter(row => matchEventCampaign(row.item, item));
+  if (!related.length) return false;
+  if (existing.some(row => row.progress && row.item.publishedAt && row.item.publishedAt >= published)) return false;
+  const repeat = repeatableStage(item);
+  if (repeat) {
+    const priorFacts = new Set(related
+      .filter(row => row.item.source.isOfficial)
+      .flatMap(row => [...concreteFacts(row.item, repeat)]));
+    return [...concreteFacts(item, repeat)].some(fact => !priorFacts.has(fact));
+  }
+  return !existing.some(row => row.progress && campaignStage(row.item) === stage);
 }
 
 async function addAliases(
@@ -184,7 +300,7 @@ async function synchronize(): Promise<void> {
         orderBy: [{ createdAt: 'asc' }, { id: 'asc' }]
       });
       const candidates: Candidate[] = existing.map(row => ({
-        item: toPublicFeedItem(row), eventId: row.eventId!, progress: row.eventProgress, split: row.eventSplit
+        item: toEventEvidenceItem(row), eventId: row.eventId!, progress: row.eventProgress, split: row.eventSplit
       }));
       const byId = new Map<string, Candidate[]>();
       for (const candidate of candidates) {
@@ -193,7 +309,7 @@ async function synchronize(): Promise<void> {
         byId.set(candidate.eventId, event);
       }
       for (const row of incoming) {
-        const item = toPublicFeedItem(row);
+        const item = toEventEvidenceItem(row);
         const matches = new Map<string, number>();
         if (!row.eventSplit) {
           for (const [id, members] of byId) {
@@ -210,7 +326,7 @@ async function synchronize(): Promise<void> {
         const matchedId = leaders.length === 1 ? leaders[0][0] : null;
         const eventId = matchedId || `evt_${randomUUID()}`;
         const group = byId.get(eventId) || [];
-        const eventProgress = materialProgress(item, group);
+        const eventProgress = isMaterialEventProgress(item, group);
         if (!matchedId) await tx.event.create({ data: { id: eventId, game: row.game, createdAt: row.createdAt } });
         const attached = await tx.feedItem.updateMany({
           where: { id: row.id, eventId: null },
@@ -343,7 +459,8 @@ export async function attachLegacyEventIds(stories: PublicStory[]): Promise<void
 export async function eventProjection(requestedId: string): Promise<EventDetail | null> {
   await syncEvents();
   let id: string | null = requestedId;
-  if (id.startsWith('story_')) {
+  const historical = id.startsWith('story_');
+  if (historical || !(await prisma.feedItem.findFirst({ where: { eventId: id }, select: { id: true } }))) {
     id = (await prisma.eventAlias.findUnique({ where: { id } }))?.eventId ?? null;
   }
   if (!id) return null;
