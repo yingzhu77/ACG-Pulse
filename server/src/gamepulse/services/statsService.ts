@@ -75,7 +75,7 @@ async function computePublicStats(now = new Date()): Promise<PublicStatsResult> 
   today.setHours(0, 0, 0, 0);
   const firstTrendHour = new Date(now);
   firstTrendHour.setHours(now.getHours() - 23, 0, 0, 0);
-  const publicWhere = publicVisibilityWhere();
+  const publicWhere = andWhere(publicVisibilityWhere(), { eventArchived: false });
 
   const [total, todayCount, highCount, byGame, byKind, sourceHealth, analysisGroups, recentItems] = await Promise.all([
     prisma.feedItem.count({ where: publicWhere }),
@@ -91,7 +91,7 @@ async function computePublicStats(now = new Date()): Promise<PublicStatsResult> 
       FROM Analysis a
       INNER JOIN FeedItem f ON f.id = a.feedItemId
       INNER JOIN Source s ON s.id = f.sourceId
-      WHERE a.status = 'completed'
+      WHERE a.status = 'completed' AND f.eventArchived = false
       GROUP BY a.category, a.importance, s.followed
     `),
     prisma.feedItem.findMany({

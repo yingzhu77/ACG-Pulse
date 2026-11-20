@@ -11,6 +11,12 @@ vi.mock('../../db.js', () => ({
   }
 }));
 
+vi.mock('../services/events.js', async importOriginal => ({
+  ...await importOriginal<typeof import('../services/events.js')>(),
+  syncEvents: vi.fn(async () => {}),
+  attachLegacyEventIds: vi.fn(async () => {})
+}));
+
 vi.mock('../search.js', () => ({
   isFTS5Ready: vi.fn(async () => false),
   searchFeedItems: vi.fn()
@@ -18,10 +24,12 @@ vi.mock('../search.js', () => ({
 
 import storiesRouter from '../routes/stories.js';
 
-function makeItem(index: number): FeedItemWithRelations {
+function makeItem(index: number): FeedItemWithRelations & { eventId: string; eventProgress: boolean } {
   const publishedAt = new Date(Date.UTC(2026, 5, 1, 12, 0, 0) - index * 60_000);
   return {
     id: `item-${index}`,
+    eventId: `event-${index}`,
+    eventProgress: true,
     sourceId: 'source-1',
     externalId: `external-${index}`,
     itemKind: 'official_post',

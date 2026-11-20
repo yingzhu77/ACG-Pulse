@@ -3,22 +3,30 @@ import { z } from 'zod';
 import { prisma } from '../../db.js';
 import { aggregateFeedItemsToStories } from '../storyAggregation.js';
 import { normalizeImportance } from '../storyAggregation.js';
-import { generateMarkdownReport, type ReportMeta } from '../reports/markdownExport.js';
+import { generateEditorialMarkdown, generateMarkdownReport, type ReportMeta } from '../reports/markdownExport.js';
+import {
+  editionRange, filterEditorialStories, listDailyEditions, moderateEditionEntry, publishDailyEdition, readDailyEdition,
+  readFeatured, shanghaiDate, shiftEditionDate, validEditionDate, EDITION_TIMEZONE
+} from '../reports/editorial.js';
 import { validateOrThrow } from '../validation.js';
 import type { PrismaWhereClause } from '../types.js';
 import {
-  toArray,
-  appendAnd,
   applyAnalysisFilters,
   applyLowValueNoticeFilter
 } from './helpers.js';
 
 const router = Router();
+export const adminReportsRouter = Router();
+
+// Retracted or corrected material must not stay in a shared cache.
+router.use((_req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });
+
+const dateSchema = z.string().refine(validEditionDate, 'date must be a real YYYY-MM-DD calendar date');
 
 const ReportQuerySchema = z.object({
   type: z.enum(['daily', 'weekly']).default('daily'),
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'date must be YYYY-MM-DD').optional(),
-  weekStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'weekStart must be YYYY-MM-DD').optional(),
+  date: dateSchema.optional(),
+  weekStart: dateSchema.optional(),
   game: z.string().optional(),
   category: z.string().optional(),
   importance: z.string().optional(),
@@ -162,43 +170,102 @@ async function fetchStoriesForReport(query: ReportQuery) {
   return { stories, dateRange: { start, end }, startStr, endStr };
 }
 
-/**
- * GET /reports/daily - 获取日报 JSON 数据
- */
-router.get('/daily', async (req, res) => {
-  try {
-    const query = validateOrThrow(ReportQuerySchema, { ...req.query, type: 'daily' }, 'daily report');
-    const { stories, dateRange } = await fetchStoriesForReport(query);
-
-    const meta: ReportMeta = {
-      type: 'daily',
-      dateRange,
+type Selection = Awaited<ReturnType<typeof readDailyEdition>>;
+function presentSelection(selection: Selection, query: ReportQuery) {
+  const stories = filterEditorialStories(selection.stories, query);
+  return {
+    ...selection,
+    stories,
+    meta: {
+      type: 'daily' as const,
+      dateRange: editionRange(selection.date),
+      timezone: EDITION_TIMEZONE,
       game: query.game,
       category: query.category,
       importance: query.importance
-    };
+    },
+    summary: summaryFor(stories)
+  };
+}
 
-    res.json({
-      meta,
-      stories,
-      summary: {
-        total: stories.length,
-        high: stories.filter(s => s.importance === 'high').length,
-        medium: stories.filter(s => s.importance === 'medium').length,
-        low: stories.filter(s => s.importance === 'low').length,
-        games: [...new Set(stories.map(s => s.game))],
-        categories: [...new Set(stories.map(s => s.category).filter(Boolean))]
-      }
-    });
+function summaryFor(stories: Array<{ game: string; category: string | null; importance: string }>) {
+  return {
+    total: stories.length,
+    high: stories.filter(s => s.importance === 'high').length,
+    medium: stories.filter(s => s.importance === 'medium').length,
+    low: stories.filter(s => s.importance === 'low').length,
+    games: [...new Set(stories.map(s => s.game))],
+    categories: [...new Set(stories.map(s => s.category).filter(Boolean))]
+  };
+}
+
+/** Live recommendations (not a published issue). */
+router.get('/featured', async (req, res) => {
+  try {
+    const query = validateOrThrow(ReportQuerySchema, { ...req.query, type: 'daily' }, 'featured query');
+    res.json(presentSelection(await readFeatured(new Date(), query), query));
   } catch (error) {
-    console.error('Daily report failed:', error);
-    if (error instanceof Error && error.message.startsWith('Validation failed')) {
-      res.status(400).json({ error: error.message });
-      return;
-    }
-    res.status(500).json({ error: 'Failed to generate daily report' });
+    handleIssueError(res, error);
   }
 });
+
+/** Read-only archive. A query never generates an issue. */
+router.get('/daily', async (req, res) => {
+  try {
+    const query = validateOrThrow(ReportQuerySchema, { ...req.query, type: 'daily' }, 'daily report');
+    const date = query.date || shiftEditionDate(shanghaiDate(), -1);
+    res.json(presentSelection(await readDailyEdition(date), query));
+  } catch (error) {
+    handleIssueError(res, error);
+  }
+});
+
+router.get('/editions', async (req, res) => {
+  try {
+    const { before } = validateOrThrow(z.object({ before: dateSchema.optional() }), req.query, 'edition list');
+    res.json(await listDailyEditions(before));
+  } catch (error) {
+    handleIssueError(res, error);
+  }
+});
+
+const correctionSchema = z.discriminatedUnion('action', [
+  z.object({ action: z.literal('withdraw') }),
+  z.object({ action: z.literal('correct'), title: z.string().trim().min(1).max(300), summary: z.string().trim().min(1).max(640).nullable() })
+]);
+
+// Mounted after requireAdmin on /api/admin/reports.
+adminReportsRouter.post('/editions/:date/publish', async (req, res) => {
+  try {
+    const date = validateOrThrow(dateSchema, req.params.date, 'edition date');
+    if (date >= shanghaiDate()) return res.status(400).json({ error: 'Only completed Shanghai days can be published' });
+    const status = await publishDailyEdition(date);
+    return res.status(status === 'failed' ? 503 : 200).json({ date, status });
+  } catch (error) {
+    handleIssueError(res, error);
+  }
+});
+adminReportsRouter.patch('/editions/:date/entries/:eventId', async (req, res) => {
+  try {
+    const date = validateOrThrow(dateSchema, req.params.date, 'edition date');
+    const eventId = validateOrThrow(z.string().min(1).max(120), req.params.eventId, 'event id');
+    const action = validateOrThrow(correctionSchema, req.body, 'edition correction');
+    if (!await moderateEditionEntry(date, eventId, action)) {
+      return res.status(404).json({ error: 'Published entry not found or already withdrawn' });
+    }
+    return res.status(204).end();
+  } catch (error) {
+    handleIssueError(res, error);
+  }
+});
+
+function handleIssueError(res: import('express').Response, error: unknown) {
+  if (error instanceof Error && error.message.startsWith('Validation failed')) {
+    return res.status(400).json({ error: error.message });
+  }
+  console.error('Editorial report failed:', error);
+  return res.status(500).json({ error: 'Failed to fetch or update editorial report' });
+}
 
 /**
  * GET /reports/weekly - 获取周报 JSON 数据
@@ -244,6 +311,16 @@ router.get('/weekly', async (req, res) => {
 router.get('/export', async (req, res) => {
   try {
     const query = validateOrThrow(ReportQuerySchema, req.query, 'report export');
+    if (query.type === 'daily') {
+      const date = query.date || shiftEditionDate(shanghaiDate(), -1);
+      const edition = presentSelection(await readDailyEdition(date), query);
+      if (edition.status !== 'published' && edition.status !== 'empty') {
+        return res.status(409).json({ error: 'The daily edition is not published', date, status: edition.status });
+      }
+      res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="acg-pulse-daily-${date}.md"`);
+      return res.send(generateEditorialMarkdown(edition));
+    }
     const { stories, dateRange, startStr } = await fetchStoriesForReport(query);
 
     const meta: ReportMeta = {
@@ -255,10 +332,7 @@ router.get('/export', async (req, res) => {
     };
 
     const markdown = generateMarkdownReport(stories, meta);
-    const typeLabel = query.type === 'daily' ? '日报' : '周报';
-    const dateLabel = query.type === 'daily'
-      ? (query.date || todayStrInTz())
-      : `week-${query.weekStart || startStr}`;
+    const dateLabel = `week-${query.weekStart || startStr}`;
     const filename = `acg-pulse-${query.type}-${dateLabel}.md`;
 
     res.setHeader('Content-Type', 'text/markdown; charset=utf-8');

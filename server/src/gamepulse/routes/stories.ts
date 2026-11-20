@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../../db.js';
-import { aggregateFeedItemsToStories, toPublicFeedItem } from '../storyAggregation.js';
+import { toPublicFeedItem } from '../storyAggregation.js';
+import { attachLegacyEventIds, eventProjection, listEventMembers, syncEvents } from '../services/events.js';
 import { normalizeImportance } from '../storyAggregation.js';
 import { computeStoryFacetsFromStories, emptyStoryFacets } from '../storyFacets.js';
 import type { PrismaWhereClause } from '../types.js';
@@ -21,9 +22,6 @@ import type { FeedItemWithRelations } from '../types.js';
 
 const router = Router();
 
-// Stories 聚合缓存：相同查询条件 60s 内直接返回缓存结果
-const storiesCache = new Map<string, { data: unknown; expires: number }>();
-const STORIES_CACHE_TTL = 60_000;
 const STORIES_BATCH_SIZE = 500;
 const FTS_RECALL_LIMIT = 10000;
 
@@ -42,32 +40,8 @@ const storyCandidateInclude = {
   analysis: true
 } as const;
 
-function getStoriesCacheKey(params: Record<string, unknown>): string {
-  return Object.entries(params)
-    .filter(([, v]) => v !== undefined && v !== '')
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([k, v]) => `${k}=${Array.isArray(v) ? v.join(',') : v}`)
-    .join('&');
-}
-
-function getCachedStories(key: string): unknown | null {
-  const entry = storiesCache.get(key);
-  if (entry && Date.now() < entry.expires) return entry.data;
-  if (entry) storiesCache.delete(key);
-  return null;
-}
-
-function setCachedStories(key: string, data: unknown): void {
-  storiesCache.set(key, { data, expires: Date.now() + STORIES_CACHE_TTL });
-  // 防止缓存无限增长
-  if (storiesCache.size > 100) {
-    const oldest = storiesCache.keys().next().value;
-    if (oldest) storiesCache.delete(oldest);
-  }
-}
-
-async function fetchStoryCandidateItems(where: PrismaWhereClause, maxItems: number): Promise<FeedItemWithRelations[]> {
-  const items: FeedItemWithRelations[] = [];
+async function fetchStoryCandidateItems(where: PrismaWhereClause, maxItems: number): Promise<Array<FeedItemWithRelations & { eventId: string | null; eventProgress: boolean }>> {
+  const items: Array<FeedItemWithRelations & { eventId: string | null; eventProgress: boolean }> = [];
   let cursor: { id: string } | undefined;
 
   while (items.length < maxItems) {
@@ -108,7 +82,7 @@ router.get('/items', async (req, res) => {
 
     const pageNum = page;
     const limitNum = limit;
-    const where: PrismaWhereClause = { hidden: false };
+    const where: PrismaWhereClause = { hidden: false, eventArchived: false };
 
     if (game) where.game = String(game);
     if (sourceId) where.sourceId = String(sourceId);
@@ -217,18 +191,8 @@ router.get('/stories', async (req, res) => {
     const sourceUidArr = toArray(sourceUid);
     const group = followGroup ? String(followGroup) : '';
 
-    // 检查缓存（仅第 1 页且无搜索词时缓存，搜索结果不缓存）
-    const cacheKey = getStoriesCacheKey({ page, limit, game, sourceId, itemKind, category, importance, visibility, official, followGroup, sourceUid, includeFacets });
-    if (pageNum === 1 && !q) {
-      const cached = getCachedStories(cacheKey);
-      if (cached) {
-        res.json(cached);
-        return;
-      }
-    }
-
     // Build WHERE
-    const where: PrismaWhereClause = { hidden: false };
+    const where: PrismaWhereClause = { hidden: false, eventArchived: false };
     if (gameArr.length === 1) where.game = gameArr[0];
     else if (gameArr.length > 1) where.game = { in: gameArr };
     if (sourceId) where.sourceId = String(sourceId);
@@ -289,10 +253,11 @@ router.get('/stories', async (req, res) => {
     const maxCandidates = q && ftsIds
       ? Math.min(ftsIds.length, FTS_RECALL_LIMIT, getMaxFeedItems())
       : getMaxFeedItems();
+    await syncEvents();
     const items = await fetchStoryCandidateItems(where, maxCandidates);
 
-    // Aggregate stories for display
-    const allStories = aggregateFeedItemsToStories(items);
+    // Query filters can change which reports are displayed, not persisted identity.
+    const allStories = listEventMembers(items);
 
     // Apply importance filter for display
     const importanceSet = importanceArr.length > 0
@@ -304,6 +269,7 @@ router.get('/stories', async (req, res) => {
     const facets = includeFacets ? computeStoryFacetsFromStories(stories) : emptyStoryFacets();
 
     const data = stories.slice((pageNum - 1) * limitNum, pageNum * limitNum);
+    await attachLegacyEventIds(data);
 
     const result = {
       data,
@@ -316,11 +282,6 @@ router.get('/stories', async (req, res) => {
       facets
     };
 
-    // 缓存第 1 页非搜索结果
-    if (pageNum === 1 && !q) {
-      setCachedStories(cacheKey, result);
-    }
-
     res.json(result);
   } catch (error) {
     console.error('Game Pulse public stories failed:', error);
@@ -329,6 +290,26 @@ router.get('/stories', async (req, res) => {
       return;
     }
     res.status(500).json({ error: 'Failed to fetch stories' });
+  }
+});
+
+router.get('/stories/:id', async (req, res) => {
+  const id = req.params.id;
+  if (!/^evt_[\da-f-]{36}$|^story_[\da-f]{16}$/i.test(id)) {
+    res.status(404).json({ error: '事件不存在或已下架' });
+    return;
+  }
+  try {
+    res.setHeader('Cache-Control', 'no-store');
+    const event = await eventProjection(id);
+    if (!event) {
+      res.status(404).json({ error: id.startsWith('story_') ? '旧收藏无法可靠匹配，请从动态列表重新查找' : '事件不存在或已下架' });
+      return;
+    }
+    res.json({ data: event });
+  } catch (error) {
+    console.error('Game Pulse event detail failed:', error);
+    res.status(500).json({ error: '暂时无法读取事件' });
   }
 });
 

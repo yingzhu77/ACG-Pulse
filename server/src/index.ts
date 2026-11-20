@@ -25,6 +25,7 @@ import { requestLogger, errorHandler, notFoundHandler } from './gamepulse/routes
 import { requireAdmin } from './gamepulse/auth.js';
 import { ensureFTS5, rebuildFTS5 } from './gamepulse/search.js';
 import { getPublicStats } from './gamepulse/services/statsService.js';
+import { retryRecentEditions, timeZone } from './gamepulse/jobs/editionScheduler.js';
 
 dotenv.config();
 
@@ -46,6 +47,7 @@ if (startupErrors.length > 0) {
   process.exit(1);
 }
 
+const isOffline = process.env.ACG_PULSE_OFFLINE === '1';
 const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5173';
 
 const app = express();
@@ -100,9 +102,9 @@ app.use(requestLogger);
 
 // Cache-Control for public API routes (admin/settings/notifications are never cached)
 app.use('/api/public', (_req, res, next) => {
-  // Reports are date-based and immutable once generated
-  if (_req.path.startsWith('/reports/')) {
-    res.setHeader('Cache-Control', 'public, max-age=3600, stale-while-revalidate=86400');
+  // Issue snapshots stay fixed, but corrections and withdrawals must be visible immediately.
+  if (_req.path.startsWith('/reports/') || _req.path === '/stories' || _req.path.startsWith('/stories/')) {
+    res.setHeader('Cache-Control', 'no-store');
   }
   // Hot-search changes frequently
   else if (_req.path === '/hot-search') {
@@ -126,6 +128,16 @@ app.use('/api/community', (_req, res, next) => {
 
 app.use('/api/public', gamePulsePublicRouter);
 app.use('/api/public', hotSearchRouter);
+if (isOffline) {
+  app.use('/api/admin', (req, res, next) => {
+    const networkAction = /^\/(check|sources\/preview|items\/[^/]+\/analyze|analysis-queue\/.*|reanalyze-all)\/?$/;
+    if (req.method === 'POST' && networkAction.test(req.path)) {
+      res.status(503).json({ error: 'Network actions are disabled in offline mode' });
+      return;
+    }
+    next();
+  });
+}
 app.use('/api/admin', createAdminRouter(io));
 app.use('/api/community', communityRouter);
 app.use('/api/settings', settingsRouter);
@@ -143,6 +155,10 @@ app.get('/api/health', (_req, res) => {
 
 app.post('/api/check-hotspots', requireAdmin, async (_req, res) => {
   try {
+    if (isOffline) {
+      res.status(503).json({ error: 'Collection is disabled in offline mode' });
+      return;
+    }
     const result = await runGamePulseCheck(io);
     res.json({ message: 'Game Pulse check completed', result });
   } catch (error) {
@@ -202,38 +218,43 @@ io.on('connection', (socket) => {
   });
 });
 
-startAnalysisQueueWorker(io);
+if (!isOffline) {
+  startAnalysisQueueWorker(io);
 
-cron.schedule('*/30 * * * *', async () => {
-  console.log('[GamePulse] Running scheduled check...');
-  try {
-    const result = await runGamePulseCheck(io);
-    console.log('[GamePulse] Scheduled check completed:', result);
-  } catch (error) {
-    console.error('[GamePulse] Scheduled check failed:', error);
-  }
-});
+  cron.schedule('*/30 * * * *', async () => {
+    console.log('[GamePulse] Running scheduled check...');
+    try {
+      const result = await runGamePulseCheck(io);
+      console.log('[GamePulse] Scheduled check completed:', result);
+      await retryRecentEditions();
+    } catch (error) {
+      console.error('[GamePulse] Scheduled check failed:', error);
+    }
+  });
 
-// Community data refresh: every 30 minutes, offset by 15 minutes
-cron.schedule('15,45 * * * *', async () => {
-  try {
-    await scheduledCommunityRefresh(io);
-  } catch (error) {
-    console.error('[Community] Scheduled refresh failed:', error);
-  }
-});
+  // Community data refresh: every 30 minutes, offset by 15 minutes
+  cron.schedule('15,45 * * * *', async () => {
+    try {
+      await scheduledCommunityRefresh(io);
+    } catch (error) {
+      console.error('[Community] Scheduled refresh failed:', error);
+    }
+  });
 
-cron.schedule('20 3 * * *', async () => {
-  try {
-    await cleanupAnalysisTaskHistory();
-  } catch (error) {
-    console.error('[AnalysisQueue] Scheduled history cleanup failed:', error);
-  }
-});
+  cron.schedule('20 3 * * *', async () => {
+    try {
+      await cleanupAnalysisTaskHistory();
+    } catch (error) {
+      console.error('[AnalysisQueue] Scheduled history cleanup failed:', error);
+    }
+  });
+
+  cron.schedule('10 0 * * *', () => retryRecentEditions(), { timezone: timeZone, noOverlap: true });
+}
 
 export { io };
 
-const PORT = process.env.PORT || 3001;
+const PORT = Number(process.env.PORT || 3001);
 
 async function startHttpServer(): Promise<void> {
   try {
@@ -251,16 +272,18 @@ async function startHttpServer(): Promise<void> {
     console.warn('[GamePulse] Stats cache warmup failed; requests will compute on demand:', error);
   }
 
-  httpServer.listen(PORT, () => {
+  const onListening = () => {
     console.log(`
 Game Pulse service is running.
 Server: http://localhost:${PORT}
 Public API: /api/public
 Admin API: /api/admin
 WebSocket: ready
-Scheduled check: every 30 minutes
+${isOffline ? 'Offline mode: background and network actions disabled' : 'Scheduled check: every 30 minutes'}
   `);
-  });
+  };
+  if (isOffline) httpServer.listen(PORT, '127.0.0.1', onListening);
+  else httpServer.listen(PORT, onListening);
 }
 
 void startHttpServer();

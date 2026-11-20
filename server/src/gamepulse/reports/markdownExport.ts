@@ -168,3 +168,60 @@ export function generateMarkdownReport(
 
   return lines.join('\n');
 }
+
+/** Snapshot export mirrors the JSON cards, ordered by the stored issue rank. */
+export function generateEditorialMarkdown(edition: {
+  date: string;
+  publishedAt: string | null;
+  status: string;
+  health: import('./editorial.js').EditorialHealth;
+  withdrawnCount: number;
+  stories: import('./editorial.js').EditorialStory[];
+}): string {
+  const { date, status, stories, publishedAt, withdrawnCount, health } = edition;
+  const lines = ['# ACG Pulse 日报', '', `> ${date} · Asia/Shanghai`, ''];
+  const shanghaiTime = (value: string) => new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
+  }).format(new Date(value));
+  const text = (value: string) => value
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/[\\`*_[\]#|]/g, '\\$&');
+
+  if (publishedAt) lines.push(`出刊：${shanghaiTime(publishedAt)}`, '');
+  if (health.failedSources || health.degradedSources || health.uncheckedSources || health.pendingAnalysis || health.failedAnalysis || health.unavailableAnalysis) {
+    lines.push(
+      `出刊时：${health.failedSources} 个信源失败、${health.degradedSources} 个降级、${health.uncheckedSources} 个未检查；${health.pendingAnalysis} 条待分析、${health.failedAnalysis} 条分析失败、${health.unavailableAnalysis} 条未启用模型。`,
+      ''
+    );
+  }
+  if (withdrawnCount) lines.push(`本期有 ${withdrawnCount} 条已撤回，不再展示。`, '');
+  if (status === 'empty') lines.push('本期没有值得入选的新内容。', '');
+  else if (!stories.length) lines.push('本期没有符合当前条件的可见条目。', '');
+
+  const statusLabel = {
+    available: '已有摘要', insufficient: '来源材料不足，未生成摘要',
+    failed: '分析失败，请查看原文', pending: '分析尚未完成', unavailable: '未启用模型分析，请查看原文'
+  } as const;
+  for (const story of stories) {
+    const editorial = story.editorial;
+    lines.push(
+      `## ${text(story.canonicalTitle)}`, '',
+      `- ${editorial.kind === 'update' ? '新进展' : '新事件'}${editorial.late ? ' · 迟到收录' : ''} · ${text(story.game || '未标明作品')} · ${IMPORTANCE_LABEL[story.importance]}重要性`,
+      `- 原文发布：${shanghaiTime(editorial.publishedAt)} · 首次发现：${shanghaiTime(editorial.discoveredAt)}`
+    );
+    if (editorial.selectedAt) lines.push(`- 本期入选：${shanghaiTime(editorial.selectedAt)}`);
+    if (editorial.correctedAt) lines.push(`- 已更正：${shanghaiTime(editorial.correctedAt)}`);
+    if (story.summary) lines.push(`- 摘要：${text(story.summary)}`);
+    else lines.push(`- ${statusLabel[editorial.summaryStatus]}`);
+    if (editorial.impact) lines.push(`- 为何重要：${text(editorial.impact)}`);
+    for (const source of story.sources) {
+      // The editorial selector accepts HTTP(S) only; angle delimiters preserve parentheses in URLs.
+      const href = new URL(source.url).href.replace(/[<>]/g, character => encodeURIComponent(character));
+      lines.push(`- 原文：[${text(source.sourceName)}](<${href}>)`);
+    }
+    lines.push('');
+  }
+  return lines.join('\n');
+}

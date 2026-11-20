@@ -25,7 +25,7 @@ router.get('/topics', asyncHandler(async (req, res) => {
   const { isStale, lastFetchTime, refreshDue } = await getStalenessInfo(sourceFilter);
 
   // Fire background refresh if data is stale (fire-and-forget, deduped by communityService)
-  if (isStale && refreshDue && !isCommunityRefreshCoolingDown()) {
+  if (process.env.ACG_PULSE_OFFLINE !== '1' && isStale && refreshDue && !isCommunityRefreshCoolingDown()) {
     isRefreshing = true;
     refreshCommunityData().catch(err => {
       console.error('[Community] Background refresh failed:', err);
@@ -72,7 +72,7 @@ router.get('/insights', asyncHandler(async (_req, res) => {
   let isRefreshing = false;
   const { isStale, lastFetchTime, refreshDue } = await getStalenessInfo();
 
-  if (isStale && refreshDue && !isCommunityRefreshCoolingDown()) {
+  if (process.env.ACG_PULSE_OFFLINE !== '1' && isStale && refreshDue && !isCommunityRefreshCoolingDown()) {
     isRefreshing = true;
     refreshCommunityData().catch(err => {
       console.error('[Community] Background refresh failed:', err);

@@ -66,7 +66,7 @@ export async function getOperationalMetrics(): Promise<OperationalMetrics> {
     pageSizeRows,
     freePageRows,
   ] = await Promise.all([
-    prisma.feedItem.count({ where: { hidden: false } }),
+    prisma.feedItem.count({ where: { hidden: false, eventArchived: false } }),
     prisma.feedItem.count({ where: { hidden: true } }),
     prisma.communityTopic.count(),
     prisma.communityTopic.count({ where: { lastSeenAt: { lt: communityCutoff } } }),

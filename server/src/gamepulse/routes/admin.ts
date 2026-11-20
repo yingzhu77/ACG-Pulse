@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { adminReportsRouter } from './reports.js';
 import type { Server } from 'socket.io';
 import { prisma } from '../../db.js';
 import { createAdminToken, isValidAdminPassword, requireAdmin } from '../auth.js';
@@ -14,6 +15,7 @@ import { runGamePulseCheck } from '../jobs/checker.js';
 import { rebuildFTS5, isFTS5Ready } from '../search.js';
 import type { PrismaWhereClause } from '../types.js';
 import { getOperationalMetrics } from '../observability/operationsService.js';
+import { splitEventItem } from '../services/events.js';
 import {
   CreateSourceSchema,
   SourcePreviewSchema,
@@ -68,6 +70,7 @@ export function createAdminRouter(io: Server): Router {
   });
 
   router.use(requireAdmin);
+  router.use('/reports', adminReportsRouter);
 
   router.get('/sources', async (_req, res) => {
     try {
@@ -234,6 +237,17 @@ export function createAdminRouter(io: Server): Router {
       prisma.feedItem.count({ where })
     ]);
     res.json({ data, pagination: { page: pageNum, limit: limitNum, total, totalPages: Math.ceil(total / limitNum) } });
+  });
+
+  router.post('/items/:id/split-event', async (req, res) => {
+    try {
+      const eventId = await splitEventItem(req.params.id);
+      if (!eventId) return res.status(404).json({ error: '找不到已关联事件的原始报道' });
+      res.json({ eventId });
+    } catch (error) {
+      console.error('Split event item failed:', error);
+      res.status(500).json({ error: '暂时无法拆分事件' });
+    }
   });
 
   router.patch('/items/:id/hide', async (req, res) => {

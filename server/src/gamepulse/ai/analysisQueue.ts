@@ -44,7 +44,7 @@ export async function reanalyzeItem(feedItemId: string, io?: Server): Promise<vo
 export async function reanalyzeAll(limit: number, io?: Server): Promise<number> {
   currentIo = io || currentIo;
   const items = await prisma.feedItem.findMany({
-    where: { hidden: false },
+    where: { hidden: false, eventArchived: false },
     select: { id: true },
     orderBy: { createdAt: 'desc' },
     take: limit
@@ -474,6 +474,7 @@ async function recoverStaleRunningTasks(): Promise<void> {
 async function reconcileMissingAnalysisTasks(): Promise<void> {
   const items = await prisma.feedItem.findMany({
     where: {
+      eventArchived: false,
       analysisTasks: { none: {} },
       OR: [{ analysis: null }, { analysis: { status: 'pending' } }]
     },

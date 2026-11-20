@@ -7,6 +7,7 @@ import { fetchBilibiliAvatar } from '../adapters/bilibiliVideo.js';
 import { getHealthLogRetentionDays, getMaxFeedItems } from '../config.js';
 import { invalidatePublicStatsCache } from '../services/statsService.js';
 import { buildFeedItemIdentityKey } from '../itemIdentity.js';
+import { archiveFeedOverflow } from '../services/events.js';
 
 let checkRunning = false;
 let checkStartedAt: Date | null = null;
@@ -46,31 +47,9 @@ async function cleanupExpiredHealthLogs(): Promise<number> {
 // Clean up old feed items when limit is exceeded
 export async function enforceFeedItemLimit(): Promise<number> {
   const maxItems = getMaxFeedItems();
-  const currentCount = await prisma.feedItem.count({ where: { hidden: false } });
-
-  if (currentCount <= maxItems) return 0;
-
-  const excessCount = currentCount - maxItems;
-  console.log(`[GamePulse] Cleaning up ${excessCount} old items (limit: ${maxItems})`);
-
-  // Find oldest items to delete (keep newest)
-  const oldItems = await prisma.feedItem.findMany({
-    where: { hidden: false },
-    orderBy: { createdAt: 'asc' },
-    take: excessCount,
-    select: { id: true }
-  });
-
-  if (oldItems.length === 0) return 0;
-
-  // Related analyses, tasks, and notifications use ON DELETE CASCADE.
-  // One write keeps cleanup atomic and avoids lock gaps between dependent deletes.
-  const deleteResult = await prisma.feedItem.deleteMany({
-    where: { id: { in: oldItems.map(i => i.id) } }
-  });
-
-  console.log(`[GamePulse] Deleted ${deleteResult.count} old items`);
-  return deleteResult.count;
+  const current = await prisma.feedItem.count({ where: { hidden: false, eventArchived: false } });
+  if (current <= maxItems) return 0;
+  return archiveFeedOverflow(maxItems);
 }
 
 export async function runGamePulseCheck(io?: Server): Promise<CheckResult> {
@@ -146,7 +125,8 @@ async function checkSource(
         }
       });
       if (existing) {
-        const contentChanged = existing.title !== title || existing.content !== content;
+        const storedContent = existing.eventArchived ? content.slice(0, 200) : content;
+        const contentChanged = !existing.eventArchived && (existing.title !== title || existing.content !== storedContent);
         const publishedAt = sourcePublishedAt ?? existing.publishedAt;
         const effectiveHash = contentHash([identityKey, title, content, publishedAt?.toISOString()]);
         const needsUpdate = existing.identityKey !== identityKey
@@ -167,7 +147,7 @@ async function checkSource(
                 externalId: raw.externalId || raw.url,
                 itemKind: raw.itemKind,
                 title,
-                content,
+                content: storedContent,
                 url: normalizedUrl,
                 authorName,
                 authorUrl,

@@ -69,6 +69,22 @@ model SourceHealthLog {
   @@index([checkedAt])
 }
 
+model Event {
+  id        String       @id
+  game      String
+  createdAt DateTime     @default(now())
+  items     FeedItem[]
+  aliases   EventAlias[]
+}
+
+model EventAlias {
+  id      String @id
+  eventId String?
+  event   Event? @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([eventId])
+}
+
 model FeedItem {
   id          String         @id @default(uuid())
   sourceId    String
@@ -93,6 +109,11 @@ model FeedItem {
   source      Source         @relation(fields: [sourceId], references: [id], onDelete: Cascade)
   analysis    Analysis?
   analysisTasks AnalysisTask[]
+  eventId       String?
+  eventProgress Boolean @default(false)
+  eventSplit    Boolean @default(false)
+  eventArchived Boolean @default(false)
+  event         Event? @relation(fields: [eventId], references: [id], onDelete: SetNull)
   notifications Notification[]
 
   @@unique([sourceId, contentHash])
@@ -100,6 +121,8 @@ model FeedItem {
   @@index([game, hidden, publishedAt])
   @@index([hidden, createdAt])
   @@index([itemKind])
+  @@index([eventId])
+  @@index([eventArchived, createdAt])
 }
 
 model Analysis {
@@ -177,4 +200,33 @@ model CommunityTopic {
   @@index([sentiment])
   @@index([heatScore])
   @@index([lastSeenAt])
+}
+
+model DailyEdition {
+  date          String   @id // YYYY-MM-DD in Asia/Shanghai
+  status        String   // failed, empty, published
+  publishedAt   DateTime?
+  health        Json
+  updatedAt     DateTime @updatedAt
+  entries       DailyEditionEntry[]
+
+  @@index([status, date])
+}
+
+model DailyEditionEntry {
+  editionDate   String
+  eventId       String
+  feedItemId    String   @unique // historical evidence identity; intentionally survives feed pruning
+  sourceId      String
+  rank          Int
+  discoveredAt  DateTime
+  story         Json
+  withdrawnAt   DateTime?
+  correction    Json?
+  correctedAt   DateTime?
+  edition       DailyEdition @relation(fields: [editionDate], references: [date], onDelete: Cascade)
+
+  @@id([editionDate, eventId])
+  @@index([eventId, editionDate])
+  @@index([sourceId])
 }

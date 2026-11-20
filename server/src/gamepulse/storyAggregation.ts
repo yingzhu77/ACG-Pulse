@@ -50,6 +50,7 @@ export interface PublicFeedItem {
 
 export interface PublicStory {
   id: string;
+  legacyIds?: string[];
   canonicalTitle: string;
   game: string;
   category: string | null;
@@ -190,6 +191,24 @@ export function aggregateFeedItemsToStories(rawItems: FeedItemWithRelations[]): 
   }
 
   return drafts.map(finalizeStory).sort((a, b) => getStorySortTime(b).getTime() - getStorySortTime(a).getTime());
+}
+
+// Reuse the original presentation rules without allowing them to assign a public ID.
+export function presentEventItems(id: string, items: PublicFeedItem[]): PublicStory {
+  return { ...finalizeStory({ signature: '', normalizedTitle: '', keywords: new Set(), items }), id };
+}
+
+export function pairHasStrongLegacyOverlap(a: PublicFeedItem, b: PublicFeedItem): boolean {
+  return areCategoriesCompatible(a, b)
+    && strongKeywordOverlap(buildSignature(a).keywords, buildSignature(b).keywords, a.game) >= 3;
+}
+
+export function legacyStoryIdForItem(item: PublicFeedItem): string {
+  return `story_${contentHash([item.game, buildSignature(item).key, item.title]).slice(0, 16)}`;
+}
+
+export function legacyComparableTitle(title: string): string {
+  return normalizeTitle(title);
 }
 
 export function normalizeImportance(value: string | null | undefined): PublicImportance {

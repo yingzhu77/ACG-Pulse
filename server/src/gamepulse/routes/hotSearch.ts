@@ -20,6 +20,11 @@ const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
  *   - limit: Max items to return (default 50)
  */
 router.get('/hot-search', async (req, res) => {
+  if (process.env.ACG_PULSE_OFFLINE === '1') {
+    res.status(503).json({ error: 'Hot searches are not fetched in offline mode' });
+    return;
+  }
+
   try {
     const { tag, limit } = req.query;
 

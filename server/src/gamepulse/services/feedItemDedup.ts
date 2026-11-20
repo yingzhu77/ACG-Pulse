@@ -8,6 +8,7 @@ export interface FeedItemIdentityCandidate {
   externalId: string | null;
   url: string;
   identityKey: string | null;
+  eventId?: string | null;
   hidden: boolean;
   coverUrl: string | null;
   publishedAt: Date | null;
@@ -68,7 +69,7 @@ export function planFeedItemIdentityBackfill(items: FeedItemIdentityCandidate[])
 }
 
 export async function backfillFeedItemIdentities(): Promise<{ deleted: number; backfilled: number }> {
-  const pendingCount = await prisma.feedItem.count({ where: { identityKey: null } });
+  const pendingCount = await prisma.feedItem.count({ where: { identityKey: null, eventId: null } });
   if (pendingCount === 0) return { deleted: 0, backfilled: 0 };
 
   const items = await prisma.feedItem.findMany({
@@ -78,6 +79,7 @@ export async function backfillFeedItemIdentities(): Promise<{ deleted: number; b
       externalId: true,
       url: true,
       identityKey: true,
+      eventId: true,
       hidden: true,
       coverUrl: true,
       publishedAt: true,
@@ -86,12 +88,16 @@ export async function backfillFeedItemIdentities(): Promise<{ deleted: number; b
     }
   });
   const plan = planFeedItemIdentityBackfill(items);
+  // Identity maintenance must not erase the only original behind a public
+  // event address. The event projection already folds repeated URLs.
+  const linkedIds = new Set(items.filter(item => item.eventId).map(item => item.id));
+  const duplicateIds = plan.duplicateIds.filter(id => !linkedIds.has(id));
 
   let deletedCount = 0;
-  if (plan.duplicateIds.length > 0) {
+  if (duplicateIds.length > 0) {
     const [, deleted] = await prisma.$transaction([
-      prisma.notification.deleteMany({ where: { feedItemId: { in: plan.duplicateIds } } }),
-      prisma.feedItem.deleteMany({ where: { id: { in: plan.duplicateIds } } })
+      prisma.notification.deleteMany({ where: { feedItemId: { in: duplicateIds } } }),
+      prisma.feedItem.deleteMany({ where: { id: { in: duplicateIds } } })
     ]);
     deletedCount = deleted.count;
   }
