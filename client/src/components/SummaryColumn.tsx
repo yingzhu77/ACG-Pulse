@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { eventPath, followInApp } from '../lib/readingNavigation';
 import { Flame, Gauge } from 'lucide-react';
 import type { PublicStats, Source, Story } from '../services/api';
 import { sourceNames } from '../constants';
@@ -32,6 +33,7 @@ export interface SummaryColumnProps {
   health: { healthy: number; degraded: number; failed: number; unknown: number };
   stories: Story[];
   hotStories: Story[];
+  navigate: (path: string) => void;
 }
 
 export function SummaryColumn(props: SummaryColumnProps) {
@@ -75,7 +77,7 @@ export function SummaryColumn(props: SummaryColumnProps) {
           </div>
           <div className="notice-list">
             {hotStories.map(story => (
-              <a key={story.id} href={story.sources[0]?.url} target="_blank" rel="noreferrer" className="notice-row">
+              <a key={story.id} href={eventPath(story.id)} onClick={event => followInApp(event, props.navigate)} className="notice-row">
                 <span>{formatClock(story.publishedAt || story.createdAt)}</span>
                 <b>{sourceNames[story.sources[0]?.sourceType] || story.sources[0]?.sourceName || '来源'}</b>
                 <em>{story.canonicalTitle}</em>
@@ -91,7 +93,7 @@ export function SummaryColumn(props: SummaryColumnProps) {
         </div>
         <div className="notice-list">
           {props.stories.slice(0, 10).map(story => (
-            <a key={story.id} href={story.sources[0]?.url} target="_blank" rel="noreferrer" className="notice-row">
+            <a key={story.id} href={eventPath(story.id)} onClick={event => followInApp(event, props.navigate)} className="notice-row">
               <span>{formatClock(story.publishedAt || story.createdAt)}</span>
               <b>{sourceNames[story.sources[0]?.sourceType] || story.sources[0]?.sourceName || '来源'}</b>
               <em>{story.canonicalTitle}</em>

@@ -1,6 +1,8 @@
-import { useState, useMemo, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { ChevronDown, ExternalLink, Search, Flame, X } from 'lucide-react';
 import type { Story, HotSearchItem } from '../services/api';
+import { ApiError, publicApi } from '../services/api';
+import { eventPath, followInApp } from '../lib/readingNavigation';
 import type { HotTag } from '../hooks/useHotSearch';
 import { StoryCard } from './StoryCard';
 import { cn } from '../lib/utils';
@@ -25,6 +27,8 @@ export interface FeedPanelProps {
   favorites: string[];
   showFavorites: boolean;
   onToggleFavorite: (id: string) => void;
+  onResolveAliases: (stories: { id: string; legacyIds?: string[] }[]) => void;
+  navigate: (path: string) => void;
   // Hot search props
   showHotPanel: boolean;
   hotItems: HotSearchItem[];
@@ -33,12 +37,7 @@ export interface FeedPanelProps {
 }
 
 export function FeedPanel(props: FeedPanelProps) {
-  // Normal feed state is declared before any conditional return to keep hook order stable.
-  const favoriteSet = useMemo(() => new Set(props.favorites), [props.favorites]);
-  const displayStories = useMemo(
-    () => props.showFavorites ? props.stories.filter(s => favoriteSet.has(s.id)) : props.stories,
-    [props.stories, props.showFavorites, favoriteSet]
-  );
+  const displayStories = props.stories;
 
   // Debounce search input — local state for instant display, delayed filter update
   const [searchQuery, setSearchQuery] = useState(props.filters.q);
@@ -79,13 +78,14 @@ export function FeedPanel(props: FeedPanelProps) {
     );
   }
 
+  if (props.showFavorites) return <FavoritesPanel {...props} />;
   // Normal feed mode
   return (
     <section className="feed-panel glass-panel">
       <div className="feed-toolbar">
         <div>
-          <h2>{props.showFavorites ? '我的收藏' : '情报流'}</h2>
-          <p>共 {displayStories.length} 条{props.showFavorites ? '收藏' : '聚合情报'}</p>
+          <h2>全部动态</h2>
+          <p>共 {props.pagination.total} 条聚合情报</p>
         </div>
         <div className="feed-controls">
           <label className="search-field">
@@ -132,9 +132,7 @@ export function FeedPanel(props: FeedPanelProps) {
           </div>
         ) : (
           <div className="empty-state">
-            {props.showFavorites
-              ? '暂无收藏。点击资讯卡片上的书签图标即可收藏。'
-              : '暂无情报。进入后台添加默认源并手动同步一次即可开始。'}
+            暂无符合条件的动态。可调整筛选或稍后刷新。
           </div>
         )
       )}
@@ -145,10 +143,11 @@ export function FeedPanel(props: FeedPanelProps) {
           index={index}
           isFavorite={props.favorites.includes(story.id)}
           onToggleFavorite={props.onToggleFavorite}
+          navigate={props.navigate}
         />
       ))}
 
-      {props.pagination.totalPages > 1 && !props.showFavorites && (
+      {props.pagination.totalPages > 1 && (
         <div className="pagination-bar">
           <button
             className="icon-button"
@@ -172,6 +171,59 @@ export function FeedPanel(props: FeedPanelProps) {
         </div>
       )}
 
+    </section>
+  );
+}
+
+type FavoriteResult = { id: string; story?: Story; missing?: boolean };
+
+function FavoritesPanel({ favorites, onToggleFavorite, onResolveAliases, navigate }: FeedPanelProps) {
+  const [results, setResults] = useState<FavoriteResult[]>([]);
+  const [retry, setRetry] = useState(0);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    const abort = new AbortController();
+    setLoading(true);
+    async function loadFavorites() {
+      const found: FavoriteResult[] = [];
+      for (let i = 0; i < favorites.length && !abort.signal.aborted; i += 6) {
+        const batch = await Promise.all(favorites.slice(i, i + 6).map(async id => {
+          try {
+            return { id, story: (await publicApi.getEvent(id, abort.signal)).data };
+          } catch (error) {
+            return { id, missing: error instanceof ApiError && error.status === 404 };
+          }
+        }));
+        found.push(...batch);
+      }
+      if (abort.signal.aborted) return;
+      setResults(found);
+      setLoading(false);
+      onResolveAliases(found.flatMap(entry =>
+        entry.story && entry.story.id !== entry.id ? [{ id: entry.story.id, legacyIds: [entry.id] }] : []));
+    }
+    void loadFavorites();
+    return () => abort.abort();
+  }, [favorites, retry, onResolveAliases]);
+  const active = results.filter(entry => favorites.includes(entry.id));
+  return (
+    <section className="feed-panel glass-panel">
+      <header className="feed-toolbar"><div><h2>我的收藏</h2><p>共 {favorites.length} 条 · 保存在当前浏览器</p></div></header>
+      {!favorites.length && <p className="empty-state">暂无收藏。点击事件上的书签即可收藏。</p>}
+      {favorites.length > 0 && loading && <p className="empty-state" role="status">正在查找收藏…</p>}
+      {!loading && active.map((entry, index) => entry.story ? (
+        <StoryCard key={entry.id} story={entry.story} index={index} isFavorite
+          onToggleFavorite={() => onToggleFavorite(entry.id)} navigate={navigate} />
+      ) : (
+        <div className="reading-notice reading-favorite-notice" key={entry.id}>
+          <div>{entry.missing
+            ? entry.id.startsWith('story_') ? '一条旧收藏未找到可靠对应，已保留在浏览器。' : '收藏的事件暂不可见，未移除收藏。'
+            : '暂时无法读取一条收藏，未移除收藏。'}</div>
+          {entry.missing ? <a className="reading-link" href={eventPath(entry.id)} onClick={e => followInApp(e, navigate)}>查看状态</a>
+            : <button type="button" className="reading-link" onClick={() => setRetry(n => n + 1)}>重试</button>}
+          <button type="button" className="reading-link" onClick={() => onToggleFavorite(entry.id)}>移除收藏</button>
+        </div>
+      ))}
     </section>
   );
 }

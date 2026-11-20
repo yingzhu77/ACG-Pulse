@@ -2,88 +2,32 @@ import { useState } from 'react';
 import { Download, FileText, Calendar } from 'lucide-react';
 import { publicApi } from '../services/api';
 
-const REPORT_TZ = 'Asia/Shanghai';
+const shanghaiDay = new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit' });
 
-function todayInTz(): string {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: REPORT_TZ,
-    year: 'numeric', month: '2-digit', day: '2-digit'
-  }).formatToParts(new Date());
-  const y = parts.find(p => p.type === 'year')!.value;
-  const m = parts.find(p => p.type === 'month')!.value;
-  const d = parts.find(p => p.type === 'day')!.value;
-  return `${y}-${m}-${d}`;
-}
-
-function daysAgoStr(days: number): string {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: REPORT_TZ,
-    year: 'numeric', month: '2-digit', day: '2-digit'
-  }).formatToParts(new Date(Date.now() - days * 86400000));
-  const y = parts.find(p => p.type === 'year')!.value;
-  const m = parts.find(p => p.type === 'month')!.value;
-  const d = parts.find(p => p.type === 'day')!.value;
-  return `${y}-${m}-${d}`;
-}
-
-export interface ReportExportButtonProps {
-  currentGame?: string;
-}
-
-export function ReportExportButton({ currentGame }: ReportExportButtonProps) {
+export function ReportExportButton({ onOpenDaily, now }: { onOpenDaily: () => void; now: Date }) {
   const [open, setOpen] = useState(false);
-
-  const today = todayInTz();
-  const weekStartStr = daysAgoStr(6);
-
-  function downloadReport(type: 'daily' | 'weekly', date?: string, weekStart?: string) {
-    const url = publicApi.exportReportUrl({
-      type,
-      date,
-      weekStart,
-      game: currentGame
-    });
-    window.open(url, '_blank');
-    setOpen(false);
-  }
-
+  const today = shanghaiDay.format(now);
+  const weekStart = shanghaiDay.format(new Date(now.getTime() - 6 * 86_400_000));
   return (
     <div className="export-btn-wrap">
-      <button
-        className="export-btn-trigger"
-        onClick={() => setOpen(!open)}
-      >
+      <button type="button" className="export-btn-trigger" onClick={() => setOpen(!open)}
+        aria-expanded={open} aria-label="导出报告">
         <Download className="h-3.5 w-3.5" />
         导出报告
       </button>
-
       {open && (
         <>
-          <div
-            className="export-btn-overlay"
-            onClick={() => setOpen(false)}
-          />
+          <div className="export-btn-overlay" onClick={() => setOpen(false)} />
           <div className="export-btn-dropdown">
-            <button
-              className="export-btn-item"
-              onClick={() => downloadReport('daily')}
-            >
+            <button type="button" className="export-btn-item" onClick={() => { setOpen(false); onOpenDaily(); }}>
               <FileText className="h-4 w-4 export-icon-blue" />
-              <div>
-                <div className="export-btn-label">今日日报 (Markdown)</div>
-                <div className="export-btn-date">{today}</div>
-              </div>
+              <div><div className="export-btn-label">日报存档</div><div className="export-btn-date">选择已出刊的日期后导出</div></div>
             </button>
-            <button
-              className="export-btn-item"
-              onClick={() => downloadReport('weekly')}
-            >
+            <a className="export-btn-item" href={publicApi.exportReportUrl({ type: 'weekly' })}
+              target="_blank" rel="noopener noreferrer" onClick={() => setOpen(false)}>
               <Calendar className="h-4 w-4 export-icon-green" />
-              <div>
-                <div className="export-btn-label">本周周报 (Markdown)</div>
-                <div className="export-btn-date">{weekStartStr} ~ {today}</div>
-              </div>
-            </button>
+              <div><div className="export-btn-label">本周周报 (Markdown)</div><div className="export-btn-date">{weekStart} ~ {today}</div></div>
+            </a>
           </div>
         </>
       )}

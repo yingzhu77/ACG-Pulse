@@ -8,7 +8,9 @@ import { usePublicData } from './hooks/usePublicData';
 import { useAdmin } from './hooks/useAdmin';
 import { useFavorites } from './hooks/useFavorites';
 import { useHotSearch } from './hooks/useHotSearch';
+import { readingRoute, viewPaths } from './lib/readingNavigation';
 import type { ViewMode } from './constants';
+import { EditionsPanel, EventPanel, FeaturedPanel } from './components/ReadingPanels';
 import { subscribeToGames, onNewItem, onNotification } from './services/socket';
 import { GameFilterPanel } from './components/GameFilterPanel';
 import { LogoBrand } from './components/LogoBrand';
@@ -23,7 +25,33 @@ const AdminDrawer = lazy(() => import('./components/AdminDrawer').then(m => ({ d
 function App() {
   const { toast, showToast } = useToast();
   const { theme, setTheme } = useTheme();
-  const [view, setView] = useState<ViewMode>('feed');
+  const [location, setLocation] = useState(() => ({
+    path: window.location.pathname,
+    back: window.history.state?.readingFrom as string | undefined
+  }));
+  const route = readingRoute(location.path);
+  const view = route.view;
+  const [readingRefresh, setReadingRefresh] = useState(0);
+  const [featuredGame, setFeaturedGame] = useState('');
+  const navigate = useCallback((path: string) => {
+    if (window.location.pathname === path) return;
+    const readingFrom = window.location.pathname;
+    window.history.pushState({ readingFrom }, '', path);
+    setLocation({ path, back: readingFrom });
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  }, []);
+  const goBackToList = useCallback((path: string) => {
+    if (window.history.state?.readingFrom === path && !path.startsWith('/events/')) window.history.back();
+    else navigate(path);
+  }, [navigate]);
+  useEffect(() => {
+    const handlePop = () => setLocation({
+      path: window.location.pathname,
+      back: window.history.state?.readingFrom
+    });
+    window.addEventListener('popstate', handlePop);
+    return () => window.removeEventListener('popstate', handlePop);
+  }, []);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
@@ -40,7 +68,7 @@ function App() {
 
   const publicData = usePublicData(showToast);
   const admin = useAdmin(showToast, publicData.loadPublicData);
-  const { favorites, toggleFavorite } = useFavorites();
+  const { favorites, toggleFavorite, resolveAliases } = useFavorites();
   const hotSearch = useHotSearch(showToast);
   const {
     stats,
@@ -48,10 +76,76 @@ function App() {
     setAutoRefresh,
     setCategoryGroup,
     setCategory,
-    categoryGroup,
-    category
+    categoryGroup
   } = publicData;
   const { setAdminOpen } = admin;
+
+  const refresh = useCallback(() => {
+    void loadPublicData();
+    setReadingRefresh(n => n + 1);
+  }, [loadPublicData]);
+  useEffect(() => {
+    if (!publicData.autoRefresh || !['today', 'event', 'daily'].includes(view)) return;
+    const timer = window.setInterval(() => setReadingRefresh(n => n + 1), 5 * 60_000);
+    return () => window.clearInterval(timer);
+  }, [publicData.autoRefresh, view]);
+
+  useEffect(() => {
+    resolveAliases(publicData.stories);
+  }, [publicData.stories, resolveAliases]);
+
+  const openFollowing = () => {
+    setShowFavorites(false);
+    if (hotSearch.showHotPanel) hotSearch.toggleHotPanel();
+    publicData.setSourceFilter([]);
+    setCategoryGroup('follow');
+    publicData.setFiltersAndScroll({ importance: '', q: '' });
+    navigate('/all');
+    setMobileDrawerOpen(false);
+  };
+  const changeView = (next: ViewMode) => {
+    if (next === 'feed') {
+      setShowFavorites(false);
+      if (hotSearch.showHotPanel) hotSearch.toggleHotPanel();
+      if (categoryGroup) setCategoryGroup('');
+      if (publicData.sourceFilter.length) publicData.setSourceFilter([]);
+      if (publicData.filters.importance || publicData.filters.q) publicData.setFiltersAndScroll({ importance: '', q: '' });
+    }
+    navigate(viewPaths[next]);
+  };
+  const switchToFilter = () => {
+    setShowFavorites(false);
+    if (hotSearch.showHotPanel) hotSearch.toggleHotPanel();
+    navigate('/all');
+    setMobileDrawerOpen(false);
+  };
+  const filterSource = (value: string[]) => {
+    switchToFilter();
+    if (value.length && ((categoryGroup === 'game' && value.every(item => /^\d+$/.test(item)))
+      || (categoryGroup === 'follow' && value.every(item => !/^\d+$/.test(item))))) setCategoryGroup('');
+    publicData.setSourceFilter(value);
+  };
+  const filterGroup = (value: '' | 'game' | 'follow') => {
+    switchToFilter();
+    if (value && publicData.sourceFilter.some(item => /^\d+$/.test(item) !== (value === 'follow'))) {
+      publicData.setSourceFilter([]);
+    }
+    setCategoryGroup(value);
+  };
+  const filterCategory = (value: string) => { switchToFilter(); setCategory(value); };
+  const changeFilters = (value: React.SetStateAction<{ importance: string; q: string }>) => {
+    switchToFilter();
+    publicData.setFiltersAndScroll(value);
+  };
+  const handleToggleHotPanel = () => {
+    setShowFavorites(false);
+    navigate('/all');
+    hotSearch.toggleHotPanel();
+    setMobileDrawerOpen(false);
+  };
+  const previousView = location.back ? readingRoute(location.back).view : 'feed';
+  const activeView = view === 'event' ? previousView === 'event' ? 'feed' : previousView : view;
+  const referencedList = location.back && previousView !== 'event' ? location.back : undefined;
 
   // Socket 订阅：仅 Feed 页激活时连接，避免非 Feed 用户白白建立 WebSocket
   useEffect(() => {
@@ -92,22 +186,12 @@ function App() {
     el.addEventListener('wheel', handleWheel, { passive: false });
     return () => el.removeEventListener('wheel', handleWheel);
   }, []);
-  const handleToggleFavorites = useCallback(() => {
-    setShowFavorites(prev => {
-      if (!prev) {
-        setCategoryGroup('');
-        setCategory('');
-      }
-      return !prev;
-    });
-  }, [setCategoryGroup, setCategory]);
-
-  // Close mobile drawer on filter selection
-  useEffect(() => {
-    if (mobileDrawerOpen) {
-      setMobileDrawerOpen(false);
-    }
-  }, [categoryGroup, category, mobileDrawerOpen]);
+  const handleToggleFavorites = () => {
+    if (hotSearch.showHotPanel) hotSearch.toggleHotPanel();
+    setShowFavorites(previous => !previous);
+    navigate('/all');
+    setMobileDrawerOpen(false);
+  };
 
   return (
     <main
@@ -127,13 +211,13 @@ function App() {
           facets={publicData.facets}
           allFacets={publicData.allFacets}
           sourceFilter={publicData.sourceFilter}
-          setSourceFilter={publicData.setSourceFilter}
+          setSourceFilter={filterSource}
           categoryGroup={publicData.categoryGroup}
-          setCategoryGroup={publicData.setCategoryGroup}
+          setCategoryGroup={filterGroup}
           category={publicData.category}
-          setCategory={publicData.setCategory}
+          setCategory={filterCategory}
           filters={publicData.filters}
-          setFilters={publicData.setFiltersAndScroll}
+          setFilters={changeFilters}
           collapsed={sidebarCollapsed}
           onToggleCollapse={toggleSidebar}
           sources={publicData.sources}
@@ -142,9 +226,9 @@ function App() {
           showFavorites={showFavorites}
           onToggleFavorites={handleToggleFavorites}
           showHotPanel={hotSearch.showHotPanel}
-          onToggleHotPanel={hotSearch.toggleHotPanel}
+          onToggleHotPanel={handleToggleHotPanel}
           selectedHotTag={hotSearch.selectedTag}
-          onSelectHotTag={hotSearch.selectTag}
+          onSelectHotTag={tag => { hotSearch.selectTag(tag); setMobileDrawerOpen(false); }}
         />
         </div>
 
@@ -158,28 +242,38 @@ function App() {
           theme={theme}
           setTheme={setTheme}
           loading={publicData.loading}
-          view={view}
-          onViewChange={setView}
+          view={activeView}
+          onViewChange={changeView}
           autoRefresh={publicData.autoRefresh}
           onToggleAutoRefresh={toggleAutoRefresh}
-          onRefresh={publicData.loadPublicData}
+          onRefresh={refresh}
           onOpenAdmin={openAdmin}
         />
 
         <section className="main-column">
-          {view === 'feed' ? (
+          {route.view === 'today' ? (
+            <FeaturedPanel games={publicData.games} game={featuredGame} onGameChange={setFeaturedGame}
+              refresh={readingRefresh} navigate={navigate} onOpenFollowing={openFollowing} onOpenAll={() => changeView('feed')} />
+          ) : route.view === 'daily' ? (
+            <EditionsPanel date={route.date} refresh={readingRefresh} navigate={navigate} />
+          ) : route.view === 'event' ? (
+            <EventPanel key={route.id} id={route.id} back={referencedList} refresh={readingRefresh} navigate={goBackToList}
+              favorites={favorites} onToggleFavorite={toggleFavorite} onResolveAliases={resolveAliases} />
+          ) : view === 'feed' ? (
             <FeedPanel
               stories={publicData.stories}
               loading={publicData.loading}
               filters={publicData.filters}
-              setFilters={publicData.setFilters}
-              onRefresh={publicData.loadPublicData}
+              setFilters={publicData.setFiltersAndScroll}
+              onRefresh={refresh}
               pagination={publicData.pagination}
               page={publicData.page}
               setPage={publicData.setPage}
               favorites={favorites}
               showFavorites={showFavorites}
               onToggleFavorite={toggleFavorite}
+              onResolveAliases={resolveAliases}
+              navigate={navigate}
               showHotPanel={hotSearch.showHotPanel}
               hotItems={hotSearch.hotItems}
               hotLoading={hotSearch.loading}
@@ -207,6 +301,7 @@ function App() {
           health={publicData.health}
           stories={publicData.stories}
           hotStories={publicData.summaryStories}
+          navigate={navigate}
         />
       </div>
 
@@ -244,13 +339,13 @@ function App() {
                 facets={publicData.facets}
                 allFacets={publicData.allFacets}
                 sourceFilter={publicData.sourceFilter}
-                setSourceFilter={publicData.setSourceFilter}
+                setSourceFilter={filterSource}
                 categoryGroup={publicData.categoryGroup}
-                setCategoryGroup={publicData.setCategoryGroup}
+                setCategoryGroup={filterGroup}
                 category={publicData.category}
-                setCategory={publicData.setCategory}
+                setCategory={filterCategory}
                 filters={publicData.filters}
-                setFilters={publicData.setFiltersAndScroll}
+                setFilters={changeFilters}
                 collapsed={false}
                 onToggleCollapse={closeMobileDrawer}
                 sources={publicData.sources}
@@ -260,9 +355,9 @@ function App() {
                 showFavorites={showFavorites}
                 onToggleFavorites={handleToggleFavorites}
                 showHotPanel={hotSearch.showHotPanel}
-                onToggleHotPanel={hotSearch.toggleHotPanel}
+                onToggleHotPanel={handleToggleHotPanel}
                 selectedHotTag={hotSearch.selectedTag}
-                onSelectHotTag={hotSearch.selectTag}
+                onSelectHotTag={tag => { hotSearch.selectTag(tag); setMobileDrawerOpen(false); }}
               />
             </motion.div>
           </>

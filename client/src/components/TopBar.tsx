@@ -48,9 +48,14 @@ export function TopBar(props: TopBarProps) {
   return (
     <header className="topbar">
       <nav className="nav-tabs" aria-label="ACG Pulse">
-        <button className={props.view === 'feed' ? 'active' : ''} onClick={() => props.onViewChange('feed')}>情报总览</button>
-        <button className={props.view === 'community' ? 'active' : ''} onClick={() => props.onViewChange('community')}>社区风向</button>
-        <button className={props.view === 'insights' ? 'active' : ''} onClick={() => props.onViewChange('insights')}>数据洞察</button>
+        {([
+          ['today', '今日精选'], ['feed', '全部动态'], ['daily', '日报'],
+          ['community', '社区风向'], ['insights', '数据洞察']
+        ] satisfies [ViewMode, string][]).map(([view, label]) => (
+          <button key={view} className={props.view === view ? 'active' : ''}
+            aria-current={props.view === view ? 'page' : undefined}
+            onClick={() => props.onViewChange(view)}>{label}</button>
+        ))}
       </nav>
 
       <label className="auto-refresh-chip" title={props.autoRefresh ? '自动刷新已开启（5分钟）' : '自动刷新已关闭'}>
@@ -66,14 +71,11 @@ export function TopBar(props: TopBarProps) {
 
       <div className="top-actions">
         <span className="time-chip">{formatDateTime(now.toISOString())}</span>
-        <span className="status-chip">
-          <span className="status-dot status-ok" />
-          运行中
-        </span>
+
         <button className="icon-button" onClick={props.onRefresh} aria-label="刷新">
           <RefreshCw className={cn('h-4 w-4', props.loading && 'spin-active')} />
         </button>
-        <ReportExportButton />
+        <ReportExportButton now={now} onOpenDaily={() => props.onViewChange('daily')} />
         <div className="theme-switch" role="group" aria-label="主题切换">
           <button
             className={props.theme === 'light' ? 'active' : ''}

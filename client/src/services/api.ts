@@ -12,7 +12,8 @@ import type {
   SourcePreviewDraft,
   SourcePreviewResponse,
   Source,
-  StoriesResponse
+  StoriesResponse,
+  Story
 } from '../../../shared/api';
 
 export type { OperationalMetrics, OperationalStatus } from '../../../shared/operations';
@@ -42,6 +43,47 @@ export type {
   StoriesResponse
 } from '../../../shared/api';
 
+export type EventDetail = Story & {
+  firstPublishedAt: string | null;
+  firstDiscoveredAt: string;
+  lastProgressAt: string | null;
+  progress: FeedItem[];
+};
+
+export type EditionStatus = 'live' | 'pending' | 'failed' | 'published' | 'empty';
+export type EditionEntry = Story & {
+  editorial: {
+    kind: 'new' | 'update';
+    publishedAt: string;
+    discoveredAt: string;
+    selectedAt: string | null;
+    summaryStatus: 'available' | 'insufficient' | 'failed' | 'pending' | 'unavailable';
+    impact: string | null;
+    late: boolean;
+    correctedAt?: string;
+  };
+};
+export type EditionResponse = Omit<ReportResponse, 'stories'> & {
+  date: string;
+  status: EditionStatus;
+  publishedAt: string | null;
+  stories: EditionEntry[];
+  health: { failedSources: number; degradedSources: number; uncheckedSources?: number; pendingAnalysis: number; failedAnalysis: number; unavailableAnalysis?: number };
+  withdrawnCount: number;
+};
+export type EditionIndex = Array<Pick<EditionResponse, 'date' | 'publishedAt'> & {
+  status: 'published' | 'empty' | 'failed';
+}>;
+
+export class ApiError extends Error {
+  readonly status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+    this.name = 'ApiError';
+  }
+}
+
 const API_BASE = '/api';
 const TOKEN_KEY = 'game_pulse_admin_token';
 
@@ -67,7 +109,7 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
       throw new UnauthorizedError();
     }
     const error = await response.json().catch(() => ({ error: 'Request failed' }));
-    throw new Error(error.error || 'Request failed');
+    throw new ApiError(error.error || 'Request failed', response.status);
   }
 
   if (response.status === 204) {
@@ -112,6 +154,15 @@ export const tokenStore = {
 export const publicApi = {
   getItems: (filters?: ItemFilters) => request<Paginated<FeedItem>>(withParams('/public/items', filters)),
   getStories: (filters?: ItemFilters) => request<StoriesResponse>(withParams('/public/stories', filters)),
+  getEvent: (id: string, signal?: AbortSignal) => request<{ data: EventDetail }>(
+    `/public/stories/${encodeURIComponent(id)}`, { signal, cache: 'no-store' }
+  ),
+  getFeatured: (game: string, signal?: AbortSignal) =>
+    request<EditionResponse>(withParams('/public/reports/featured', { game }), { signal, cache: 'no-store' }),
+  getEdition: (date: string, signal?: AbortSignal) =>
+    request<EditionResponse>(withParams('/public/reports/daily', { date }), { signal, cache: 'no-store' }),
+  getEditions: (signal?: AbortSignal) =>
+    request<{ data: EditionIndex }>('/public/reports/editions', { signal, cache: 'no-store' }),
   getStats: () => request<PublicStats>('/public/stats'),
   getSources: () => request<Source[]>('/public/sources'),
   getHotSearch: (filters?: { tag?: string; limit?: number }) => request<{ data: HotSearchItem[]; total: number; lastUpdated: string }>(withParams('/public/hot-search', filters)),

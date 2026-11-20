@@ -110,6 +110,17 @@ docker compose up -d --build
 
 配置 Caddy 或其他 HTTPS 反向代理后，访问 `CLIENT_URL` 对应的地址。
 
+### 先用隔离样本体验
+
+在 macOS/Linux 或 Windows 的 Git Bash 中，用 Node.js 20.19+（或 22.12+）：
+
+```bash
+(cd server && npm ci) && (cd client && npm ci)
+bash scripts/editorial-preview.sh
+```
+
+访问 [http://127.0.0.1:3012](http://127.0.0.1:3012)。从「今日精选」打开带「新进展」的版本公告，查看首报、进展与原文；返回后打开「日报」，读上一期并下载 Markdown。样本是虚构内容，原文也由本机提供。脚本每次用新临时 SQLite，不读实际密钥，不采集、不调用模型、不改变生产配置。结束按 Ctrl+C。迁移和两周观察方法见 [路线图](docs/ROADMAP.md#每日阅读试用)。
+
 ### B站采集路径
 
 - **主路径**：Compose 内置 `rsshub` 服务（自定义镜像，含 Chromium），`RSSHUB_BASE_URLS` 默认自建实例优先、公共实例最后回退。
@@ -162,7 +173,7 @@ npm run dev
 | `MAX_FEED_ITEMS` | 否 | 情报保留上限，默认 2000 |
 | `ANALYSIS_TASK_COMPLETED_RETENTION_DAYS` | 否 | 成功分析任务历史保留天数，默认 14 |
 | `ANALYSIS_TASK_FAILED_RETENTION_DAYS` | 否 | 终态失败分析任务历史保留天数，默认 30 |
-| `REPORT_TIMEZONE` | 否 | 日报/周报日期边界时区，默认 `Asia/Shanghai` |
+| `REPORT_TIMEZONE` | 否 | 旧版周报日期边界，默认 `Asia/Shanghai`；新日报固定上海时间 |
 
 完整配置参见 [.env.production.example](.env.production.example)。不要提交真实密码、API Key 或 Cookie。
 

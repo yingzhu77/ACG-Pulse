@@ -51,6 +51,12 @@
 - 所有分页页码使用同一个候选窗口，避免 total 和页边界漂移。
 - `includeFacets=false` 仍返回空 facets 结构，以保持前端兼容。
 
+### `GET /api/public/stories/:id`
+
+返回 `{ data: EventDetail }`。事件 ID 持久化，查询筛选不改变事件 ID；返回首报时间（可为空）、首次发现时间、最近实质进展、相关来源和原文。可靠的旧 `story_…` ID 解析为规范 `evt_…` ID；无法安全映射、已隐藏或无公开来源时返回 404。列表返回可用的 `legacyIds` 供本机收藏迁移。
+
+管理端可对有误的关联调用 `POST /api/admin/items/:id/split-event`，重复请求不再生成新事件。已出刊的历史内容不自动改写，必要时用下述更正或撤回接口修正。
+
 ### `GET /api/public/items`
 
 用途：公开 FeedItem 列表，主要用于兼容和管理侧查询。
@@ -71,7 +77,7 @@
 约束：
 
 - 统计语义是 FeedItem 条数，不是 Story 数。
-- `REPORT_TIMEZONE` 决定日报/周报日期边界，不依赖容器本地时区。
+- `REPORT_TIMEZONE` 仍用于部分旧统计和周报；新日报固定使用 `Asia/Shanghai`。
 
 ### `GET /api/public/sources`
 
@@ -85,26 +91,22 @@
 
 响应：`{ data: HotSearchItem[], total: number, lastUpdated: string }`。
 
-### `GET /api/public/reports/daily`
+### `GET /api/public/reports/featured`
 
-用途：日报 JSON。
+上海时间今天的精选（最多 8 条），随入库及已有分析更新，未出刊；响应含 `date`、`status`、`health`、`stories` 及汇总。每条 `editorial` 记录新事件或新进展、原文时间、首次发现、入选时间（实时精选为 `null`）、摘要状态及迟到标记。重要性不是社区热度；有明确事实标题但材料不足时退回原文。
 
-响应 DTO：`ReportResponse`。
+### `GET /api/public/reports/daily?date=YYYY-MM-DD`
 
-### `GET /api/public/reports/weekly`
+默认读取上海时间昨天。状态：`pending` 没有刊期、`failed` 暂时未能出刊、`empty` 已确认无入选内容、`published` 已出刊。读取不触发出刊。支持 `game`、`category`、逗号分隔的 `importance`。档案目录为 `GET /api/public/reports/editions?before=YYYY-MM-DD`，每页最多 30 期。
 
-用途：周报 JSON。
+### `GET /api/public/reports/export?type=daily&date=YYYY-MM-DD`
 
-响应 DTO：`ReportResponse`。
+下载 Markdown，和日报 JSON 使用相同日期、筛选和可见性。JSON 直接读取日报接口。已有 `/reports/weekly` 和 `type=weekly` 维持旧版实时汇总，不纳入本轮快照。
 
-### `GET /api/public/reports/export`
+### 日报维护（管理员）
 
-用途：Markdown 报告下载。
-
-约束：
-
-- 复用日报/周报的数据查询语义。
-- 暂不引入 PDF 生成链路。
+- `POST /api/admin/reports/editions/:date/publish`：补刊，只接受已经结束的上海日期；已封存的刊期原样返回。
+- `PATCH /api/admin/reports/editions/:date/entries/:eventId`：`{"action":"withdraw"}` 撤回，或 `{"action":"correct","title":"…","summary":null}` 附带更正。保存原始出刊记录，公开页面与导出采用同一更正。隐藏条目、静音/隐藏分析或删除来源会撤回相关快照；普通容量清理不撤回。
 
 ## 社区接口
 

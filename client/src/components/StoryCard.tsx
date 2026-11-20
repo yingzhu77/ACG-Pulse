@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Bookmark, Clock3, ExternalLink, Zap } from 'lucide-react';
 import type { Story } from '../services/api';
 import { cn } from '../lib/utils';
+import { eventPath, followInApp, originalUrl } from '../lib/readingNavigation';
 import { sourceNames } from '../constants';
 import { categoriesLabel, importanceLabel, formatDateTime } from '../utils/format';
 import { SourceIcon } from './SourceIcon';
@@ -13,9 +14,10 @@ interface StoryCardProps {
   index: number;
   isFavorite?: boolean;
   onToggleFavorite?: (id: string) => void;
+  navigate: (path: string) => void;
 }
 
-export function StoryCard({ story, index, isFavorite, onToggleFavorite }: StoryCardProps) {
+export function StoryCard({ story, index, isFavorite, onToggleFavorite, navigate }: StoryCardProps) {
   const [imageFailed, setImageFailed] = useState(false);
   const primary = story.items[0];
   const coverUrl = story.coverUrl || primary?.coverUrl;
@@ -52,7 +54,7 @@ export function StoryCard({ story, index, isFavorite, onToggleFavorite }: StoryC
           <Tag tone={story.importance}>{importanceLabel(story.importance)}</Tag>
         </div>
 
-        <a href={source?.url || primary?.url} target="_blank" rel="noreferrer" className="story-title">
+        <a href={eventPath(story.id)} className="story-title" onClick={event => followInApp(event, navigate)}>
           {story.canonicalTitle}
         </a>
         <p className="story-summary">{story.summary || primary?.content || '暂无摘要'}</p>
@@ -71,11 +73,11 @@ export function StoryCard({ story, index, isFavorite, onToggleFavorite }: StoryC
       </div>
 
       <div className="story-actions">
-        {story.sources.slice(0, 3).map((itemSource) => (
+        {story.sources.filter(item => originalUrl(item.url)).slice(0, 3).map((itemSource) => (
           <a
             key={`${itemSource.sourceId}:${itemSource.url}`}
             className="source-jump-button"
-            href={itemSource.url}
+            href={originalUrl(itemSource.url)}
             target="_blank"
             rel="noreferrer"
             aria-label={`打开${itemSource.sourceName}`}
@@ -84,8 +86,8 @@ export function StoryCard({ story, index, isFavorite, onToggleFavorite }: StoryC
             <SourceIcon type={itemSource.sourceType} />
           </a>
         ))}
-        {story.sources.length === 0 && (
-          <a className="source-jump-button" href={source?.url || primary?.url} target="_blank" rel="noreferrer" aria-label="打开来源">
+        {story.sources.length === 0 && originalUrl(primary?.url) && (
+          <a className="source-jump-button" href={originalUrl(primary?.url)} target="_blank" rel="noreferrer" aria-label="打开来源">
             <ExternalLink className="h-4 w-4" />
           </a>
         )}
