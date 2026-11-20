@@ -96,50 +96,9 @@ export async function ensureAnalysis(
     return saved ? { status: 'failed', error: message } : { status: 'superseded' };
   }
 
-  // 后处理：强制修正分类边界
-  let category = result.analysis.category;
-
-  // 官方源内容只能归入游戏情报分类
-  if (item.source.isOfficial) {
-    const gameIntelligenceCategories = ['announcement', 'event', 'version', 'character', 'pv', 'game_music', 'community', 'other'];
-    if (!gameIntelligenceCategories.includes(category)) {
-      // 官方源的音乐内容归为 game_music
-      if (category === 'music') {
-        category = 'game_music';
-      }
-      // 官方源的预告/PV内容归为 pv
-      else if (category === 'trailer' || category === 'movie_trailer') {
-        category = 'pv';
-      }
-      // 其他情况归为 announcement
-      else {
-        category = 'announcement';
-      }
-    }
-  }
-
-  // 非官方源内容只能归入关注投稿分类
-  if (!item.source.isOfficial) {
-    const followCategories = ['music', 'trailer', 'movie_trailer', 'creator_video', 'other'];
-    if (!followCategories.includes(category)) {
-      // 非官方源的游戏音乐归为 music
-      if (category === 'game_music') {
-        category = 'music';
-      }
-      // 非官方源的PV/版本内容归为 trailer
-      else if (category === 'pv' || category === 'version' || category === 'character') {
-        category = 'trailer';
-      }
-      // 其他情况归为 other
-      else {
-        category = 'other';
-      }
-    }
-  }
-
   const saved = await writeAnalysisForInput(item, {
     status: 'completed',
-    category,
+    category: result.analysis.category,
     importance: result.analysis.importance,
     visibility: result.analysis.visibility,
     confidence: result.analysis.confidence,

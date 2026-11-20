@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import fs from 'node:fs';
 import path from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
 
@@ -260,8 +261,12 @@ describe('real SQLite collection and analysis acceptance', () => {
       __ACG_PULSE_ENV_GUARD__?: { blockedExists: number; blockedReads: number; paths: string[] };
     }).__ACG_PULSE_ENV_GUARD__;
     expect(guard).toBeDefined();
-    // Prisma probes server/.env while importing; the guard must intercept that probe.
-    expect(guard!.blockedExists).toBeGreaterThan(0);
+    // Some Prisma builds skip the probe when DATABASE_URL was explicitly set.
+    // Test the guard itself without relying on an implementation detail of Prisma.
+    const probe = path.resolve('.env.acg-pulse-guard-canary');
+    const previousBlockedExists = guard!.blockedExists;
+    expect(fs.existsSync(probe)).toBe(false);
+    expect(guard!.blockedExists).toBe(previousBlockedExists + 1);
     expect(guard!.blockedReads).toBe(0);
     expect(guard!.paths.every(file => path.basename(file).startsWith('.env'))).toBe(true);
   });
@@ -284,6 +289,43 @@ describe('real SQLite collection and analysis acceptance', () => {
     } finally {
       await prisma.setting.deleteMany({ where: { key: healthKey } });
     }
+  });
+
+  test('establishes a first-harvest baseline only after non-empty success and preserves it on recrawl', async () => {
+    const source = await createSource();
+    await runGamePulseCheck();
+    expect((await prisma.source.findUniqueOrThrow({ where: { id: source.id } })).firstIngestAt).toBeNull();
+
+    const old = rawItem({
+      externalId: 'baseline',
+      url: 'https://example.test/baseline',
+      title: '历史回填',
+      content: '首次抓取出现的历史内容',
+      publishedAt: publishedAt()
+    });
+    mocks.setAdapterItems([old]);
+    expect(await runGamePulseCheck()).toMatchObject({ newItems: 1, failedSources: 0 });
+    const first = await prisma.feedItem.findFirstOrThrow({ where: { sourceId: source.id } });
+    expect(first.isSourceBackfill).toBe(true);
+    expect(first.publishedAt?.toISOString()).toBe(old.publishedAt?.toISOString());
+    expect(await prisma.notification.count({ where: { feedItemId: first.id } })).toBe(0);
+    expect((await prisma.source.findUniqueOrThrow({ where: { id: source.id } })).firstIngestAt).toBeInstanceOf(Date);
+
+    const fresh = rawItem({
+      externalId: 'fresh',
+      url: 'https://example.test/fresh',
+      title: '新发现的消息',
+      content: '源没有给出可用时间的新增报道',
+      publishedAt: new Date(NaN)
+    });
+    mocks.setAdapterItems([{ ...old, title: '历史回填（标题修正）' }, fresh]);
+    expect(await runGamePulseCheck()).toMatchObject({ newItems: 1, failedSources: 0 });
+    expect(await prisma.feedItem.findUniqueOrThrow({ where: { id: first.id } }))
+      .toMatchObject({ isSourceBackfill: true, title: '历史回填（标题修正）', createdAt: first.createdAt });
+    expect(await prisma.feedItem.findFirstOrThrow({ where: { sourceId: source.id, externalId: 'fresh' } }))
+      .toMatchObject({ isSourceBackfill: false, publishedAt: null });
+    expect(await runGamePulseCheck()).toMatchObject({ newItems: 0, failedSources: 0 });
+    expect(await prisma.feedItem.count({ where: { sourceId: source.id } })).toBe(2);
   });
 
   test('rolls back a new item when its analysis task cannot be written', async () => {
@@ -428,6 +470,8 @@ describe('real SQLite collection and analysis acceptance', () => {
 
     const analysis = await prisma.analysis.findUniqueOrThrow({ where: { feedItemId: seeded.id } });
     expect(analysis.status).toBe('completed');
+    // The source is not official, but the report still describes an announcement.
+    expect(analysis.category).toBe('announcement');
     expect(analysis.summary).toBe('第二版最新分析');
     const task = await prisma.analysisTask.findFirstOrThrow({ where: { feedItemId: seeded.id } });
     expect(task).toMatchObject({ status: 'completed', dedupeKey: null });

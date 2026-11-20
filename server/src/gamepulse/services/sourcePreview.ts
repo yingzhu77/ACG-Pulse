@@ -107,6 +107,7 @@ function buildPreviewSource(draft: CreateSourceInput): Source {
     enabled: draft.enabled,
     priority: draft.priority,
     healthStatus: 'unknown',
+    firstIngestAt: null,
     lastSuccessAt: null,
     lastCheckedAt: null,
     lastError: null,

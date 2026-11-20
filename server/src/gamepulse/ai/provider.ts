@@ -83,23 +83,17 @@ function buildSystemPrompt(): string {
 
 字段：{"category":"announcement|event|version|character|pv|game_music|music|community|enforcement|creator_video|trailer|movie_trailer|other","importance":"low|medium|high","visibility":"public|muted|hidden","confidence":0-100,"summary":"≤40字摘要","reason":"≤60字理由","dedupKeywords":["最多6个"]}
 
-【核心规则】sourceIsOfficial决定分类：
-- true→游戏情报(announcement/event/version/character/pv/game_music/community/other)
-- false→关注投稿(music/trailer/movie_trailer/creator_video/other)
-- 禁止跨组分类
+【分类】按内容语义分类，不按 sourceIsOfficial 划组。创作者转载版本更新仍可归 version；只有创作作品本身才归 creator_video、music 等。sourceIsOfficial 只描述原始信源的身份，不证明事实或重要性。
 
 分类速查：
-- game_music：官方音乐(EP/OST/主题曲)，必须sourceIsOfficial=true
-- music：创作者音乐(翻唱/VOCALOID)，必须sourceIsOfficial=false
-- pv：官方视频(PV/演示/前瞻)，必须sourceIsOfficial=true
-- trailer：非官方预告/动漫视频，必须sourceIsOfficial=false
-- movie_trailer：电影/剧集预告，必须sourceIsOfficial=false
-- creator_video：创作者杂谈/攻略/实况，必须sourceIsOfficial=false
+- game_music：作品的官方音乐本身，包括可信转载；music：翻唱/VOCALOID 等作品
+- pv：游戏 PV/实机/前瞻本身；trailer：其它预告；movie_trailer：影视预告
+- creator_video：创作者杂谈、攻略、实况等独立内容
 
 重要性：high=版本更新/前瞻直播/新角色/大型联动；medium=PV/活动说明/补偿；low=生日贺图/例行提醒/小修复
 enforcement=封禁/处罚公示，importance=low，visibility=muted
 
-规则：不要因标题含"紧急"就判high；官方源可信度高；无法判断时category=other,confidence≤60`;
+规则：摘要和理由仅依据给出的标题和正文；缺少依据就明确说无法判断影响，不补写时间、细节或结论。不要因标题含"紧急"或来源是官方就判high；无法判断时category=other,confidence≤60`;
 }
 
 function parseAnalysis(content: string): NormalizedAnalysis {

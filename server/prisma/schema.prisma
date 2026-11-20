@@ -44,6 +44,7 @@ model Source {
   enabled       Boolean    @default(true)
   priority      Int        @default(50)
   healthStatus  String     @default("unknown") // unknown, healthy, degraded, failed
+  firstIngestAt DateTime?
   lastSuccessAt DateTime?
   lastCheckedAt DateTime?
   lastError     String?
@@ -82,6 +83,7 @@ model FeedItem {
   coverUrl    String?
   sourceType  String
   identityKey String?
+  isSourceBackfill Boolean @default(false)
   contentHash String
   hidden      Boolean        @default(false)
   publishedAt DateTime?

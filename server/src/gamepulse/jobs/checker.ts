@@ -74,6 +74,9 @@ export async function enforceFeedItemLimit(): Promise<number> {
 }
 
 export async function runGamePulseCheck(io?: Server): Promise<CheckResult> {
+  if (process.env.ACG_PULSE_OFFLINE === '1') {
+    return { checkedSources: 0, newItems: 0, failedSources: 0 };
+  }
   if (checkRunning) {
     const elapsed = checkStartedAt ? Math.round((Date.now() - checkStartedAt.getTime()) / 1000) : 0;
     console.log(`[GamePulse] Check already running for ${elapsed}s, skipping`);
@@ -123,6 +126,8 @@ async function checkSource(
       `Source check timeout after ${getSourceCheckTimeoutMs()}ms`
     );
     let sourceNewCount = 0;
+    // The first non-empty successful harvest establishes the baseline for this source.
+    const isSourceBackfill = !source.firstIngestAt;
 
     for (const raw of rawItems) {
       const normalizedUrl = normalizeUrl(raw.url);
@@ -132,7 +137,8 @@ async function checkSource(
       const authorName = truncate(raw.authorName || source.name, 120);
       const authorUrl = truncate(raw.authorUrl, 500);
       const coverUrl = truncate(raw.coverUrl, 1000);
-      const hash = contentHash([identityKey, title, content, raw.publishedAt?.toISOString()]);
+      const sourcePublishedAt = raw.publishedAt && Number.isFinite(raw.publishedAt.getTime()) ? raw.publishedAt : null;
+      const hash = contentHash([identityKey, title, content, sourcePublishedAt?.toISOString()]);
       const existing = await prisma.feedItem.findFirst({
         where: {
           sourceId: source.id,
@@ -141,9 +147,10 @@ async function checkSource(
       });
       if (existing) {
         const contentChanged = existing.title !== title || existing.content !== content;
-        const publishedAt = raw.publishedAt || existing.publishedAt;
+        const publishedAt = sourcePublishedAt ?? existing.publishedAt;
+        const effectiveHash = contentHash([identityKey, title, content, publishedAt?.toISOString()]);
         const needsUpdate = existing.identityKey !== identityKey
-          || existing.contentHash !== hash
+          || existing.contentHash !== effectiveHash
           || existing.url !== normalizedUrl
           || existing.externalId !== (raw.externalId || raw.url)
           || existing.coverUrl !== coverUrl
@@ -166,7 +173,7 @@ async function checkSource(
                 authorUrl,
                 coverUrl,
                 sourceType: source.type,
-                contentHash: hash,
+                contentHash: effectiveHash,
                 publishedAt,
                 fetchedAt: new Date()
               }
@@ -204,7 +211,8 @@ async function checkSource(
             sourceType: source.type,
             identityKey,
             contentHash: hash,
-            publishedAt: raw.publishedAt || null
+            isSourceBackfill,
+            publishedAt: sourcePublishedAt
           },
           include: {
             source: true
@@ -216,6 +224,8 @@ async function checkSource(
 
       sourceNewCount++;
       wakeAnalysisQueue(io);
+
+      if (isSourceBackfill) continue;
 
       try {
         await prisma.notification.create({
@@ -260,6 +270,7 @@ async function checkSource(
       where: { id: source.id },
       data: {
         healthStatus: 'healthy',
+        ...(isSourceBackfill && rawItems.length > 0 ? { firstIngestAt: new Date() } : {}),
         lastSuccessAt: new Date(),
         lastCheckedAt: new Date(),
         lastError: null

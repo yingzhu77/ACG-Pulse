@@ -35,7 +35,7 @@ describe('source health reflects the actual RSSHub response', () => {
       url: null, uid: null, avatar: null, route: '/example/list',
       config: JSON.stringify({ rssHubBaseUrls: ['https://rss.example'] }),
       isOfficial: true, followed: false, enabled: true, priority: 50,
-      healthStatus: 'healthy', lastSuccessAt: previousSuccess, lastCheckedAt: null, lastError: null,
+      healthStatus: 'healthy', firstIngestAt: previousSuccess, lastSuccessAt: previousSuccess, lastCheckedAt: null, lastError: null,
       createdAt: previousSuccess, updatedAt: previousSuccess
     });
   });
