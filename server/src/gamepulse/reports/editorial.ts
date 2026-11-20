@@ -103,6 +103,7 @@ function editorialView(item: CandidateItem & { publishedAt: Date }, hasPrevious:
   if (!item.eventId) return null;
   const raw = toPublicFeedItem(item);
   if (isLowValueNotice(raw) || OCCASION.test(item.title)) return null;
+  if (item.url.length > 4_096) return null;
   let sourceUrl: URL;
   try { sourceUrl = new URL(item.url); } catch { return null; }
   if (!['http:', 'https:'].includes(sourceUrl.protocol)) return null;
@@ -131,7 +132,7 @@ function editorialView(item: CandidateItem & { publishedAt: Date }, hasPrevious:
     summary, reason: impact,
     visibility: 'public',
     canonicalTitle: base.canonicalTitle.slice(0, 300),
-    coverUrl: base.coverUrl?.slice(0, 2_048) || null,
+    coverUrl: base.coverUrl && base.coverUrl.length <= 2_048 ? base.coverUrl : null,
     publishedAt: item.publishedAt.toISOString(),
     fetchedAt: item.fetchedAt.toISOString(),
     createdAt: item.createdAt.toISOString(),

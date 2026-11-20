@@ -142,6 +142,7 @@ export interface FeedItem {
 
 export interface Story {
   id: string;
+  legacyIds?: string[];
   canonicalTitle: string;
   game: string;
   category: string | null;
@@ -246,6 +247,7 @@ export interface ReportSummary {
 export interface ReportResponse {
   meta: {
     type: 'daily' | 'weekly';
+    timezone?: string;
     dateRange: { start: string; end: string };
     game?: string;
     category?: string;
@@ -254,6 +256,38 @@ export interface ReportResponse {
   stories: Story[];
   summary: ReportSummary;
 }
+
+export type EventDetail = Story & {
+  firstPublishedAt: string | null;
+  firstDiscoveredAt: string;
+  lastProgressAt: string | null;
+  progress: FeedItem[];
+};
+
+export type EditionStatus = 'live' | 'pending' | 'failed' | 'published' | 'empty';
+export type EditionEntry = Story & {
+  editorial: {
+    kind: 'new' | 'update';
+    publishedAt: string;
+    discoveredAt: string;
+    selectedAt: string | null;
+    summaryStatus: 'available' | 'insufficient' | 'failed' | 'pending' | 'unavailable';
+    impact: string | null;
+    late: boolean;
+    correctedAt?: string;
+  };
+};
+export type EditionResponse = Omit<ReportResponse, 'stories'> & {
+  date: string;
+  status: EditionStatus;
+  publishedAt: string | null;
+  stories: EditionEntry[];
+  health: { failedSources: number; degradedSources: number; uncheckedSources?: number; pendingAnalysis: number; failedAnalysis: number; unavailableAnalysis?: number };
+  withdrawnCount: number;
+};
+export type EditionIndex = Array<Pick<EditionResponse, 'date' | 'publishedAt'> & {
+  status: 'published' | 'empty' | 'failed';
+}>;
 
 export interface CommunityTopTopic {
   id: string;
