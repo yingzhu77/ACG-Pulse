@@ -123,6 +123,10 @@ bash scripts/editorial-preview.sh
 
 复跑实浏览器验收：保持上面的隔离预览运行，在已安装 Playwright 和 Chromium 的环境里执行 `node scripts/check-editorial-browser.mjs`。依赖可装在仓库外并通过 `NODE_PATH` 指定；若使用现成的 Chromium，可用 `ACG_PULSE_CHROMIUM_PATH` 指向可执行文件。脚本验收桌面和真实 390px 视口，截图写到 `tmp/editorial-qa/`，不提交到仓库。
 
+### 持久私有试用
+
+需要保留数据库并按自己确认的来源持续采集时，使用 [私有试用手册](docs/TRIAL_RUNBOOK.md)：独立数据目录、本机监听、日志轮转、SQLite 快照和恢复。不使用一次性预览脚本做正式试用。
+
 ### B站采集路径
 
 - **主路径**：Compose 内置 `rsshub` 服务（自定义镜像，含 Chromium），`RSSHUB_BASE_URLS` 默认自建实例优先、公共实例最后回退。

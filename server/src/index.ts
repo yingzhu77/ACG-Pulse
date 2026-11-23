@@ -48,6 +48,7 @@ if (startupErrors.length > 0) {
 }
 
 const isOffline = process.env.ACG_PULSE_OFFLINE === '1';
+const isPrivateTrial = process.env.ACG_PULSE_PRIVATE_TRIAL === '1';
 const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5173';
 
 const app = express();
@@ -232,14 +233,16 @@ if (!isOffline) {
     }
   });
 
-  // Community data refresh: every 30 minutes, offset by 15 minutes
-  cron.schedule('15,45 * * * *', async () => {
-    try {
-      await scheduledCommunityRefresh(io);
-    } catch (error) {
-      console.error('[Community] Scheduled refresh failed:', error);
-    }
-  });
+  if (!isPrivateTrial) {
+    // Community data refresh: every 30 minutes, offset by 15 minutes
+    cron.schedule('15,45 * * * *', async () => {
+      try {
+        await scheduledCommunityRefresh(io);
+      } catch (error) {
+        console.error('[Community] Scheduled refresh failed:', error);
+      }
+    });
+  }
 
   cron.schedule('20 3 * * *', async () => {
     try {
@@ -280,9 +283,10 @@ Public API: /api/public
 Admin API: /api/admin
 WebSocket: ready
 ${isOffline ? 'Offline mode: background and network actions disabled' : 'Scheduled check: every 30 minutes'}
+${isPrivateTrial ? 'Private trial: loopback only; community and hot-search refresh disabled' : ''}
   `);
   };
-  if (isOffline) httpServer.listen(PORT, '127.0.0.1', onListening);
+  if (isOffline || isPrivateTrial) httpServer.listen(PORT, '127.0.0.1', onListening);
   else httpServer.listen(PORT, onListening);
 }
 
