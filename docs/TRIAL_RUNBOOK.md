@@ -1,10 +1,17 @@
 # ACG Pulse 私有试用运行手册
 
-基于审批分支 `feat/daily-reading-cycle` 的 `8a2788d`。本手册用于在自己的电脑或私有 Linux 主机上跑有持久 SQLite 的实例，不是 `editorial-preview.sh` 的一次性合成预览，也不接管旧生产环境。
+试用脚本位于审批分支 `feat/daily-reading-cycle`。本手册用于在自己的电脑或私有 Linux 主机上跑有持久 SQLite 的实例，不是 `editorial-preview.sh` 的一次性合成预览，也不接管旧生产环境。
 
 ## 第一次启动
 
-需要 Linux 或 Windows WSL、Bash、Node.js 22.12+（本轮使用 Node 24）、Python 3、`curl`、npm。解压运行包，进入含 `server/` 和 `scripts/` 的目录。运行包与数据库可分开，建议把试用数据放在自己的持久目录：
+需要 Linux 或 Windows WSL、Bash、Node.js 22.12+（本轮使用 Node 24）、Python 3.10+、`curl`、npm。可以直接从 GitHub 克隆，不需要下载运行包：
+
+```bash
+git clone --branch feat/daily-reading-cycle --single-branch https://github.com/yingzhu77/ACG-Pulse.git ACG-Pulse-trial
+cd ACG-Pulse-trial
+```
+
+已有干净的试用分支可用 `git pull --ff-only` 更新；已有其他本地改动时，另建试用目录，不要覆盖。解压运行包时则直接进入含 `server/` 和 `scripts/` 的目录。建议把试用数据放在独立的持久目录：
 
 ```bash
 export ACG_PULSE_TRIAL_DIR="$HOME/acg-pulse-trial-data"
