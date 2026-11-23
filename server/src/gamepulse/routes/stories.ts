@@ -25,6 +25,40 @@ const router = Router();
 const STORIES_BATCH_SIZE = 500;
 const FTS_RECALL_LIMIT = 10000;
 
+async function applyPublicSearch(where: PrismaWhereClause, query?: string) {
+  const term = query?.trim();
+  if (!term) return;
+
+  if (/[%_]/.test(term)) {
+    // Prisma contains uses SQL LIKE with no escape clause on SQLite. Inspect the
+    // active feed only. Filtering by source or visibility later must not lose an
+    // older matching item to a global limit here.
+    const rows = await prisma.$queryRaw<{ id: string }[]>`
+      SELECT f.id FROM FeedItem f JOIN Source s ON s.id = f.sourceId
+      WHERE f.eventArchived = 0 AND f.hidden = 0 AND (
+        instr(lower(f.title), lower(${term})) OR instr(lower(f.content), lower(${term})) OR
+        instr(lower(f.authorName), lower(${term})) OR instr(lower(s.name), lower(${term}))
+      )
+    `;
+    where.id = { in: rows.map(row => row.id) };
+    return;
+  }
+  const indexed = await isFTS5Ready();
+  const ids = indexed ? (await searchFeedItems(term, { limit: FTS_RECALL_LIMIT })).feedItemIds : [];
+  if (indexed && /^[a-z0-9\s]+$/i.test(term)) {
+    where.id = { in: ids };
+    return;
+  }
+  // unicode61 indexes continuous Han text as one token. Keep literal fragments
+  // alongside token matches, even when FTS found a different item.
+  const matches: PrismaWhereClause[] = [
+    { title: { contains: term } }, { content: { contains: term } },
+    { authorName: { contains: term } }, { source: { is: { name: { contains: term } } } }
+  ];
+  if (ids.length) matches.push({ id: { in: ids } });
+  appendAnd(where, { OR: matches });
+}
+
 const storyCandidateInclude = {
   source: {
     select: {
@@ -91,28 +125,7 @@ router.get('/items', async (req, res) => {
       where.source = { isOfficial: String(official) === 'true' };
     }
 
-    // FTS5 search: use FTS if available, fallback to LIKE
-    let ftsIds: string[] | null = null;
-    if (q) {
-      const ftsReady = await isFTS5Ready();
-      if (ftsReady) {
-        const ftsResult = await searchFeedItems(String(q), { limit: FTS_RECALL_LIMIT, offset: 0 });
-        ftsIds = ftsResult.feedItemIds;
-        if (ftsIds.length === 0) {
-          // FTS returned no results, return empty
-          res.json({ data: [], pagination: { page: pageNum, limit: limitNum, total: 0, totalPages: 0 } });
-          return;
-        }
-        where.id = { in: ftsIds };
-      } else {
-        // Fallback to LIKE
-        where.OR = [
-          { title: { contains: String(q) } },
-          { content: { contains: String(q) } },
-          { authorName: { contains: String(q) } }
-        ];
-      }
-    }
+    await applyPublicSearch(where, q);
 
     applyAnalysisFilters(where, { category, importance, visibility });
     applyLowValueNoticeFilter(where, visibility);
@@ -140,7 +153,7 @@ router.get('/items', async (req, res) => {
       prisma.feedItem.count({ where })
     ]);
 
-    // Prisma count is accurate for the filtered result set (bounded by FTS_RECALL_LIMIT).
+    // Count after applying search, visibility and source filters.
     const total = prismaTotal;
 
     res.json({
@@ -201,32 +214,7 @@ router.get('/stories', async (req, res) => {
       where.source = { isOfficial: String(official) === 'true' };
     }
 
-    // FTS5 search: use FTS if available, fallback to LIKE
-    let ftsIds: string[] | null = null;
-    if (q) {
-      const ftsReady = await isFTS5Ready();
-      if (ftsReady) {
-        const ftsResult = await searchFeedItems(String(q), { limit: FTS_RECALL_LIMIT, offset: 0 });
-        ftsIds = ftsResult.feedItemIds;
-        if (ftsIds.length === 0) {
-          // FTS returned no results, return empty
-          res.json({
-            data: [],
-            pagination: { page: pageNum, limit: limitNum, total: 0, totalPages: 0 },
-            facets: emptyStoryFacets()
-          });
-          return;
-        }
-        where.id = { in: ftsIds };
-      } else {
-        // Fallback to LIKE
-        where.OR = [
-          { title: { contains: String(q) } },
-          { content: { contains: String(q) } },
-          { authorName: { contains: String(q) } }
-        ];
-      }
-    }
+    await applyPublicSearch(where, q);
 
     // followGroup: 'follow' = only followed sources, 'game' = only non-followed sources
     if (group === 'follow') {
@@ -250,11 +238,8 @@ router.get('/stories', async (req, res) => {
     }
     applyLowValueNoticeFilter(where, visibility);
 
-    const maxCandidates = q && ftsIds
-      ? Math.min(ftsIds.length, FTS_RECALL_LIMIT, getMaxFeedItems())
-      : getMaxFeedItems();
     await syncEvents();
-    const items = await fetchStoryCandidateItems(where, maxCandidates);
+    const items = await fetchStoryCandidateItems(where, getMaxFeedItems());
 
     // Query filters can change which reports are displayed, not persisted identity.
     const allStories = listEventMembers(items);

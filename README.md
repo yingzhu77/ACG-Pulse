@@ -119,7 +119,7 @@ docker compose up -d --build
 bash scripts/editorial-preview.sh
 ```
 
-访问 [http://127.0.0.1:3012](http://127.0.0.1:3012)。从「今日精选」打开带「新进展」的版本公告，查看首报、进展与原文；返回后打开「日报」，读上一期并下载 Markdown。样本是虚构内容，原文也由本机提供。脚本每次用新临时 SQLite，不读实际密钥，不采集、不调用模型、不改变生产配置。可在另一个终端运行 `node scripts/check-editorial-preview.mjs` 做 HTTP 自检，或打开 `/preview-mobile.html` 在 390 px 内容区实点。结束按 Ctrl+C。迁移和两周观察方法见 [路线图](docs/ROADMAP.md#每日阅读试用)。
+访问 [http://127.0.0.1:3012](http://127.0.0.1:3012)。桌面用左侧栏切换页面，窄屏用左上角的导航按钮。导航底部可切换原有的夜间、日间和番茄场景，选择会在当前浏览器保存。在「今日精选」可直接收藏卡片，稍后从「我的收藏」继续阅读。打开带「新进展」的版本公告可对照首报与进展的原文，返回时回到打开它的位置。在「全部动态」搜索标题中的“雾钟码头”也能找回该事件。详情打开后事件会标为已读；勾选「只看未读」可隐藏已读事件，出现新的公开实质进展时会再次显示。打开「日报」可按日期、头条与可见事件数选择刊期，查看正常出刊、当日无重点和采集未完成三种样本，也可下载已出刊的 Markdown。样本是虚构内容，原文也由本机提供。脚本每次用新临时 SQLite，不读实际密钥，不采集、不调用模型、不改变生产配置。可在另一个终端运行 `node scripts/check-editorial-preview.mjs` 做 HTTP 自检，或打开 `/preview-mobile.html` 在 390 px 内容区实点。结束按 Ctrl+C。迁移和两周观察方法见 [路线图](docs/ROADMAP.md#每日阅读试用)。
 
 复跑实浏览器验收：保持上面的隔离预览运行，在已安装 Playwright 和 Chromium 的环境里执行 `node scripts/check-editorial-browser.mjs`。依赖可装在仓库外并通过 `NODE_PATH` 指定；若使用现成的 Chromium，可用 `ACG_PULSE_CHROMIUM_PATH` 指向可执行文件。脚本验收桌面和真实 390px 视口，截图写到 `tmp/editorial-qa/`，不提交到仓库。
 

@@ -24,6 +24,7 @@ import { prisma } from '../../db.js';
 import { archiveFeedOverflow, eventProjection, splitEventItem, syncEvents } from '../services/events.js';
 import { aggregateFeedItemsToStories } from '../storyAggregation.js';
 import storiesRouter from '../routes/stories.js';
+import { ensureFTS5, isFTS5Ready } from '../search.js';
 
 const game = '终末地-事件验收';
 const run = randomUUID();
@@ -207,6 +208,36 @@ describe('persistent events and archive', () => {
     const rows = await Promise.all(notices.map(row => prisma.feedItem.findUniqueOrThrow({ where: { id: row.id } })));
     expect(rows.every(row => row.eventId === id)).toBe(true);
     expect(rows.map(row => row.eventProgress)).toEqual([true, false, true, true, false, true, true, true]);
+  });
+
+  it('finds literal Chinese fragments alongside indexed tokens while keeping public visibility and pagination', async () => {
+    const channel = await prisma.source.create({ data: {
+      name: '北港通讯编辑部', game, type: 'rss', isOfficial: true
+    } });
+    const fragment = await add({ n: 'harbor-fragment', title: '《北弦计划》9.2 雾钟码头入口推迟开放',
+      body: '计划代号 Pier_17，修复进度达到 95%。', hour: 160, source: channel.id });
+    await add({ n: 'harbor-complete', title: '「雾钟码头」灯塔建筑设计稿', hour: 161, source: channel.id });
+    const hidden = await add({ n: 'harbor-hide', title: '「雾钟码头」未公开报道', hour: 162, source: channel.id });
+    await prisma.feedItem.update({ where: { id: hidden.id }, data: { hidden: true } });
+    await ensureFTS5();
+    expect(await isFTS5Ready()).toBe(true);
+    const request = async (path: string, q: string, page = 1) => {
+      const params = new URLSearchParams({ sourceId: channel.id, q, limit: '1', page: String(page) });
+      const response = await fetch(`${base}/${path}?${params}`);
+      expect(response.status).toBe(200);
+      return response.json();
+    };
+    for (const path of ['items', 'stories']) {
+      const first = await request(path, '雾钟码头');
+      const second = await request(path, '雾钟码头', 2);
+      expect(first.pagination).toMatchObject({ total: 2, totalPages: 2 });
+      expect(second.data[0].title ?? second.data[0].canonicalTitle).toBe(fragment.title);
+      expect(first.data[0].id).not.toBe(second.data[0].id);
+      expect((await request(path, '通讯编辑')).pagination.total).toBe(2);
+      expect((await request(path, fragment.title)).pagination.total).toBe(1);
+      expect((await request(path, '%')).pagination.total).toBe(1);
+      expect((await request(path, '_')).pagination.total).toBe(1);
+    }
   });
 
 });

@@ -70,7 +70,7 @@ export function InsightsPage({ gameCategoryCounts, followCategoryCounts, importa
   return (
     <section className="glass-panel insights-page">
       <div className="panel-heading">
-        <h2>数据洞察</h2>
+        <h1>数据洞察</h1>
         <Activity className="h-4 w-4" />
       </div>
       <div className="insight-strip">

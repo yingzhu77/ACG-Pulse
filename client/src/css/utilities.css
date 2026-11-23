@@ -11,89 +11,9 @@
 /* ===== Scrollbar ===== */
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(59, 130, 246, 0.15); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(59, 130, 246, 0.3); }
+::-webkit-scrollbar-thumb { background: var(--stroke-strong); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-soft); }
 
 /* ===== Line Clamp ===== */
 .line-clamp-1 { overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; }
 .line-clamp-2 { overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-
-/* ===== Mobile Filter Drawer ===== */
-.mobile-filter-fab {
-  position: fixed;
-  left: 16px;
-  bottom: 24px;
-  z-index: 50;
-  width: 52px;
-  height: 52px;
-  border-radius: 16px;
-  border: 1px solid var(--stroke);
-  background: var(--panel-strong);
-  color: var(--text-main);
-  display: grid;
-  place-items: center;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
-  transition: transform 180ms ease, box-shadow 180ms ease;
-}
-
-.mobile-filter-fab:hover {
-  transform: scale(1.05);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
-}
-
-.mobile-filter-fab:active {
-  transform: scale(0.95);
-}
-
-.mobile-drawer-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 90;
-  background: rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(4px);
-}
-
-.mobile-drawer {
-  position: fixed;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  z-index: 100;
-  width: min(320px, 85vw);
-  max-height: 100dvh;
-  overflow-y: auto;
-  background: var(--bg-surface);
-  border-right: 1px solid var(--stroke);
-  box-shadow: 8px 0 32px rgba(0, 0, 0, 0.3);
-  padding: 16px;
-}
-
-.mobile-drawer .left-sidebar {
-  position: static;
-  max-height: none;
-  border: none;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-  backdrop-filter: none;
-  display: block;
-  opacity: 1;
-  transform: none;
-  pointer-events: auto;
-  overflow: visible;
-}
-
-/* Hide desktop sidebar on mobile */
-@media (max-width: 768px) {
-  .left-column {
-    display: none !important;
-  }
-
-  .left-sidebar:not(.mobile-drawer .left-sidebar) {
-    display: none !important;
-  }
-
-  .sidebar-expand-btn {
-    display: none !important;
-  }
-}

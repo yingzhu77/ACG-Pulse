@@ -40,7 +40,7 @@
 | `visibility` | 可见性筛选 |
 | `followGroup` | `follow` 表示关注源，`game` 表示游戏源 |
 | `sourceUid` | 关注 UP 主 UID，支持多值 |
-| `q` | 搜索词，普通字符串 |
+| `q` | 普通字符串。支持在标题、正文、作者和来源名中搜索中文片段，适用已有公开可见范围与查询筛选。包含 `%`、`_` 的输入按字面匹配。 |
 | `includeFacets` | 是否返回 facet 计数 |
 
 响应 DTO：`StoriesResponse`。
@@ -93,13 +93,17 @@
 
 ### `GET /api/public/reports/featured`
 
+每条实时精选的 `readProgressIds` 列出该事件详情中公开实质进展的条目 ID，与 `progress[].id` 一致。仅有首报时返回空数组。读者打开详情后，浏览器在本机记住已看到的进展。新增实质进展会使事件恢复未读，普通转载不会改变已读状态。
+
 上海时间今天的精选（最多 8 条），随入库及已有分析更新，未出刊；响应含 `date`、`status`、`health`、`stories` 及汇总。每条 `editorial` 记录新事件或新进展、原文时间、首次发现、入选时间（实时精选为 `null`）、摘要状态及迟到标记。重要性不是社区热度；已完成且有效的低重要性分析不会被标题关键词提升。缺少有效分析时，仅直接来自官方公告源的明确运营变动（例如停服、登录故障、紧急维护）允许按标题保留，展示原文和处理状态，不生成摘要或影响说明。转载评论、社区帖子、热搜及标题传闻不会走此兜底。
 
 精选健康含 `configuredSources`、`uncheckedSources`、`staleSources`、`lastCheckedAt`、`lastSuccessAt`，与失败、降级分别表达。启用的信源最近检查或已知最近成功距当前超过 60 分钟即视为滞后（采集每 30 分钟一轮，允许一次错过）；刚重试失败不能让旧数据变新，同一来源可同时失败或降级且滞后。未有成功记录时不捏造时间，健康检查本身可作为成功证据。午夜不重置新鲜度。作品筛选只统计匹配作品和通用信源。已出刊覆盖保留当期快照，不用今天的状态重算；旧刊期可能无新增字段。
 
 ### `GET /api/public/reports/daily?date=YYYY-MM-DD`
 
-默认读取上海时间昨天。状态：`pending` 没有刊期、`failed` 暂时未能出刊、`empty` 已确认无入选内容、`published` 已出刊。读取不触发出刊。支持 `game`、`category`、逗号分隔的 `importance`。档案目录为 `GET /api/public/reports/editions?before=YYYY-MM-DD`，每页最多 30 期。
+默认读取上海时间昨天。状态：`pending` 没有刊期、`failed` 暂时未能出刊、`empty` 已确认无入选内容、`published` 已出刊。读取不触发出刊。支持 `game`、`category`、逗号分隔的 `importance`。
+
+档案目录 `GET /api/public/reports/editions?before=YYYY-MM-DD` 按日期倒序，每页最多 30 期。`nextBefore` 可用于读取更早一页。每期带有 `date`、`status`、`publishedAt`、`visibleCount` 和 `headline`。计数只含当前可见的快照事件，头条取原刊顺序中的首条可见事件并应用公开更正。全部撤回的已出刊日报仍为 `published`，计数为 0，头条为 `null`。`empty`、`failed` 保留各自状态，未形成刊期的日期由日报详情返回 `pending`。
 
 ### `GET /api/public/reports/export?type=daily&date=YYYY-MM-DD`
 

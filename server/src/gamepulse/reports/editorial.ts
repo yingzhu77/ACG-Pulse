@@ -1,7 +1,7 @@
-import type { Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../../db.js';
 import { getMaxFeedItems } from '../config.js';
-import { eventPublicWhere, projectEventMembers, syncEvents } from '../services/events.js';
+import { eventPublicWhere, projectEventMembers, publicEventDetails, syncEvents } from '../services/events.js';
 import { isLowValueNotice, normalizeImportance, toPublicFeedItem, type PublicStory } from '../storyAggregation.js';
 import { AnalysisCategoryEnum } from '../validation.js';
 
@@ -426,16 +426,32 @@ export async function readDailyEdition(date: string) {
 export async function readFeatured(now = new Date(), filters: EditorialFilters = {}) {
   const date = shanghaiDate(now);
   const { selected, health } = await buildSelection(date, now, null, filters);
-  return { date, status: 'live' as const, publishedAt: null, health, withdrawnCount: 0, stories: selected.map(entry => entry.story) };
+  const details = await publicEventDetails(selected.map(entry => entry.story.id));
+  const stories = selected.flatMap(({ story }) => {
+    const detail = details.get(story.id);
+    return detail ? [{ ...story, readProgressIds: detail.progress.map(item => item.id) }] : [];
+  });
+  return { date, status: 'live' as const, publishedAt: null, health, withdrawnCount: 0, stories };
 }
 
 export async function listDailyEditions(before?: string) {
-  const rows = await prisma.dailyEdition.findMany({
-    where: before ? { date: { lt: before } } : {},
-    orderBy: { date: 'desc' }, take: 31,
-    select: { date: true, status: true, publishedAt: true }
-  });
-  return { data: rows.slice(0, 30), nextBefore: rows.length > 30 ? rows[29].date : null };
+  type Row = { date: string; status: string; publishedAt: Date | null; visibleCount: bigint; headline: string | null };
+  // A single SQLite statement sees one moderation snapshot. Only the public title leaves SQLite.
+  const rows = await prisma.$queryRaw<Row[]>(Prisma.sql`
+    SELECT d.date, d.status, d.publishedAt,
+      (SELECT COUNT(*) FROM DailyEditionEntry e
+       WHERE e.editionDate = d.date AND e.withdrawnAt IS NULL) AS visibleCount,
+      (SELECT CASE WHEN e.correctedAt IS NOT NULL THEN json_extract(e.correction, '$.title')
+                   ELSE json_extract(e.story, '$.canonicalTitle') END
+       FROM DailyEditionEntry e
+       WHERE e.editionDate = d.date AND e.withdrawnAt IS NULL
+       ORDER BY e.rank LIMIT 1) AS headline
+    FROM DailyEdition d
+    ${before ? Prisma.sql`WHERE d.date < ${before}` : Prisma.empty}
+    ORDER BY d.date DESC LIMIT 31
+  `);
+  const data = rows.slice(0, 30).map(row => ({ ...row, visibleCount: Number(row.visibleCount) }));
+  return { data, nextBefore: rows.length > 30 ? rows[29].date : null };
 }
 
 type Correction = { title: string; summary: string | null };

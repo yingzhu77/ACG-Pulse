@@ -4,15 +4,21 @@ import type { ViewMode } from '../constants';
 export const viewPaths: Record<ViewMode, string> = {
   today: '/',
   feed: '/all',
+  favorites: '/favorites',
   community: '/community',
   insights: '/insights',
   daily: '/daily'
 };
 
+export const viewTitles: Record<ViewMode, string> = {
+  today: '今日精选', feed: '全部动态', favorites: '我的收藏',
+  community: '社区风向', insights: '数据洞察', daily: '日报'
+};
+
 export type ReadingRoute =
   | { view: 'event'; id: string }
   | { view: 'daily'; date?: string }
-  | { view: 'today' | 'feed' | 'community' | 'insights' };
+  | { view: 'today' | 'feed' | 'community' | 'insights' | 'favorites' };
 
 export function eventPath(id: string) {
   return '/events/' + encodeURIComponent(id);
@@ -20,6 +26,12 @@ export function eventPath(id: string) {
 
 export function editionPath(date: string) {
   return '/daily/' + encodeURIComponent(date);
+}
+
+export function eventReturnLabel(from?: string) {
+  if (!from) return '前往全部动态';
+  const view = readingRoute(from).view;
+  return '返回' + viewTitles[view === 'event' ? 'feed' : view];
 }
 
 export function readingRoute(path: string): ReadingRoute {
@@ -30,6 +42,7 @@ export function readingRoute(path: string): ReadingRoute {
   }
   if (root === 'daily') return { view: 'daily', date: detail };
   if (root === 'all') return { view: 'feed' };
+  if (root === 'favorites') return { view: 'favorites' };
   if (root === 'community') return { view: 'community' };
   if (root === 'insights') return { view: 'insights' };
   return { view: 'today' };

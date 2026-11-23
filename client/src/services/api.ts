@@ -128,7 +128,7 @@ export const tokenStore = {
 
 export const publicApi = {
   getItems: (filters?: ItemFilters) => request<Paginated<FeedItem>>(withParams('/public/items', filters)),
-  getStories: (filters?: ItemFilters) => request<StoriesResponse>(withParams('/public/stories', filters)),
+  getStories: (filters?: ItemFilters, signal?: AbortSignal) => request<StoriesResponse>(withParams('/public/stories', filters), { signal }),
   getEvent: (id: string, signal?: AbortSignal) => request<{ data: EventDetail }>(
     `/public/stories/${encodeURIComponent(id)}`, { signal, cache: 'no-store' }
   ),
@@ -136,10 +136,11 @@ export const publicApi = {
     request<EditionResponse>(withParams('/public/reports/featured', { game }), { signal, cache: 'no-store' }),
   getEdition: (date: string, signal?: AbortSignal) =>
     request<EditionResponse>(withParams('/public/reports/daily', { date }), { signal, cache: 'no-store' }),
-  getEditions: (signal?: AbortSignal) =>
-    request<{ data: EditionIndex; nextBefore: string | null }>('/public/reports/editions', { signal, cache: 'no-store' }),
-  getStats: () => request<PublicStats>('/public/stats'),
-  getSources: () => request<Source[]>('/public/sources'),
+  getEditions: (signal?: AbortSignal, before?: string) =>
+    request<{ data: EditionIndex; nextBefore: string | null }>(
+      withParams('/public/reports/editions', { before }), { signal, cache: 'no-store' }),
+  getStats: (signal?: AbortSignal) => request<PublicStats>('/public/stats', { signal }),
+  getSources: (signal?: AbortSignal) => request<Source[]>('/public/sources', { signal }),
   getHotSearch: (filters?: { tag?: string; limit?: number }) => request<{ data: HotSearchItem[]; total: number; lastUpdated: string }>(withParams('/public/hot-search', filters)),
   getCommunityInsights: () => request<CommunityInsights>('/community/insights', { cache: 'no-store' }),
   getDailyReport: (filters?: ReportFilters) => request<ReportResponse>(withParams('/public/reports/daily', filters as Record<string, unknown>)),

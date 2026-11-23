@@ -14,6 +14,7 @@ async function loadSource(name) {
 
 const { FEATURED_GAME_KEY, readFeaturedGame, writeFeaturedGame, resolveFeaturedGame } = await loadSource('featuredPreference');
 const { distinctImpact } = await loadSource('readingCopy');
+const { createEventReadState } = await loadSource('eventReadState');
 
 function memoryStorage() {
   const values = new Map();
@@ -24,6 +25,36 @@ function memoryStorage() {
   });
   return { storage, values };
 }
+
+test('read events reopen only for unseen substantive reports, including simultaneous updates', () => {
+  const { storage } = memoryStorage();
+  const tab = createEventReadState(storage);
+  const other = createEventReadState(storage);
+  assert.equal(tab.hasRead('evt-a', []), false);
+  tab.markRead('evt-a', []);
+  assert.equal(other.hasRead('evt-a', []), true);
+  assert.equal(other.hasRead('evt-b', []), false);
+  assert.equal(other.hasRead('evt-a', ['progress-1']), false);
+  other.markRead('evt-a', ['progress-1', 'progress-2']);
+  tab.markRead('evt-a', ['progress-1']); // A delayed tab cannot overwrite the newer view.
+  assert.equal(tab.hasRead('evt-a', ['progress-2', 'progress-1']), true);
+  assert.equal(tab.hasRead('evt-a', ['progress-2']), true); // Withdrawing an old report adds no news.
+  assert.equal(tab.hasRead('evt-a', ['progress-2', 'progress-3']), false);
+  assert.equal(other.onlyUnread(), false);
+  tab.setOnlyUnread(true);
+  assert.equal(other.onlyUnread(), true);
+});
+
+test('blocked local storage still supports reading and filtering for this session', () => {
+  const state = createEventReadState(() => { throw new Error('Storage unavailable'); });
+  state.markRead('evt-a', ['progress']);
+  state.setOnlyUnread(true);
+  assert.equal(state.hasRead('evt-a', ['progress']), true);
+  assert.equal(state.hasRead('evt-a', ['additional']), false);
+  assert.equal(state.onlyUnread(), true);
+  state.setOnlyUnread(false);
+  assert.equal(state.onlyUnread(), false);
+});
 
 test('saved work is recovered after reload and clear persists all works', () => {
   const { storage, values } = memoryStorage();

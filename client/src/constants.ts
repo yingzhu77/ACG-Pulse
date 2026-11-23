@@ -53,7 +53,7 @@ export const gameIconUrls: Record<string, string> = {
 
 // ===== Community Hot Topics =====
 
-export type ViewMode = 'today' | 'feed' | 'insights' | 'community' | 'daily';
+export type ViewMode = 'today' | 'feed' | 'insights' | 'community' | 'daily' | 'favorites';
 
 export const SENTIMENT_TYPES: Record<string, string> = {
   positive: '正面',

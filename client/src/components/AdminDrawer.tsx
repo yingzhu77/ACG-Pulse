@@ -1,4 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion';
+import { useLayoutEffect, useRef, type KeyboardEvent } from 'react';
 import { CheckCircle2, Eye, LoaderCircle, Lock, LogOut, Play, Plus, RefreshCw, RotateCcw, X } from 'lucide-react';
 import type { AnalysisQueueOverview, OperationalMetrics, Source, SourcePreviewResponse } from '../services/api';
 import { AdminOpsPanel } from './AdminOpsPanel';
@@ -104,6 +105,47 @@ function SourcePreviewPanel({
 }
 
 export function AdminDrawer(props: AdminDrawerProps) {
+  const drawerRef = useRef<HTMLElement>(null);
+  useLayoutEffect(() => {
+    const drawer = drawerRef.current;
+    if (!props.open || !drawer) return;
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    // Keep the console's live status toast available while making the reading UI inert.
+    const background = Array.from(drawer.closest('.game-pulse-shell')?.querySelectorAll<HTMLElement>(
+      ':scope > .workspace-layout:not([inert]), :scope > .workspace-skip:not([inert])'
+    ) ?? []);
+    drawer.inert = false;
+    for (const element of background) element.inert = true;
+    return () => {
+      drawer.inert = true;
+      for (const element of background) element.inert = false;
+      if (opener?.isConnected) opener.focus({ preventScroll: true });
+    };
+  }, [props.open]);
+
+  useLayoutEffect(() => {
+    const drawer = drawerRef.current;
+    if (!props.open || !drawer) return;
+    const initial = drawer.querySelector<HTMLElement>('input[type="password"]') ?? drawer.querySelector('button');
+    initial?.focus({ preventScroll: true });
+  }, [props.open, props.token]);
+
+  function onDialogKey(event: KeyboardEvent<HTMLElement>) {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      props.onClose();
+      return;
+    }
+    if (event.key !== 'Tab') return;
+    const stops = Array.from(event.currentTarget.querySelectorAll<HTMLElement>(
+      'button:enabled, a[href], input:enabled, select:enabled, textarea:enabled'
+    )).filter(el => el.tabIndex >= 0 && el.getClientRects().length);
+    const first = stops[0], last = stops.at(-1);
+    if (event.shiftKey ? event.target === first : event.target === last) {
+      event.preventDefault();
+      (event.shiftKey ? last : first)?.focus();
+    }
+  }
   const failedTaskCount = props.analysisQueue
     ? props.analysisQueue.counts.failed || 0
     : undefined;
@@ -113,6 +155,11 @@ export function AdminDrawer(props: AdminDrawerProps) {
       {props.open && (
         <motion.div className="drawer-backdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
           <motion.aside
+            ref={drawerRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="admin-drawer-heading"
+            onKeyDown={onDialogKey}
             initial={{ x: 420 }}
             animate={{ x: 0 }}
             exit={{ x: 420 }}
@@ -122,7 +169,7 @@ export function AdminDrawer(props: AdminDrawerProps) {
             <div className="drawer-heading">
               <div>
                 <p>Private Console</p>
-                <h2>Game Pulse 后台</h2>
+                <h2 id="admin-drawer-heading">Game Pulse 后台</h2>
               </div>
               <button onClick={props.onClose} className="icon-button" aria-label="关闭">
                 <X className="h-4 w-4" />
@@ -131,9 +178,11 @@ export function AdminDrawer(props: AdminDrawerProps) {
 
             {!props.token ? (
               <form onSubmit={props.onLogin} className="admin-form">
-                <label>管理员密码</label>
+                <label htmlFor="admin-login-password">管理员密码</label>
                 <input
+                  id="admin-login-password"
                   type="password"
+                  autoComplete="current-password"
                   value={props.password}
                   onChange={event => props.setPassword(event.target.value)}
                   className="admin-input"

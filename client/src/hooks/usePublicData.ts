@@ -24,6 +24,7 @@ export function usePublicData(showToast: ShowToast, loadDashboard: boolean) {
   const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 0 });
   const [loading, setLoading] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
+  const activeLoad = useRef<AbortController | null>(null);
 
   // Ref to track whether the next load should scroll to top after data arrives
   const scrollToTopRef = useRef(false);
@@ -62,9 +63,15 @@ export function usePublicData(showToast: ShowToast, loadDashboard: boolean) {
   }, [markScrollToTop]);
 
   const loadPublicData = useCallback(async () => {
+    activeLoad.current?.abort();
+    const controller = new AbortController();
+    activeLoad.current = controller;
+    const { signal } = controller;
     setLoading(true);
     try {
-      const loadSources = publicApi.getSources().then(setSources).catch(() => {
+      const loadSources = publicApi.getSources(signal).then(data => {
+        if (!signal.aborted) setSources(data);
+      }).catch(() => {
         // A transient error is not proof that the last known configuration was removed.
       });
       if (!loadDashboard) {
@@ -99,17 +106,18 @@ export function usePublicData(showToast: ShowToast, loadDashboard: boolean) {
       }
 
       const [storiesData, summaryStoriesData, statsData] = await Promise.all([
-        publicApi.getStories(apiFilters),
-        publicApi.getStories(summaryFilters),
-        publicApi.getStats(),
+        publicApi.getStories(apiFilters, signal),
+        publicApi.getStories(summaryFilters, signal),
+        publicApi.getStats(signal),
         loadSources
       ]);
+      if (signal.aborted) return;
       setStories(storiesData.data);
       setSummaryStories(summaryStoriesData.data);
       setFacets(storiesData.facets);
       setPagination(storiesData.pagination);
       setStats(statsData);
-      if (sourceFilter.length === 0 && !categoryGroup && !category && !filters.importance) {
+      if (sourceFilter.length === 0 && !categoryGroup && !category && !filters.importance && !filters.q) {
         setAllFacets(storiesData.facets);
       }
 
@@ -119,10 +127,11 @@ export function usePublicData(showToast: ShowToast, loadDashboard: boolean) {
         requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'smooth' }));
       }
     } catch (error) {
+      if (signal.aborted) return;
       scrollToTopRef.current = false;
       showToast('error', error instanceof Error ? error.message : '加载失败');
     } finally {
-      setLoading(false);
+      if (!signal.aborted) setLoading(false);
     }
   }, [sourceFilter, categoryGroup, category, filters, page, showToast, loadDashboard]);
 
@@ -132,7 +141,8 @@ export function usePublicData(showToast: ShowToast, loadDashboard: boolean) {
   }, [sourceFilter, categoryGroup, category, filters.importance, filters.q]);
 
   useEffect(() => {
-    loadPublicData();
+    void loadPublicData();
+    return () => activeLoad.current?.abort();
   }, [loadPublicData]);
 
   // Auto-refresh every 5 minutes

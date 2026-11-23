@@ -25,9 +25,7 @@ export interface FeedPanelProps {
   page: number;
   setPage: (page: number) => void;
   favorites: string[];
-  showFavorites: boolean;
   onToggleFavorite: (id: string) => void;
-  onResolveAliases: (stories: { id: string; legacyIds?: string[] }[]) => void;
   navigate: (path: string) => void;
   // Hot search props
   showHotPanel: boolean;
@@ -46,6 +44,10 @@ export function FeedPanel(props: FeedPanelProps) {
   const handleSearchChange = (value: string) => {
     setSearchQuery(value);
     clearTimeout(searchTimerRef.current);
+    if (!value) {
+      props.setFilters(prev => ({ ...prev, q: '' }));
+      return;
+    }
     searchTimerRef.current = setTimeout(() => {
       props.setFilters(prev => ({ ...prev, q: value }));
     }, 300);
@@ -58,7 +60,7 @@ export function FeedPanel(props: FeedPanelProps) {
       <section className="feed-panel glass-panel">
         <div className="feed-toolbar">
           <div>
-            <h2>{TAG_LABELS[props.selectedHotTag]}</h2>
+            <h1>{TAG_LABELS[props.selectedHotTag]}</h1>
             <p>共 {props.hotItems.length} 条数据</p>
           </div>
         </div>
@@ -78,37 +80,37 @@ export function FeedPanel(props: FeedPanelProps) {
     );
   }
 
-  if (props.showFavorites) return <FavoritesPanel {...props} />;
   // Normal feed mode
   return (
     <section className="feed-panel glass-panel">
       <div className="feed-toolbar">
         <div>
-          <h2>全部动态</h2>
-          <p>共 {props.pagination.total} 条聚合情报</p>
+          <h1>全部动态</h1>
+          <p role="status">{props.filters.q.trim()
+            ? props.loading ? '正在搜索…' : `“${props.filters.q.trim()}”找到 ${props.pagination.total} 条动态`
+            : `共 ${props.pagination.total} 条聚合情报`}</p>
         </div>
         <div className="feed-controls">
-          <label className="search-field">
+          <div className="search-field">
             <Search className="h-4 w-4" />
             <input
               value={searchQuery}
               onChange={event => handleSearchChange(event.target.value)}
-              placeholder="全文搜索标题、内容、作者、来源"
+              type="search"
+              aria-label="搜索全部动态"
+              placeholder="搜索标题、内容、作者或来源"
             />
             {searchQuery && (
               <button
                 type="button"
                 className="search-clear"
-                onClick={() => {
-                  setSearchQuery('');
-                  props.setFilters(prev => ({ ...prev, q: '' }));
-                }}
+                onClick={() => handleSearchChange('')}
                 aria-label="清除搜索"
               >
                 <X className="h-3.5 w-3.5" />
               </button>
             )}
-          </label>
+          </div>
         </div>
       </div>
 
@@ -131,7 +133,10 @@ export function FeedPanel(props: FeedPanelProps) {
             ))}
           </div>
         ) : (
-          <div className="empty-state">
+          props.filters.q.trim() ? <div className="empty-state">
+            <p>没有找到匹配的动态。可以缩短关键词，或清除搜索查看当前筛选的全部结果。</p>
+            <button type="button" className="reading-link" onClick={() => handleSearchChange('')}>清除关键词</button>
+          </div> : <div className="empty-state">
             暂无符合条件的动态。可调整筛选或稍后刷新。
           </div>
         )
@@ -177,7 +182,15 @@ export function FeedPanel(props: FeedPanelProps) {
 
 type FavoriteResult = { id: string; story?: Story; missing?: boolean };
 
-function FavoritesPanel({ favorites, onToggleFavorite, onResolveAliases, navigate }: FeedPanelProps) {
+interface FavoritesPanelProps {
+  favorites: string[];
+  onToggleFavorite: (id: string) => void;
+  onResolveAliases: (stories: { id: string; legacyIds?: string[] }[]) => void;
+  navigate: (path: string) => void;
+  refresh: number;
+}
+
+export function FavoritesPanel({ favorites, onToggleFavorite, onResolveAliases, navigate, refresh }: FavoritesPanelProps) {
   const [results, setResults] = useState<FavoriteResult[]>([]);
   const [retry, setRetry] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -204,12 +217,15 @@ function FavoritesPanel({ favorites, onToggleFavorite, onResolveAliases, navigat
     }
     void loadFavorites();
     return () => abort.abort();
-  }, [favorites, retry, onResolveAliases]);
+  }, [favorites, retry, refresh, onResolveAliases]);
   const active = results.filter(entry => favorites.includes(entry.id));
   return (
     <section className="feed-panel glass-panel">
-      <header className="feed-toolbar"><div><h2>我的收藏</h2><p>共 {favorites.length} 条 · 保存在当前浏览器</p></div></header>
-      {!favorites.length && <p className="empty-state">暂无收藏。点击事件上的书签即可收藏。</p>}
+      <header className="feed-toolbar"><div><h1>我的收藏</h1><p>共 {favorites.length} 条 · 保存在当前浏览器</p></div></header>
+      {!favorites.length && <div className="reading-empty-state">
+        <p>暂无收藏。看到想稍后阅读的事件，可以在卡片上点「收藏」。</p>
+        <a className="reading-link" href="/" onClick={event => followInApp(event, navigate)}>去今日精选</a>
+      </div>}
       {favorites.length > 0 && loading && <p className="empty-state" role="status">正在查找收藏…</p>}
       {!loading && active.map((entry, index) => entry.story ? (
         <StoryCard key={entry.id} story={entry.story} index={index} isFavorite

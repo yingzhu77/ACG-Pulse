@@ -58,6 +58,10 @@ for (const source of detail.sources) {
   assert.match(await (await local(original.pathname)).text(), /合成原文/);
 }
 const archive = await json(reports + '/editions');
+assert.deepEqual(archive.data.map(row => [row.status, row.visibleCount]), [
+  ['published', 2], ['empty', 0], ['failed', 0]
+]);
+assert.deepEqual(update.readProgressIds, detail.progress.map(item => item.id));
 const issuePath = reports + '/daily?date=' + encodeURIComponent(archive.data[0].date);
 const issue = await json(issuePath);
 assert.equal(issue.status, 'published');

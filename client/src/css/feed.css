@@ -271,27 +271,10 @@
   color: var(--blue);
 }
 
-.feed-panel {
-  min-width: 0;
-  padding: 12px;
-}
-
-.theme-dark .feed-panel {
-  background: rgba(8, 18, 36, 0.24);
-}
-
-.theme-tomato .feed-panel {
-  background: rgba(25, 7, 18, 0.58);
-}
-
 .feed-toolbar {
   flex-wrap: wrap;
   padding: 2px 2px 12px;
   border-bottom: 1px solid var(--stroke);
-}
-
-.sidebar-collapsed .feed-toolbar {
-  padding-left: 66px;
 }
 
 .feed-toolbar p {
@@ -312,22 +295,12 @@
   align-items: center;
   gap: 8px;
   min-height: 40px;
-  width: min(380px, 40vw);
+  width: min(350px, 100%);
   border: 1px solid var(--stroke);
-  border-radius: 8px;
-  background: var(--panel-soft);
-  padding: 0 11px;
+  border-radius: 999px;
+  background: var(--panel-bg);
+  padding: 0 14px;
   color: var(--text-soft);
-}
-
-.theme-dark .search-field,
-.theme-dark .feed-controls select {
-  background: rgba(12, 26, 50, 0.2);
-}
-
-.theme-tomato .search-field,
-.theme-tomato .feed-controls select {
-  background: rgba(48, 14, 32, 0.52);
 }
 
 .search-field input,
@@ -338,6 +311,11 @@
   background: transparent;
   color: var(--text-main);
   outline: none;
+}
+
+.search-field:focus-within {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
 }
 
 .search-field input::placeholder {
@@ -380,32 +358,16 @@
   min-height: 112px;
   margin-top: 10px;
   border: 1px solid var(--stroke);
-  border-left: 4px solid var(--blue);
-  border-radius: 8px;
-  background: var(--panel-soft);
-  padding: 12px;
+  border-inline-start: 3px solid var(--blue);
+  border-radius: 12px;
+  background: var(--panel-bg);
+  padding: 16px;
   transition: background 180ms ease, border-color 180ms ease, transform 180ms ease;
-}
-
-.theme-dark .story-card {
-  background: rgba(12, 26, 50, 0.18);
-}
-
-.theme-tomato .story-card {
-  background: rgba(49, 13, 32, 0.44);
 }
 
 .story-card:hover {
   border-color: var(--stroke-strong);
   background: var(--panel-hover);
-}
-
-.theme-dark .story-card:hover {
-  background: rgba(18, 38, 68, 0.38);
-}
-
-.theme-tomato .story-card:hover {
-  background: rgba(78, 21, 47, 0.68);
 }
 
 .story-card.importance-high { border-left-color: var(--pink); }
@@ -520,7 +482,7 @@
   max-width: 100%;
   overflow: hidden;
   overflow-wrap: anywhere;
-  word-break: break-all;
+  word-break: normal;
   color: var(--text-strong);
   font-size: 17px;
   font-weight: 800;
@@ -680,14 +642,14 @@
   border-radius: 8px;
   background: var(--panel-soft);
   border: 1px solid var(--stroke);
-  color: var(--text-primary);
+  color: var(--text-main);
   cursor: pointer;
   font-size: 0.8rem;
   transition: background 0.15s;
 }
 
 .export-btn-trigger:hover {
-  background: var(--bg-hover);
+  background: var(--panel-hover);
 }
 
 .export-btn-overlay {
@@ -719,7 +681,7 @@
   padding: 10px 14px;
   background: transparent;
   border: none;
-  color: var(--text-primary);
+  color: var(--text-main);
   cursor: pointer;
   font-size: 0.82rem;
   text-align: left;
@@ -727,7 +689,7 @@
 }
 
 .export-btn-item:hover {
-  background: var(--bg-hover);
+  background: var(--panel-hover);
 }
 
 .export-btn-label {

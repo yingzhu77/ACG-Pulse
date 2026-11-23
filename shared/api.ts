@@ -266,6 +266,8 @@ export type EventDetail = Story & {
 
 export type EditionStatus = 'live' | 'pending' | 'failed' | 'published' | 'empty';
 export type EditionEntry = Story & {
+  /** Current featured entries only. IDs of substantive reports visible on the event detail page. */
+  readProgressIds?: string[];
   editorial: {
     kind: 'new' | 'update';
     publishedAt: string;
@@ -298,6 +300,8 @@ export type EditionResponse = Omit<ReportResponse, 'stories'> & {
 };
 export type EditionIndex = Array<Pick<EditionResponse, 'date' | 'publishedAt'> & {
   status: 'published' | 'empty' | 'failed';
+  visibleCount: number;
+  headline: string | null;
 }>;
 
 export interface CommunityTopTopic {

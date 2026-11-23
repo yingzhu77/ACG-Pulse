@@ -151,7 +151,7 @@ export function CommunityPanel() {
         <span className="community-result-count" aria-live="polite">
           已展示 {topics.length} / {total}
         </span>
-        <h2>社区热点风向</h2>
+        <h1>社区热点风向</h1>
         <button
           ref={heatInfoButtonRef}
           type="button"

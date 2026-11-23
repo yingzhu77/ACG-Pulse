@@ -218,6 +218,19 @@ try {
     } });
   }
   await publishDailyEdition(yesterday, now);
+  // Historical fixture snapshots exercise the archive without changing today's source coverage.
+  for (const [offset, status] of [[-3, 'empty'], [-4, 'failed']] as const) {
+    const date = shiftEditionDate(today, offset);
+    const checkedAt = `${date}T20:00:00+08:00`;
+    await prisma.dailyEdition.create({ data: {
+      date, status, publishedAt: status === 'empty' ? new Date(checkedAt) : null,
+      health: {
+        configuredSources: 1, failedSources: status === 'failed' ? 1 : 0, degradedSources: 0,
+        staleSources: 0, uncheckedSources: 0, pendingAnalysis: 0, failedAnalysis: 0,
+        unavailableAnalysis: 0, lastCheckedAt: checkedAt, lastSuccessAt: status === 'empty' ? checkedAt : null
+      }
+    } });
+  }
   console.log(`合成数据：${items.length} 条，测试刊期：${yesterday}，今日：${today}（Asia/Shanghai）`);
 } finally {
   await prisma.$disconnect();

@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Bot, Bookmark, ChevronDown, Flame, Filter, Gamepad2, Music, Radio } from 'lucide-react';
+import { Bot, ChevronDown, Flame, Gamepad2, Music, Radio } from 'lucide-react';
 import type { Source, StoryFacets } from '../services/api';
 import { cn } from '../lib/utils';
 import { FOLLOW_CATEGORIES, GAME_CATEGORIES, gameAccents, gameIconUrls } from '../constants';
@@ -20,14 +20,7 @@ export interface GameFilterPanelProps {
   setCategory: (v: string) => void;
   filters: { importance: string; q: string };
   setFilters: React.Dispatch<React.SetStateAction<{ importance: string; q: string }>>;
-  collapsed: boolean;
-  onToggleCollapse: () => void;
   sources: Source[];
-  isMobile?: boolean;
-  isInDrawer?: boolean;
-  favorites: string[];
-  showFavorites: boolean;
-  onToggleFavorites: () => void;
   showHotPanel: boolean;
   onToggleHotPanel: () => void;
   selectedHotTag: HotTag;
@@ -39,24 +32,8 @@ export function GameFilterPanel(props: GameFilterPanelProps) {
   const [followOpen, setFollowOpen] = useState(false);
   const followedSources = useMemo(() => props.sources.filter(s => s.followed), [props.sources]);
 
-  // On mobile, hide the sidebar (drawer handles rendering)
-  if (props.isMobile && !props.isInDrawer) {
-    return null;
-  }
-
   return (
-    <>
-      <aside className={`left-sidebar glass-panel${props.isInDrawer ? ' drawer-mode' : ''}`}>
-        <div className="panel-heading">
-          <h2>
-            <Filter className="h-4 w-4" style={{ display: 'inline', verticalAlign: '-3px', marginRight: 6 }} />
-            筛选
-          </h2>
-          <button className="icon-button" onClick={props.onToggleCollapse} aria-label="收起筛选" title="收起筛选">
-            <ChevronDown className="h-4 w-4 rotate-90" />
-          </button>
-        </div>
-
+    <div className="left-sidebar">
       {/* 1. 来源 - 游戏资讯 */}
       <div className="filter-block">
         <div className="filter-title-row">
@@ -239,25 +216,6 @@ export function GameFilterPanel(props: GameFilterPanelProps) {
         )}
       </div>
 
-      {/* 5. 收藏 */}
-      <div className="filter-block">
-        <button
-          className={cn('category-row', props.showFavorites && 'active')}
-          onClick={props.onToggleFavorites}
-          style={{ width: '100%' }}
-        >
-          <Bookmark className="h-4 w-4" />
-          <span>我的收藏</span>
-          {props.favorites.length > 0 && <b>{props.favorites.length}</b>}
-        </button>
-        {props.showFavorites && (
-          <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginTop: 4, paddingLeft: 4 }}>
-            ⓘ 收藏数据存储在浏览器本地缓存中
-          </p>
-        )}
-      </div>
-
-    </aside>
-    </>
+    </div>
   );
 }

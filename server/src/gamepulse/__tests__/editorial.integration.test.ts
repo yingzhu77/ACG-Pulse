@@ -15,6 +15,7 @@ vi.mock('../../db.js', async () => {
 });
 
 import { prisma } from '../../db.js';
+import { eventProjection } from '../services/events.js';
 import reportsRouter, { adminReportsRouter } from '../routes/reports.js';
 import { createAdminToken, requireAdmin } from '../auth.js';
 import { editionRange, publishDailyEdition, readDailyEdition, readFeatured, shanghaiDate } from '../reports/editorial.js';
@@ -212,6 +213,67 @@ describe('editorial reading cycle with isolated SQLite migrations', () => {
     expect((await fetch(`${base}/reports/daily?date=2026-02-31`)).status).toBe(400);
     expect((await fetch(`${base}/reports/export?date=2000-01-01`)).status).toBe(409);
     expect(await prisma.dailyEdition.count()).toBe(1); // public reads never generate editions
+  });
+
+  test('featured read marks reflect exactly the public substantive progress in the detail', async () => {
+    await source('primary');
+    const now = date('2026-11-19T15:00:00Z');
+    const title = '版本 1.4《灯塔》更新公告';
+    await item({ id: 'first-report', title, discovered: '2026-11-19T06:00:00Z' });
+    const initial = (await readFeatured(now)).stories[0];
+    expect(initial.readProgressIds).toEqual([]);
+    for (const [id, progress, hidden] of [
+      ['reprint', false, false], ['progress-a', true, false], ['progress-b', true, false], ['private', true, true]
+    ] as const) {
+      await item({ id, title, discovered: '2026-11-19T07:00:00Z' });
+      await prisma.feedItem.update({ where: { id }, data: { eventId: initial.id, eventProgress: progress, hidden } });
+    }
+    const featured = (await readFeatured(now)).stories[0];
+    const detail = await eventProjection(initial.id);
+    expect(featured.readProgressIds).toEqual(detail?.progress.map(item => item.id));
+    expect([...featured.readProgressIds].sort()).toEqual(['progress-a', 'progress-b']);
+    await prisma.feedItem.update({ where: { id: 'progress-b' }, data: { hidden: true } });
+    expect((await readFeatured(now)).stories[0].readProgressIds).toEqual(['progress-a']);
+  });
+
+  test('pages public issue previews and updates their top-ranked headline after corrections and withdrawals', async () => {
+    await prisma.dailyEdition.createMany({ data: Array.from({ length: 30 }, (_, i) => ({
+      date: `2026-10-${String(i + 1).padStart(2, '0')}`, status: i % 2 === 0 ? 'failed' : 'empty',
+      publishedAt: i % 2 === 0 ? null : firstClose, health: {}
+    })) });
+    await source('primary');
+    await item({ id: 'first', title: '版本 1.3《巡海》更新公告', discovered: '2026-11-19T05:00:00Z' });
+    await item({ id: 'second', title: '版本 1.4《灯塔》更新公告', discovered: '2026-11-19T06:00:00Z' });
+    await publishDailyEdition(previously, firstClose);
+    const [lead, other] = (await readDailyEdition(previously)).stories;
+    const archiveUrl = `${base}/reports/editions`;
+    const archive = () => fetch(archiveUrl).then(response => response.json());
+    const firstPage = await archive();
+    expect(firstPage.data).toHaveLength(30);
+    expect(firstPage.data[0]).toMatchObject({ date: previously, status: 'published', visibleCount: 2, headline: lead.canonicalTitle });
+    expect(firstPage.data.at(-1)).toMatchObject({ date: '2026-10-02', status: 'empty', visibleCount: 0, headline: null });
+    expect(firstPage.nextBefore).toBe('2026-10-02');
+    const lastPage = await fetch(`${archiveUrl}?before=${firstPage.nextBefore}`).then(response => response.json());
+    expect(lastPage).toMatchObject({
+      data: [{ date: '2026-10-01', status: 'failed', visibleCount: 0, headline: null }], nextBefore: null
+    });
+
+    const response = await fetch(`${base}/admin/reports/editions/${previously}/entries/${lead.id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${createAdminToken()}` },
+      body: JSON.stringify({ action: 'correct', title: '勘误后的公开标题', summary: null })
+    });
+    expect(response.status).toBe(204);
+    const corrected = (await archive()).data[0];
+    expect(corrected).toMatchObject({ headline: '勘误后的公开标题', visibleCount: 2 });
+    expect(JSON.stringify(corrected)).not.toContain(lead.canonicalTitle);
+    await prisma.feedItem.update({ where: { id: lead.sources[0].itemId }, data: { hidden: true } });
+    const remaining = (await archive()).data[0];
+    expect(remaining).toMatchObject({ headline: other.canonicalTitle, visibleCount: 1 });
+    expect(JSON.stringify(remaining)).not.toContain('勘误后的公开标题');
+    await prisma.feedItem.update({ where: { id: other.sources[0].itemId }, data: { hidden: true } });
+    expect((await archive()).data[0]).toEqual({
+      date: previously, status: 'published', publishedAt: firstClose.toISOString(), visibleCount: 0, headline: null
+    });
   });
 
   test('caps selection at eight without treating official identity as sufficient', async () => {

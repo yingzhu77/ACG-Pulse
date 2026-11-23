@@ -456,6 +456,28 @@ export async function attachLegacyEventIds(stories: PublicStory[]): Promise<void
   }
 }
 
+export async function publicEventDetails(ids: string[]): Promise<Map<string, EventDetail>> {
+  const details = new Map<string, EventDetail>();
+  if (!ids.length) return details;
+  const rows = await prisma.feedItem.findMany({
+    where: { eventId: { in: ids } },
+    include: eventItemInclude,
+    orderBy: [{ createdAt: 'asc' }, { publishedAt: 'asc' }, { id: 'asc' }]
+  });
+  const groups = new Map<string, EventMember[]>();
+  for (const row of rows) {
+    if (!row.eventId) continue;
+    const members = groups.get(row.eventId);
+    if (members) members.push(row);
+    else groups.set(row.eventId, [row]);
+  }
+  for (const [id, members] of groups) {
+    const detail = projectMembers(id, members, 'public', members[0].id);
+    if (detail) details.set(id, detail);
+  }
+  return details;
+}
+
 export async function eventProjection(requestedId: string): Promise<EventDetail | null> {
   await syncEvents();
   let id: string | null = requestedId;
@@ -464,12 +486,7 @@ export async function eventProjection(requestedId: string): Promise<EventDetail 
     id = (await prisma.eventAlias.findUnique({ where: { id } }))?.eventId ?? null;
   }
   if (!id) return null;
-  const members = await prisma.feedItem.findMany({
-    where: { eventId: id },
-    include: eventItemInclude,
-    orderBy: [{ createdAt: 'asc' }, { publishedAt: 'asc' }, { id: 'asc' }]
-  });
-  return projectMembers(id, members, 'public', members[0]?.id);
+  return (await publicEventDetails([id])).get(id) ?? null;
 }
 
 /** Move one mistakenly grouped report to a new event without renaming the old event. */

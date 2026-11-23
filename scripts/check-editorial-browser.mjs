@@ -44,6 +44,20 @@ async function screenshot(page, file) {
   artifacts.push(path);
 }
 
+async function openSection(page, name) {
+  const menu = page.getByRole('button', { name: '打开导航' });
+  if (await menu.isVisible()) await menu.click();
+  await page.getByRole('navigation', { name: '主导航' })
+    .getByRole('link', { name, exact: true }).click();
+}
+
+async function columnBounds(page) {
+  return page.locator('.main-column').evaluate(column => {
+    const { left, width } = column.getBoundingClientRect();
+    return { left: Math.round(left), width: Math.round(width) };
+  });
+}
+
 async function testReading(browser, name, width, height) {
   const context = await browser.newContext({
     viewport: { width, height }, reducedMotion: 'reduce', locale: 'zh-CN', acceptDownloads: true
@@ -107,6 +121,7 @@ async function testReading(browser, name, width, height) {
     assert.match(eventPath, /^\/events\/evt_/);
     await target.click();
     await page.getByRole('heading', { name: title, exact: true }).waitFor();
+    assert.equal(await page.title(), title + ' · ACG Pulse');
     assert.equal(new URL(page.url()).pathname, eventPath);
     const favorite = page.getByRole('button', { name: '收藏事件', exact: true });
     await favorite.click();
@@ -115,14 +130,64 @@ async function testReading(browser, name, width, height) {
     await page.getByRole('button', { name: '已收藏', exact: true, pressed: true }).waitFor();
     await viewportFits(page, width);
     if (name === 'mobile-390') await screenshot(page, 'r2-mobile-event.png');
-    await page.getByRole('link', { name: '返回列表' }).or(page.getByRole('button', { name: '返回列表' })).click();
+    await page.getByRole('link', { name: '返回今日精选' }).click();
     await header().waitFor();
     await longTitle().waitFor();
     assert.equal(await selectedWork().inputValue(), sand);
+    await page.waitForFunction(path => document.activeElement?.getAttribute('href') === path, eventPath);
     await page.waitForFunction(before => Math.abs(window.scrollY - before) <= 35, scrollBefore, { timeout: 8500 });
 
-    await page.getByRole('button', { name: '日报', exact: true }).click();
+    const readEntry = page.locator('.reading-entry').filter({ has: page.getByRole('link', { name: title, exact: true }) });
+    await readEntry.getByText('已读', { exact: true }).waitFor();
+    const unreadOnly = page.getByRole('checkbox', { name: '只看未读' });
+    await unreadOnly.check();
+    await readEntry.waitFor({ state: 'detached' });
+    await page.reload();
+    await entryTitles().first().waitFor();
+    assert(await unreadOnly.isChecked(), 'unread preference was lost on reload');
+    assert.equal(await readEntry.count(), 0, 'read story returned without new progress');
+    await unreadOnly.uncheck();
+    await readEntry.getByText('已读', { exact: true }).waitFor();
+
+    const featuredColumn = await columnBounds(page);
+    await openSection(page, '我的收藏');
+    await page.getByRole('heading', { name: '我的收藏', exact: true }).waitFor();
+    await page.reload();
+    const saved = page.getByRole('link', { name: title, exact: true });
+    await saved.waitFor();
+    assert.equal(await saved.getAttribute('href'), eventPath);
+    await saved.click();
+    await page.getByRole('button', { name: '已收藏', exact: true, pressed: true }).waitFor();
+    await page.getByRole('link', { name: '返回我的收藏' }).click();
+    await saved.waitFor();
+    assert.equal(new URL(page.url()).pathname, '/favorites');
+    await openSection(page, '全部动态');
+    await page.getByRole('heading', { name: '全部动态', exact: true }).waitFor();
+    assert.deepEqual(await columnBounds(page), featuredColumn, 'feed changed the reading column geometry');
+    await openSection(page, '日报');
     await page.getByRole('heading', { name: '日报存档', exact: true }).waitFor();
+    assert.deepEqual(await columnBounds(page), featuredColumn, 'archive changed the reading column geometry');
+    await page.getByRole('link', { name: 'Markdown', exact: true }).waitFor();
+    const index = await (await context.request.get(origin + '/api/public/reports/editions')).json();
+    const issue = index.data[0];
+    const edition = await (await context.request.get(origin + '/api/public/reports/daily?date=' + issue.date)).json();
+    assert(edition.stories.length > 0, 'expected a published fixture with a headline');
+    assert.equal(issue.headline, edition.stories[0].canonicalTitle);
+    assert.equal(issue.visibleCount, edition.stories.length);
+    const issueLink = page.locator(`.reading-archive-issue[href="/daily/${issue.date}"]`);
+    const directory = page.getByRole('navigation', { name: '刊期目录', exact: true });
+    const emptyIssue = directory.getByRole('link', { name: /当日无重点/ });
+    const failedIssue = directory.getByRole('link', { name: /采集或处理未完成/ });
+    await emptyIssue.click();
+    await waitText(page, /本期没有达到精选标准的新内容/);
+    await failedIssue.click();
+    await waitText(page, /本期无法出刊/);
+    assert.equal(await page.getByRole('link', { name: 'Markdown', exact: true }).count(), 0);
+    await issueLink.getByText(issue.headline, { exact: true }).waitFor();
+    assert((await issueLink.innerText()).includes(String(issue.visibleCount) + ' 条可见事件'));
+    await issueLink.click();
+    assert.equal(new URL(page.url()).pathname, '/daily/' + issue.date);
+    assert.equal(await page.title(), issue.date + ' 日报 · ACG Pulse');
     await page.getByRole('link', { name: 'Markdown', exact: true }).waitFor();
     await viewportFits(page, width);
     if (name === 'desktop') await screenshot(page, 'r2-desktop-archive.png');
@@ -142,7 +207,7 @@ async function testReading(browser, name, width, height) {
     const markdown = await readFile(await download.path(), 'utf8');
     assert.match(markdown, /雾钟码头开放/);
     assert.match(markdown, /北门信使/);
-    console.log(`PASS: ${name} ${width}×${height}, restored scroll ${scrollBefore}px; work filter persisted across reload and reopen; favorite persisted; opened fixture original and downloaded Markdown.`);
+    console.log(`PASS: ${name} ${width}×${height}, restored scroll ${scrollBefore}px; work filter, read state, unread preference and favorite persisted; archive headline/count matched detail and empty/failed issues were distinct; opened synthetic original and downloaded Markdown.`);
   } finally {
     await context.close();
   }

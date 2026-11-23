@@ -208,7 +208,7 @@
   padding: 14px;
 }
 
-.community-panel .panel-heading h2 { order: 1; }
+.community-panel .panel-heading h1 { order: 1; }
 
 .community-result-count {
   order: 2;
